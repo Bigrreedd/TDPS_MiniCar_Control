@@ -1,0 +1,23 @@
+# 忽略 Keil 编译生成的中间文件
+Objects/
+Listings/
+DebugConfig/
+*.o
+*.d
+*.crf
+*.axf
+*.htm
+*.dep
+*.lnp
+*.lst
+*.map
+*.iex
+*.build_log.htm
+*.htm
+
+# 忽略仿真器产生的临时文件
+JLinkLog.txt
+JLinkSettings.ini
+
+# 忽略 VS Code 配置
+.vscode/
