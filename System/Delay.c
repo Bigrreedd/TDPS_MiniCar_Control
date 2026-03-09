@@ -11,7 +11,7 @@ void Delay_us(uint32_t xus)
 	{
 		for(uint16_t i = 6; i > 0; i --)
 		{
-			__nop();
+			__NOP();
 		}
 	}
 }
