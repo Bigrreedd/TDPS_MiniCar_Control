@@ -21,3 +21,4 @@ JLinkSettings.ini
 
 # 忽略 VS Code 配置
 .vscode/
+*.uvguix.*
