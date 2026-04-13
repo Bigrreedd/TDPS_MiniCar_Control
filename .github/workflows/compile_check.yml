@@ -1,0 +1,28 @@
+name: STM32 Auto Build Check
+
+# 触发条件：当有人往 main 分支 Push，或者发起合并请求时
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # 使用 Linux 云服务器
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install ARM GCC Compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-none-eabi
+
+    - name: Verify Compilation (执行 Makefile)
+      run: |
+        echo "=== 正在启动微缩车模代码自动审查 ==="
+        make clean
+        make all
+        echo "=== 恭喜！全工程 0 语法错误，编译通过！ ==="
