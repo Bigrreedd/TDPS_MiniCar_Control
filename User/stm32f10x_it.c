@@ -32,6 +32,8 @@
 #include "PID_Controller.h"
 #include "M3PWM.h"
 
+#define RAD_TO_DEG (57.2957795f)
+
 /** @addtogroup STM32F10x_StdPeriph_Template
   * @{
   */
@@ -134,15 +136,18 @@ void DebugMon_Handler(void)
 void PendSV_Handler(void)
 {
 }
+
 float add_angle = 0;
+float add_angle_deg_360 = 0;
 float add_angle_num = 0;
 int16_t position_get = 0.0f;
 BlackPointResult_t result_BlackPoint;
 extern uint16_t uart_rev_tiem;
 extern uint8_t star_car;
+
 void SysTick_Handler(void)
 {
-	float dt = 0.001f;
+	float dt = 0.002f;
 	static uint32_t lose_time = 0;
 	LSM6DSR_ReadData(&LSE6DSR_data);
 	LSM6DSR_ConvertToPhysics(&LSE6DSR_data);
@@ -154,9 +159,14 @@ void SysTick_Handler(void)
 		star_car = 0; 
 		uart_rev_tiem = 250;
 		Motor_Disable();
-	}
+ 	}
 //	// 更新旧的角度计算（用于兼容性，使用转换后的角速度）
-	add_angle += LSE6DSR_data.gy_rads * dt;  // 使用弧度/秒，正确积分
+	add_angle += LSE6DSR_data.gz_rads * dt;  // 使用弧度/秒，正确积分
+	add_angle_deg_360 += LSE6DSR_data.gz_rads * dt * RAD_TO_DEG;
+	if (add_angle_deg_360 >= 360.0f)
+		add_angle_deg_360 -= 360.0f;
+	else if (add_angle_deg_360 < 0.0f)
+		add_angle_deg_360 += 360.0f;
 	add_angle_num += 1.0f;
 	
 	// 保留旧的姿态解算调用（可选，用于对比）

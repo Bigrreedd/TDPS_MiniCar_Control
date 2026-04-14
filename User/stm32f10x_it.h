@@ -33,6 +33,8 @@
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/
+extern float add_angle;
+extern float add_angle_deg_360;
 /* Exported functions ------------------------------------------------------- */
 
 void NMI_Handler(void);

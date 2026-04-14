@@ -7,16 +7,12 @@
 #include "ABEncoder.h"
 #include <stdio.h>
 
-#define RAD_TO_DEG (57.2957795f)
-
 #define TELEM_BATTERY_V_MIN 5.5f
 #define TELEM_BATTERY_V_MAX 8.6f
 
-extern float add_angle;
+extern float add_angle_deg_360;
 extern int16_t position_get;
 extern float BDI_V;
-
-static float s_angle_ref_rad;
 
 static uint8_t battery_percent(float v)
 {
@@ -41,7 +37,6 @@ static uint16_t build_sensor_mask(void)
 
 void TelemetryScreen_Init(void)
 {
-	s_angle_ref_rad = add_angle;
 }
 
 void TelemetryScreen_Update(void)
@@ -49,12 +44,9 @@ void TelemetryScreen_Update(void)
 	char ubuf[8];
 	char pbuf[8];
 	char bbuf[8];
-	float dy_deg = (add_angle - s_angle_ref_rad) * RAD_TO_DEG;
-	int yaw_deg = (int)(dy_deg >= 0.0f ? (dy_deg + 0.5f) : (dy_deg - 0.5f));
-	if (yaw_deg > 999)
-		yaw_deg = 999;
-	if (yaw_deg < -999)
-		yaw_deg = -999;
+	uint16_t yaw_deg = (uint16_t)add_angle_deg_360;
+	if (yaw_deg >= 360u)
+		yaw_deg = 0u;
 
 	int pos = (int)position_get;
 	if (pos > 99999)
@@ -87,7 +79,7 @@ void TelemetryScreen_Update(void)
 	OLED_ShowSignedNum(1, 4, pos, 5);
 	OLED_CN_DrawGlyph(1, 10, CN_JIAO);
 	OLED_ShowChar(1, 12, ':');
-	OLED_ShowSignedNum(1, 13, yaw_deg, 3);
+	OLED_ShowNum(1, 13, yaw_deg, 3);
 
 	snprintf(ubuf, sizeof(ubuf), "%2d.%02dV", v100 / 100, v100 % 100);
 	OLED_ClearLine(2);
