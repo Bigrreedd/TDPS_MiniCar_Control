@@ -135,4 +135,9 @@ void M3PWM_SetFrequency(uint32_t freq)
     
     // 重新设置占空比
     M3PWM_SetDutyCycle(g_pwm_duty_cycle);
-} 
+}
+
+uint16_t M3PWM_GetDutyCycle(void)
+{
+	return g_pwm_duty_cycle;
+}

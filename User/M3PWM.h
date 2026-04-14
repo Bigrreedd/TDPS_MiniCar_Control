@@ -14,4 +14,6 @@ void M3PWM_Start(void);                   // 启动PWM输出
 void M3PWM_Stop(void);                    // 停止PWM输出
 void M3PWM_SetFrequency(uint32_t freq);   // 设置PWM频率
 
+uint16_t M3PWM_GetDutyCycle(void);        // 读取当前占空比设定值（0~1000）
+
 #endif 

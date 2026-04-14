@@ -1,17 +1,17 @@
 #include "pose.h"
 #include "LSM6DSR_Config.h"
 #include <math.h>
-float_ang_struct    att_angle;              //é£æœºå§¿æ€æ•°æ®
-float_xyz_struct    gyr_rad;                //æŠŠé™€èºä»ªçš„å„é€šé“è¯»å‡ºçš„æ•°æ®ï¼Œè½¬æ¢æˆå¼§åº¦åˆ¶
-float_xyz_struct    acc_g;                  //æ»¤æ³¢åçš„åŠ é€Ÿåº¦æ•°æ®
-float   dcmgb[3][3];                        //æ–¹å‘ä½™å¼¦é˜µï¼ˆå°† æƒ¯æ€§åæ ‡ç³» è½¬åŒ–ä¸º æœºä½“åæ ‡ç³»ï¼‰
+float_ang_struct    att_angle;              //·É»ú×ËÌ¬Êı¾İ
+float_xyz_struct    gyr_rad;                //°ÑÍÓÂİÒÇµÄ¸÷Í¨µÀ¶Á³öµÄÊı¾İ£¬×ª»»³É»¡¶ÈÖÆ
+float_xyz_struct    acc_g;                  //ÂË²¨ºóµÄ¼ÓËÙ¶ÈÊı¾İ
+float   dcmgb[3][3];                        //·½ÏòÓàÏÒÕó£¨½« ¹ßĞÔ×ø±êÏµ ×ª»¯Îª »úÌå×ø±êÏµ£©
 #define LIMIT_VAL(a,min,max) ((a)<(min)?(min):((a)>(max)?(max):(a)))
 //-------------------------------------------------------------------------------------------------------------------
-// å‡½æ•°ç®€ä»‹    å¿«é€Ÿè®¡ç®— 1/sqrt(x)
-// å‚æ•°è¯´æ˜     float           è¾“å…¥æ•°æ®
-// è¿”å›å‚æ•°     float           å¹³æ–¹æ ¹ä¹‹ä¸€
-// ä½¿ç”¨ç¤ºä¾‹     y = invsqrt(0.005);
-// å¤‡æ³¨ä¿¡æ¯     å†…éƒ¨è°ƒç”¨
+// º¯Êı¼ò½é    ¿ìËÙ¼ÆËã 1/sqrt(x)
+// ²ÎÊıËµÃ÷     float           ÊäÈëÊı¾İ
+// ·µ»Ø²ÎÊı     float           Æ½·½¸ùÖ®Ò»
+// Ê¹ÓÃÊ¾Àı     y = invsqrt(0.005);
+// ±¸×¢ĞÅÏ¢     ÄÚ²¿µ÷ÓÃ
 //-------------------------------------------------------------------------------------------------------------------
 static float invsqrt(float x)
 {
@@ -26,11 +26,11 @@ static float invsqrt(float x)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// å‡½æ•°ç®€ä»‹    åæ­£åˆ‡
-// å‚æ•°è¯´æ˜     float           è¾“å…¥æ•°æ®
-// è¿”å›å‚æ•°     float           åæ­£åˆ‡å€¼
-// ä½¿ç”¨ç¤ºä¾‹    y =  arctan1(0.005);
-// å¤‡æ³¨ä¿¡æ¯     å†…éƒ¨è°ƒç”¨
+// º¯Êı¼ò½é    ·´ÕıÇĞ
+// ²ÎÊıËµÃ÷     float           ÊäÈëÊı¾İ
+// ·µ»Ø²ÎÊı     float           ·´ÕıÇĞÖµ
+// Ê¹ÓÃÊ¾Àı    y =  arctan1(0.005);
+// ±¸×¢ĞÅÏ¢     ÄÚ²¿µ÷ÓÃ
 //-------------------------------------------------------------------------------------------------------------------
 float arctan1(float tan)
 {
@@ -40,12 +40,12 @@ float arctan1(float tan)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// å‡½æ•°ç®€ä»‹    åæ­£åˆ‡
-// å‚æ•°è¯´æ˜     float           è¾“å…¥æ•°æ®x
-// å‚æ•°è¯´æ˜     float           è¾“å…¥æ•°æ®y
-// è¿”å›å‚æ•°     float           åæ­£åˆ‡å€¼
-// ä½¿ç”¨ç¤ºä¾‹    y =  arctan2(5, 6);
-// å¤‡æ³¨ä¿¡æ¯     å†…éƒ¨è°ƒç”¨
+// º¯Êı¼ò½é    ·´ÕıÇĞ
+// ²ÎÊıËµÃ÷     float           ÊäÈëÊı¾İx
+// ²ÎÊıËµÃ÷     float           ÊäÈëÊı¾İy
+// ·µ»Ø²ÎÊı     float           ·´ÕıÇĞÖµ
+// Ê¹ÓÃÊ¾Àı    y =  arctan2(5, 6);
+// ±¸×¢ĞÅÏ¢     ÄÚ²¿µ÷ÓÃ
 //-------------------------------------------------------------------------------------------------------------------
 float arctan2(float x, float y)
 {
@@ -78,21 +78,21 @@ float arcsin(float i)
 
 
 //-------------------------------------------------------------------------------------------------------------------
-// å‡½æ•°ç®€ä»‹   æ•°æ®è½¬æ¢
-// å‚æ•°è¯´æ˜    void
-// è¿”å›å‚æ•°   void
-// ä½¿ç”¨ç¤ºä¾‹   prepare_data();
-// å¤‡æ³¨ä¿¡æ¯     å†…éƒ¨è°ƒç”¨
+// º¯Êı¼ò½é   Êı¾İ×ª»»
+// ²ÎÊıËµÃ÷    void
+// ·µ»Ø²ÎÊı   void
+// Ê¹ÓÃÊ¾Àı   prepare_data();
+// ±¸×¢ĞÅÏ¢     ÄÚ²¿µ÷ÓÃ
 //-------------------------------------------------------------------------------------------------------------------
 void prepare_data(void)
 {
-	//åŠ é€Ÿåº¦ADå€¼ è½¬æ¢æˆ ç±³/å¹³æ–¹ç§’ 
+	//¼ÓËÙ¶ÈADÖµ ×ª»»³É Ã×/Æ½·½Ãë 
 	acc_g.x = LSE6DSR_data.ax_g;
 	acc_g.y =	LSE6DSR_data.ay_g;
 	acc_g.z = LSE6DSR_data.az_g;
 //	printf("ax=%0.2f ay=%0.2f az=%0.2f\r\n",acc_g.x,acc_g.y,acc_g.z);
 
-	//é™€èºä»ªADå€¼ è½¬æ¢æˆ å¼§åº¦/ç§’    
+	//ÍÓÂİÒÇADÖµ ×ª»»³É »¡¶È/Ãë    
 	gyr_rad.x = LSE6DSR_data.gx_rads;
 	gyr_rad.y = LSE6DSR_data.gy_rads;
 	gyr_rad.z = LSE6DSR_data.gz_rads;
@@ -102,31 +102,31 @@ void one_fiter(float_xyz_struct *acc,float_xyz_struct *gyro, float_xyz_struct *f
 {
 	static float_xyz_struct gyro_angle = {0};
 	static float_xyz_struct last_angle = {0};
-	float alpha = 0.98f;  // äº’è¡¥æ»¤æ³¢ç³»æ•°
+	float alpha = 0.98f;  // »¥²¹ÂË²¨ÏµÊı
 	
-	// é™€èºä»ªç§¯åˆ†
-	gyro_angle.x += (gyro->x) * 0.001f;  // 0.001æ˜¯é‡‡æ ·æ—¶é—´
+	// ÍÓÂİÒÇ»ı·Ö
+	gyro_angle.x += (gyro->x) * 0.001f;  // 0.001ÊÇ²ÉÑùÊ±¼ä
 	gyro_angle.y += (gyro->y) * 0.001f;
 	gyro_angle.x *= 0.99999999999999f;
 	gyro_angle.y *= 0.99999999999999f;
-	// åŠ é€Ÿåº¦è®¡è®¡ç®—è§’åº¦
-	// å‡è®¾Zè½´å‘ä¸Šä¸ºæ­£æ–¹å‘
-	float acc_angle_x = -arctan2(acc->y, acc->z);  // Rollè§’ï¼Œæ·»åŠ è´Ÿå·
-	float acc_angle_y = arctan2(acc->x, acc->z);   // Pitchè§’
+	// ¼ÓËÙ¶È¼Æ¼ÆËã½Ç¶È
+	// ¼ÙÉèZÖáÏòÉÏÎªÕı·½Ïò
+	float acc_angle_x = -arctan2(acc->y, acc->z);  // Roll½Ç£¬Ìí¼Ó¸ººÅ
+	float acc_angle_y = arctan2(acc->x, acc->z);   // Pitch½Ç
 	
-	// äº’è¡¥æ»¤æ³¢
+	// »¥²¹ÂË²¨
 	fiter_angle->x = alpha * (last_angle.x + gyro_angle.x) + (1 - alpha) * acc_angle_x;
 	fiter_angle->y = alpha * (last_angle.y + gyro_angle.y) + (1 - alpha) * acc_angle_y;
 	
-	// ä¿å­˜å½“å‰è§’åº¦ç”¨äºä¸‹ä¸€æ¬¡è®¡ç®—
+	// ±£´æµ±Ç°½Ç¶ÈÓÃÓÚÏÂÒ»´Î¼ÆËã
 	last_angle.x = fiter_angle->x;
 	last_angle.y = fiter_angle->y;
 }
 
 float Kp = 0.05f;                         // proportional gain governs rate of convergence to accelerometer/magnetometer
-                                         //æ¯”ä¾‹å¢ç›Šæ§åˆ¶åŠ é€Ÿåº¦è®¡ï¼Œç£åŠ›è®¡çš„æ”¶æ•›é€Ÿç‡
+                                         //±ÈÀıÔöÒæ¿ØÖÆ¼ÓËÙ¶È¼Æ£¬´ÅÁ¦¼ÆµÄÊÕÁ²ËÙÂÊ
 
-#define halfT 0.0025f                     // half the sample period é‡‡æ ·å‘¨æœŸçš„ä¸€åŠ
+#define halfT 0.0025f                     // half the sample period ²ÉÑùÖÜÆÚµÄÒ»°ë
 
 float q0 = 1, q1 = 0, q2 = 0, q3 = 0;     // quaternion elements representing the estimated orientation
 float exInt = 0, eyInt = 0, ezInt = 0;    // scaled integral error
@@ -134,7 +134,7 @@ float exInt = 0, eyInt = 0, ezInt = 0;    // scaled integral error
 void imuupdate(float_xyz_struct *gyr_rad,float_xyz_struct *acc_g,float_ang_struct *att_angle)
 {
 	uint8_t i;
-	float matrix[9] = {1.f,  0.0f,  0.0f, 0.0f,  1.f,  0.0f, 0.0f,  0.0f,  1.f };//åˆå§‹åŒ–çŸ©é˜µ
+	float matrix[9] = {1.f,  0.0f,  0.0f, 0.0f,  1.f,  0.0f, 0.0f,  0.0f,  1.f };//³õÊ¼»¯¾ØÕó
 	float ax = acc_g->x,ay = acc_g->y,az = acc_g->z;
 	float gx = gyr_rad->x,gy = gyr_rad->y,gz = gyr_rad->z;
 	float vx, vy, vz;
@@ -153,45 +153,45 @@ void imuupdate(float_xyz_struct *gyr_rad,float_xyz_struct *acc_g,float_ang_struc
 	if(ax*ay*az==0)
 	return;
 
-	//åŠ é€Ÿåº¦è®¡æµ‹é‡çš„é‡åŠ›å‘é‡(æœºä½“åæ ‡ç³»)
+	//¼ÓËÙ¶È¼Æ²âÁ¿µÄÖØÁ¦ÏòÁ¿(»úÌå×ø±êÏµ)
 	norm = invsqrt(ax*ax + ay*ay + az*az);
 	ax = ax * norm;
 	ay = ay * norm;
 	az = az * norm;
 	//	printf("ax=%0.2f ay=%0.2f az=%0.2f\r\n",ax,ay,az);
 
-	//é™€èºä»ªç§¯åˆ†ä¼°è®¡é‡åŠ›å‘é‡(æœºä½“åæ ‡ç³»)
+	//ÍÓÂİÒÇ»ı·Ö¹À¼ÆÖØÁ¦ÏòÁ¿(»úÌå×ø±êÏµ)
 	vx = 2*(q1q3 - q0q2);
 	vy = 2*(q0q1 + q2q3);
 	vz = q0q0 - q1q1 - q2q2 + q3q3 ;
 	// printf("vx=%0.2f vy=%0.2f vz=%0.2f\r\n",vx,vy,vz);
 
-	//æµ‹é‡çš„é‡åŠ›å‘é‡ä¸ä¼°ç®—çš„é‡åŠ›å‘é‡å·®ç§¯æ±‚å‡ºå‘é‡é—´çš„è¯¯å·®
+	//²âÁ¿µÄÖØÁ¦ÏòÁ¿Óë¹ÀËãµÄÖØÁ¦ÏòÁ¿²î»ıÇó³öÏòÁ¿¼äµÄÎó²î
 	ex = (ay*vz - az*vy); //+ (my*wz - mz*wy);
 	ey = (az*vx - ax*vz); //+ (mz*wx - mx*wz);
 	ez = (ax*vy - ay*vx); //+ (mx*wy - my*wx);
 
 
-	//å°†è¯¯å·®PIåè¡¥å¿åˆ°é™€èºä»ª
+	//½«Îó²îPIºó²¹³¥µ½ÍÓÂİÒÇ
 	gx = gx + Kp*ex;
 	gy = gy + Kp*ey;
-	gz = gz + Kp*ez;//è¿™é‡Œçš„gzç”±äºæ²¡æœ‰è§‚æµ‹è€…è¿›è¡ŒçŸ«æ­£ä¼šäº§ç”Ÿæ¼‚ç§»ï¼Œè¡¨ç°å‡ºæ¥çš„å°±æ˜¯ç§¯åˆ†è‡ªå¢æˆ–è‡ªå‡
+	gz = gz + Kp*ez;//ÕâÀïµÄgzÓÉÓÚÃ»ÓĞ¹Û²âÕß½øĞĞ½ÃÕı»á²úÉúÆ¯ÒÆ£¬±íÏÖ³öÀ´µÄ¾ÍÊÇ»ı·Ö×ÔÔö»ò×Ô¼õ
 	Kp = (10.0f - LIMIT_VAL((fabsf(gyr_rad->x) + fabsf(gyr_rad->y) + fabsf(gyr_rad->z)) / 5.0f,0,10.0f));
-	//å››å…ƒç´ çš„å¾®åˆ†æ–¹ç¨‹
+	//ËÄÔªËØµÄÎ¢·Ö·½³Ì
 	q0 = q0 + (-q1*gx - q2*gy - q3*gz)*halfT;
 	q1 = q1 + (q0*gx + q2*gz - q3*gy)*halfT;
 	q2 = q2 + (q0*gy - q1*gz + q3*gx)*halfT;
 	q3 = q3 + (q0*gz + q1*gy - q2*gx)*halfT;
 
-	//å•ä½åŒ–å››å…ƒæ•°
+	//µ¥Î»»¯ËÄÔªÊı
 	norm = invsqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
 	q0 = q0 * norm;
 	q1 = q1 * norm;
 	q2 = q2 * norm;
 	q3 = q3 * norm;
 //
-	//çŸ©é˜µR å°†æƒ¯æ€§åæ ‡ç³»(n)è½¬æ¢åˆ°æœºä½“åæ ‡ç³»(b)
-	matrix[0] = q0q0 + q1q1 - q2q2 - q3q3;	// 11(å‰åˆ—åè¡Œ)
+	//¾ØÕóR ½«¹ßĞÔ×ø±êÏµ(n)×ª»»µ½»úÌå×ø±êÏµ(b)
+	matrix[0] = q0q0 + q1q1 - q2q2 - q3q3;	// 11(Ç°ÁĞºóĞĞ)
 	matrix[1] = 2.f * (q1q2 + q0q3);	    // 12
 	matrix[2] = 2.f * (q1q3 - q0q2);	    // 13
 	matrix[3] = 2.f * (q1q2 - q0q3);	    // 21
@@ -201,8 +201,8 @@ void imuupdate(float_xyz_struct *gyr_rad,float_xyz_struct *acc_g,float_ang_struc
 	matrix[7] = 2.f * (q2q3 - q0q1);	    // 32
 	matrix[8] = q0q0 - q1q1 - q2q2 + q3q3;	// 33
 
-	//å››å…ƒæ•°è½¬æ¢æˆæ¬§æ‹‰è§’(Z->y->x)
-	att_angle->rol = arctan2(matrix[8], matrix[5]);                          // roll(è´Ÿå·è¦æ³¨æ„)
+	//ËÄÔªÊı×ª»»³ÉÅ·À­½Ç(Z->y->x)
+	att_angle->rol = arctan2(matrix[8], matrix[5]);                          // roll(¸ººÅÒª×¢Òâ)
 	att_angle->pit = -arcsin(matrix[2]); // pitch
     att_angle->yaw = arctan2(matrix[0], matrix[1]);
 	for(i=0;i<9;i++)

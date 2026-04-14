@@ -1,6 +1,6 @@
 #ifndef POSE_H_
 #define POSE_H_
-//ä¸‰è½´æµ®ç‚¹å‹
+//ÈıÖá¸¡µãĞÍ
 typedef struct
 {
     float x;
@@ -8,7 +8,7 @@ typedef struct
     float z;
 }float_xyz_struct;
 
-//å§¿æ€è§£ç®—åçš„è§’åº¦
+//×ËÌ¬½âËãºóµÄ½Ç¶È
 typedef struct
 {
     float rol;
@@ -17,8 +17,8 @@ typedef struct
 }float_ang_struct;
 extern float q0, q1, q2, q3;
 extern float_ang_struct    att_angle;
-extern float_xyz_struct    gyr_rad,gyr_radold;               //æŠŠé™€èºä»ªçš„å„é€šé“è¯»å‡ºçš„æ•°æ®ï¼Œè½¬æ¢æˆå¼§åº¦åˆ¶
-extern float_xyz_struct    acc_g,gry_filt,acc_gold;    //æ»¤æ³¢åçš„å„é€šé“æ•°æ®
+extern float_xyz_struct    gyr_rad,gyr_radold;               //°ÑÍÓÂİÒÇµÄ¸÷Í¨µÀ¶Á³öµÄÊı¾İ£¬×ª»»³É»¡¶ÈÖÆ
+extern float_xyz_struct    acc_g,gry_filt,acc_gold;    //ÂË²¨ºóµÄ¸÷Í¨µÀÊı¾İ
 extern void prepare_data(void);
 extern void imuupdate(float_xyz_struct *gyr_rad,float_xyz_struct *acc_g,float_ang_struct *att_angle);
 extern void one_fiter(float_xyz_struct *acc,float_xyz_struct *gyro, float_xyz_struct *fiter_angle);

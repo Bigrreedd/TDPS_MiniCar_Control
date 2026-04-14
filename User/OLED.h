@@ -10,4 +10,7 @@ void OLED_ShowSignedNum(uint8_t Line, uint8_t Column, int32_t Number, uint8_t Le
 void OLED_ShowHexNum(uint8_t Line, uint8_t Column, uint32_t Number, uint8_t Length);
 void OLED_ShowBinNum(uint8_t Line, uint8_t Column, uint32_t Number, uint8_t Length);
 
+void OLED_ClearLine(uint8_t Line);
+void OLED_DrawBitmap16x16(uint8_t Line, uint8_t StartColumn, const uint8_t *bmp32);
+
 #endif

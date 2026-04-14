@@ -10,7 +10,6 @@
       <TargetName>Target 1</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pCCUsed>5060528::V5.06 update 5 (build 528)::ARMCC</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
@@ -52,7 +51,7 @@
           <OutputName>Project</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
-          <CreateHexFile>1</CreateHexFile>
+          <CreateHexFile>0</CreateHexFile>
           <DebugInformation>1</DebugInformation>
           <BrowseInformation>1</BrowseInformation>
           <ListingPath>.\Listings\</ListingPath>
@@ -134,11 +133,11 @@
             <RunIndependent>0</RunIndependent>
             <UpdateFlashBeforeDebugging>1</UpdateFlashBeforeDebugging>
             <Capability>1</Capability>
-            <DriverSelection>4096</DriverSelection>
+            <DriverSelection>-1</DriverSelection>
           </Flash1>
           <bUseTDR>1</bUseTDR>
           <Flash2>BIN\UL2CM3.DLL</Flash2>
-          <Flash3>"" ()</Flash3>
+          <Flash3></Flash3>
           <Flash4></Flash4>
           <pFcarmOut></pFcarmOut>
           <pFcarmGrp></pFcarmGrp>
@@ -711,6 +710,11 @@
               <FilePath>.\User\OLED.c</FilePath>
             </File>
             <File>
+              <FileName>OLED_CN.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\OLED_CN.c</FilePath>
+            </File>
+            <File>
               <FileName>ABEncoder.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\ABEncoder.c</FilePath>
@@ -789,6 +793,11 @@
               <FileName>BlackPoint_Finder.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\BlackPoint_Finder.h</FilePath>
+            </File>
+            <File>
+              <FileName>TelemetryScreen.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\TelemetryScreen.c</FilePath>
             </File>
             <File>
               <FileName>PID_Controller.c</FileName>

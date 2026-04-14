@@ -15,6 +15,7 @@
 #include "system_stm32f10x.h"
 #include "BlackPoint_Finder.h"
 #include "PID_Controller.h"
+#include "TelemetryScreen.h"
 
 // 滴答定时器初始化，1ms中断一次
 void SysTick_Init(void)
@@ -22,10 +23,6 @@ void SysTick_Init(void)
     // 配置SysTick为1ms中断（SystemCoreClock / 1000）
     SysTick_Config(SystemCoreClock / 500);
 }
-extern float add_angle ;
-extern float add_angle_num ;
-extern int16_t position_get;
-extern BlackPointResult_t result_BlackPoint;
 float BDI_V = 0;
 uint8_t star_car = 0;
 int main(void)
@@ -53,6 +50,7 @@ int main(void)
 //	//串口2初始化
 	 Uart2_Init(115200);
 	 PID_Init();
+	TelemetryScreen_Init();
 //	Delay_s(5);
 	/*主循环，循环体内的代码会一直循环执行*/
 	while (1)
@@ -86,10 +84,7 @@ int main(void)
         }
     }
 
-	  OLED_ShowSignedNum(2,1,position_get,5);
-		OLED_ShowSignedNum(3,1,BDI_V * 100,5);
-//		OLED_ShowSignedNum(3,1,result_BlackPoint.found,5);
-		OLED_ShowSignedNum(4,1,speed_left + speed_right,5);
+		TelemetryScreen_Update();
 //		else
 //		{
 //			while(1);

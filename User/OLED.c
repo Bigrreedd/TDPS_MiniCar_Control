@@ -321,3 +321,31 @@ void OLED_Init(void)
 		
 	OLED_Clear();				//OLED清屏
 }
+
+void OLED_ClearLine(uint8_t Line)
+{
+	uint8_t j;
+	uint8_t i;
+	for (j = 0; j < 2; j++)
+	{
+		OLED_SetCursor((Line - 1) * 2 + j, 0);
+		for (i = 0; i < 128; i++)
+		{
+			OLED_WriteData(0x00);
+		}
+	}
+}
+
+void OLED_DrawBitmap16x16(uint8_t Line, uint8_t StartColumn, const uint8_t *bmp32)
+{
+	uint8_t x0 = (uint8_t)((StartColumn - 1) * 8);
+	uint8_t page = (uint8_t)((Line - 1) * 2);
+	uint8_t i;
+	for (i = 0; i < 16; i++)
+	{
+		OLED_SetCursor(page, (uint8_t)(x0 + i));
+		OLED_WriteData(bmp32[i * 2]);
+		OLED_SetCursor((uint8_t)(page + 1), (uint8_t)(x0 + i));
+		OLED_WriteData(bmp32[i * 2 + 1]);
+	}
+}

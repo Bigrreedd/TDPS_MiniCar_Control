@@ -3,7 +3,7 @@
 
 #include "stm32f10x.h"
 
-// 寮曡剼鏄犲皠锛歅B3(G)锛孭A15(B)锛孭B8(R)
+// 引脚映射：PB3(G)，PA15(B)，PB8(R)
 
 typedef enum {
 	RGB_COLOR_OFF = 0,
