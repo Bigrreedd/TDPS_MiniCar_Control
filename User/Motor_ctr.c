@@ -197,6 +197,27 @@ void Motor_StopAll(void)
 }
 
 /**
+ * @brief  获取电机当前占空比
+ * @note   获取电机当前占空比值
+ * @param  motor_id: 电机编号 (MOTOR_R 或 MOTOR_L)
+ * @retval 电机当前占空比值
+ */
+uint16_t Motor_GetDuty(uint8_t motor_id)
+{
+    switch(motor_id)
+    {
+        case MOTOR_R:
+            return g_motor1_duty;
+            
+        case MOTOR_L:
+            return g_motor2_duty;
+            
+        default:
+            return 0;
+    }
+}
+
+/**
  * @brief  设置PWM频率
  * @note   频率范围1Hz-1MHz
  * @param  freq: 频率值 (Hz)

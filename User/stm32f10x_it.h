@@ -35,6 +35,8 @@
 /* Exported macro ------------------------------------------------------------*/
 extern float add_angle;
 extern float add_angle_deg_360;
+extern volatile uint8_t g_manual_drive_active;
+extern volatile uint16_t g_manual_drive_ticks_remaining;
 /* Exported functions ------------------------------------------------------- */
 
 void NMI_Handler(void);

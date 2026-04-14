@@ -140,6 +140,8 @@ void PendSV_Handler(void)
 float add_angle = 0;
 float add_angle_deg_360 = 0;
 float add_angle_num = 0;
+volatile uint8_t g_manual_drive_active = 0;
+volatile uint16_t g_manual_drive_ticks_remaining = 0;
 int16_t position_get = 0.0f;
 BlackPointResult_t result_BlackPoint;
 extern uint16_t uart_rev_tiem;
@@ -152,14 +154,17 @@ void SysTick_Handler(void)
 	LSM6DSR_ReadData(&LSE6DSR_data);
 	LSM6DSR_ConvertToPhysics(&LSE6DSR_data);
 	
-	uart_rev_tiem ++;
-	if(uart_rev_tiem > 250)
+	if(!g_manual_drive_active)
 	{
-		M3PWM_SetDutyCycle(0);
-		star_car = 0; 
-		uart_rev_tiem = 250;
-		Motor_Disable();
- 	}
+		uart_rev_tiem ++;
+		if(uart_rev_tiem > 250)
+		{
+			M3PWM_SetDutyCycle(0);
+			star_car = 0; 
+			uart_rev_tiem = 250;
+			Motor_Disable();
+	 	}
+	}
 //	// 更新旧的角度计算（用于兼容性，使用转换后的角速度）
 	add_angle += LSE6DSR_data.gz_rads * dt;  // 使用弧度/秒，正确积分
 	add_angle_deg_360 += LSE6DSR_data.gz_rads * dt * RAD_TO_DEG;
@@ -168,6 +173,21 @@ void SysTick_Handler(void)
 	else if (add_angle_deg_360 < 0.0f)
 		add_angle_deg_360 += 360.0f;
 	add_angle_num += 1.0f;
+	if(g_manual_drive_active)
+	{
+		if(g_manual_drive_ticks_remaining > 0)
+		{
+			g_manual_drive_ticks_remaining--;
+		}
+		if(g_manual_drive_ticks_remaining == 0)
+		{
+			g_manual_drive_active = 0;
+			M3PWM_SetDutyCycle(0);
+			star_car = 0;
+			Motor_StopAll();
+			Motor_Disable();
+		}
+	}
 	
 	// 保留旧的姿态解算调用（可选，用于对比）
 //	prepare_data();
@@ -175,30 +195,36 @@ void SysTick_Handler(void)
 	
 	ABEncoder_UpdateSpeed();
 	MuxADC_SampleAll();
-	BlackPoint_Finder_Search(g_mux_adc_values, &result_BlackPoint);
-	if(result_BlackPoint.found)
+	if(!g_manual_drive_active)
 	{
-			// 找到黑点，位置在 result.position
-			position_get = result_BlackPoint.precise_position * 10.0f;//BlackPoint_Finder_Search(g_mux_adc_values, &result_BlackPoint)*10.0f;
-			if(lose_time > 0)
-			{
-					lose_time--;
-			}
-			// 使用 position 进行后续控制
+		BlackPoint_Finder_Search(g_mux_adc_values, &result_BlackPoint);
+		if(result_BlackPoint.found)
+		{
+				// 找到黑点，位置在 result.position
+				position_get = result_BlackPoint.precise_position * 10.0f;//BlackPoint_Finder_Search(g_mux_adc_values, &result_BlackPoint)*10.0f;
+				if(lose_time > 0)
+				{
+						lose_time--;
+				}
+				// 使用 position 进行后续控制
+		}
+		else
+		{
+				
+				lose_time ++;
+				if(lose_time > 500)
+				{
+					lose_time = 500;
+					Motor_Disable();
+					star_car = 0; 
+				}
+			// 未找到黑点，使用上一个位置 result.position
+		}
 	}
-	else
+	if(!g_manual_drive_active)
 	{
-			
-			lose_time ++;
-			if(lose_time > 500)
-			{
-				lose_time = 500;
-				Motor_Disable();
-				star_car = 0; 
-			}
-		// 未找到黑点，使用上一个位置 result.position
+		PID_Control_Update();
 	}
-	PID_Control_Update();
 }
 
 /******************************************************************************/

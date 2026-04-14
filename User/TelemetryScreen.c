@@ -3,7 +3,7 @@
 #include "OLED_CN.h"
 #include "BlackPoint_Finder.h"
 #include "ADC_get.h"
-#include "M3PWM.h"
+#include "Motor_ctr.h"
 #include "ABEncoder.h"
 #include <stdio.h>
 
@@ -64,8 +64,8 @@ void TelemetryScreen_Update(void)
 	if (v100 < 0)
 		v100 = 0;
 
-	uint16_t duty = M3PWM_GetDutyCycle();
-	uint8_t pwm_pct = (uint8_t)((duty * 100u) / 1000u);
+	uint32_t duty = ((uint32_t)Motor_GetDuty(MOTOR_L) + (uint32_t)Motor_GetDuty(MOTOR_R)) / 2u;
+	uint8_t pwm_pct = (uint8_t)((duty * 100u) / MOTOR_DUTY_MAX);
 	if (pwm_pct > 100u)
 		pwm_pct = 100;
 

@@ -25,5 +25,6 @@ void Motor_SetDirection(uint8_t motor_id, uint8_t direction);  // 设置电机�
 void Motor_Stop(uint8_t motor_id);               // 停止指定电机
 void Motor_StopAll(void);                        // 停止所有电机
 void Motor_SetFrequency(uint32_t freq);          // 设置PWM频率
+uint16_t Motor_GetDuty(uint8_t motor_id);
 
 #endif 
