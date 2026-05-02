@@ -26,12 +26,12 @@ void SysTick_Init(void)
 }
 
 float BDI_V = 0;
-uint8_t star_car = 0;
+uint8_t is_racing = 0;
 
 // 手动驾驶模式（K3/K4 使用）
 static void StartManualDrive(uint16_t motor_duty)
 {
-    star_car = 0;
+    is_racing = 0;
     Path_StopRace();               // 确保自动循迹已停止
     g_manual_drive_active = 1;
     g_manual_drive_ticks_remaining = 1000; // 2 seconds
@@ -77,7 +77,7 @@ int main(void)
                 // K1: 启动自动循迹模式
                 RGB_SetColor(1);
                 Motor_Enable();
-                star_car = 1;
+                is_racing = 1;
                 Path_StartRace();
                 break;
             case KEY_K2:

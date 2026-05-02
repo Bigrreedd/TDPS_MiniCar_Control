@@ -2,7 +2,7 @@
 
 // 全局变量
 static uint32_t g_pwm_frequency = PWM_FREQUENCY_17KHZ;  // 当前PWM频率
-static uint8_t g_pwm_duty_cycle = PWM_DUTY_CYCLE_50;    // 当前PWM占空比
+static uint16_t g_pwm_duty_cycle = PWM_DUTY_CYCLE_50;   // 当前PWM占空比
 
 /**
  * @brief  PWM初始化函数

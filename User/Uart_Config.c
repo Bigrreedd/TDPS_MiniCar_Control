@@ -63,12 +63,12 @@ void Uart2_Init(uint32_t baudrate)
 	USART_Cmd(USART2, ENABLE);
 }
 
-extern uint16_t uart_rev_tiem;
+extern uint16_t uart_rx_timeout;
 void USART2_IRQHandler(void)
 {
 	if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
 	{
-		uart_rev_tiem = 0;
+		uart_rx_timeout = 0;
 		uint8_t data = (uint8_t)USART_ReceiveData(USART2);
 		uint16_t next = (uint16_t)((s_usart2_rx_head + 1) % USART2_RX_BUFFER_SIZE);
 		if(next != s_usart2_rx_tail)

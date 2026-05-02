@@ -42,7 +42,7 @@ LDSCRIPT = STM32F103XB_FLASH.ld
 
 # 9. 编译和链接参数配置
 CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) -O2 -Wall -fdata-sections -ffunction-sections
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) -Wl,-Map=$(TARGET).map,--cref -Wl,--gc-sections -lm
+LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -T$(LDSCRIPT) -Wl,-Map=$(TARGET).map,--cref -Wl,--gc-sections -lm
 
 # ==========================================
 # 编译执行规则 (Build Rules)

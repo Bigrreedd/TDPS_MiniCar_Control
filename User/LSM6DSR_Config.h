@@ -71,7 +71,7 @@ typedef struct
 	float gy_rads;  // 角速度 Y轴 (弧度/秒)
 	float gz_rads;  // 角速度 Z轴 (弧度/秒)
 }LSM6DSR_DATA_T;
-extern LSM6DSR_DATA_T LSE6DSR_data;
+extern LSM6DSR_DATA_T LSM6DSR_data;
 // 函数声明
 uint8_t LSM6DSR_Init(void);
 uint8_t LSM6DSR_ReadID(void);

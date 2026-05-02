@@ -3,7 +3,7 @@
 
 static int16_t last_count_left = 0,last_count_right = 0;
 int16_t speed_left = 0,speed_right = 0;
-int32_t left_ecoder_cnt = 0, right_ecoder_cnt = 0;
+int32_t left_encoder_cnt = 0, right_encoder_cnt = 0;
 void ABEncoder_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
@@ -57,6 +57,6 @@ void ABEncoder_UpdateSpeed(void) // 计算速度
 		int16_t now_right =  TIM_GetCounter(TIM3);
 	  speed_right = now_right - last_count_right;
     last_count_right = now_right;
-		left_ecoder_cnt += speed_left;
-		right_ecoder_cnt += speed_right;
+		left_encoder_cnt += speed_left;
+		right_encoder_cnt += speed_right;
 }

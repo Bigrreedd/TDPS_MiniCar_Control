@@ -6,7 +6,7 @@ static uint16_t g_motor1_duty = 0;                          // 电机1当前占�
 static uint16_t g_motor2_duty = 0;                          // 电机2当前占空比
 static uint8_t g_motor1_direction = MOTOR_DIR_FORWARD;      // 电机1当前方向
 static uint8_t g_motor2_direction = MOTOR_DIR_FORWARD;      // 电机2当前方向
-uint16_t uart_rev_tiem = 0;
+uint16_t uart_rx_timeout = 0;
 /**
  * @brief  电机初始化函数
  * @note   配置PA12为电机使能，PA8/PA10为方向控制，PA9/PA11为PWM输出

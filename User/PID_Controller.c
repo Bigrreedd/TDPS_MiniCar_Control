@@ -147,7 +147,7 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	
 	// 微分项：Kd * [e(k) - e(k-1)]
 	float d_term = controller->param.kd * (error - controller->last_error);
-	float gyro_term = controller->param.gyro_kd * LSE6DSR_data.gz_rads;
+	float gyro_term = controller->param.gyro_kd * LSM6DSR_data.gz_rads;
 	if(gyro_term >= 3500)
 	{
 		gyro_term = 3500;
@@ -250,7 +250,7 @@ void PID_Init(void)
     // 位置环：输出偏差值，叠加到速度环
     PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 1400.0f, 9000.0f, -9000.0f, 8.0f);
 }
-extern uint8_t star_car;
+extern uint8_t is_racing;
 void PID_Control_Update(void)
 {
     Path_Update();  // 先更新路径状态机
@@ -261,7 +261,7 @@ void PID_Control_Update(void)
     float left_output,right_output;
 		float i_speed = 0;
 		static uint8_t first_set = 0; 
-		static float statr_speed = 0; 	
+		static float start_speed = 0; 	
     // 1. 获取当前位置（从你的position变量）
     current_position = (float)position_get / 10.0f;
     
@@ -273,22 +273,22 @@ void PID_Control_Update(void)
     
 		i_speed = Path_GetTargetSpeed();
     // 4. 速度环计算（输出基础速度）
-		if(star_car)
+		if(is_racing)
     {
-			if(statr_speed < i_speed && first_set == 0)
+			if(start_speed < i_speed && first_set == 0)
 			{
-				statr_speed += 2.0f;
+				start_speed += 2.0f;
 			}
 			else
 			{
-				statr_speed = i_speed;
+				start_speed = i_speed;
 				first_set  = 1;
 			}
-			speed_output = SpeedPID_Calculate(&g_speed_pid, statr_speed, avg_speed);
+			speed_output = SpeedPID_Calculate(&g_speed_pid, start_speed, avg_speed);
     }
 		else
 		{	
-			statr_speed = 0;
+			start_speed = 0;
 			first_set = 0;
 			g_speed_pid.last_output = 0;
 			g_speed_pid.last_error = 0;

@@ -1,5 +1,10 @@
 #include "stm32f10x.h"
 
+// GCC 兼容：Keil 的 __nop() 在 GCC 中不存在，映射为内联汇编
+#ifndef __nop
+#define __nop() __asm("nop")
+#endif
+
 /**
   * @brief  微秒级延时
   * @param  xus 延时时长，范围：0~233015

@@ -14,7 +14,7 @@
 static PathState_t g_path;
 
 extern int16_t    position_get;
-extern uint8_t    star_car;
+extern uint8_t    is_racing;
 extern float      add_angle;
 extern BlackPointResult_t result_BlackPoint;
 
@@ -45,7 +45,7 @@ void Path_StartRace(void)
 void Path_StopRace(void)
 {
     Path_SwitchSegment(SEG_IDLE);
-    star_car = 0;
+    is_racing = 0;
     Motor_Disable();
 }
 
@@ -124,7 +124,7 @@ void Path_Update(void)
 
     case SEG_FINISH:
         g_path.current_target_speed = 0.0f;
-        star_car = 0;
+        is_racing = 0;
         Motor_Disable();
         break;
 

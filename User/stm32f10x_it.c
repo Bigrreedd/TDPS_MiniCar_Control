@@ -142,32 +142,32 @@ float add_angle_deg_360 = 0;
 float add_angle_num = 0;
 volatile uint8_t g_manual_drive_active = 0;
 volatile uint16_t g_manual_drive_ticks_remaining = 0;
-int16_t position_get = 0.0f;
+int16_t position_get = 0;
 BlackPointResult_t result_BlackPoint;
-extern uint16_t uart_rev_tiem;
-extern uint8_t star_car;
+extern uint16_t uart_rx_timeout;
+extern uint8_t is_racing;
 
 void SysTick_Handler(void)
 {
 	float dt = 0.002f;
 	static uint32_t lose_time = 0;
-	LSM6DSR_ReadData(&LSE6DSR_data);
-	LSM6DSR_ConvertToPhysics(&LSE6DSR_data);
+	LSM6DSR_ReadData(&LSM6DSR_data);
+	LSM6DSR_ConvertToPhysics(&LSM6DSR_data);
 	
 	if(!g_manual_drive_active)
 	{
-		uart_rev_tiem ++;
-		if(uart_rev_tiem > 250)
+		uart_rx_timeout ++;
+		if(uart_rx_timeout > 250)
 		{
 			M3PWM_SetDutyCycle(0);
-			star_car = 0; 
-			uart_rev_tiem = 250;
+			is_racing = 0; 
+			uart_rx_timeout = 250;
 			Motor_Disable();
 	 	}
 	}
 //	// 更新旧的角度计算（用于兼容性，使用转换后的角速度）
-	add_angle += LSE6DSR_data.gz_rads * dt;  // 使用弧度/秒，正确积分
-	add_angle_deg_360 += LSE6DSR_data.gz_rads * dt * RAD_TO_DEG;
+	add_angle += LSM6DSR_data.gz_rads * dt;  // 使用弧度/秒，正确积分
+	add_angle_deg_360 += LSM6DSR_data.gz_rads * dt * RAD_TO_DEG;
 	if (add_angle_deg_360 >= 360.0f)
 		add_angle_deg_360 -= 360.0f;
 	else if (add_angle_deg_360 < 0.0f)
@@ -183,7 +183,7 @@ void SysTick_Handler(void)
 		{
 			g_manual_drive_active = 0;
 			M3PWM_SetDutyCycle(0);
-			star_car = 0;
+			is_racing = 0;
 			Motor_StopAll();
 			Motor_Disable();
 		}
@@ -216,7 +216,7 @@ void SysTick_Handler(void)
 				{
 					lose_time = 500;
 					Motor_Disable();
-					star_car = 0; 
+					is_racing = 0; 
 				}
 			// 未找到黑点，使用上一个位置 result.position
 		}

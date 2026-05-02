@@ -3,7 +3,7 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_spi.h"
 #include "Delay.h"
-LSM6DSR_DATA_T LSE6DSR_data;
+LSM6DSR_DATA_T LSM6DSR_data;
 #ifdef USE_SOFTWARE_SPI
 
 // ==================== 软件SPI接口 ====================
