@@ -1,54 +1,256 @@
 #include "Path.h"
 #include "BlackPoint_Finder.h"
-#include "Motor_ctr.h"
 #include "PID_Controller.h"
-#include <math.h>
+#include "ABEncoder.h"
+#include "M3PWM.h"
+#include "Motor_ctr.h"
+#include "stm32f10x_it.h"
 
-/* ========== 内部速度常量 ========== */
-#define SPEED_VERY_SLOW   100.0f
-#define SPEED_SLOW        150.0f
-#define SPEED_NORMAL      200.0f
-#define SPEED_FAST        250.0f
+/* 文件级 extern（避免函数体内重复声明） */
+extern int16_t          position_get;
+extern BlackPointResult_t result_BlackPoint;
 
 /* ========== 内部状态 ========== */
 static PathState_t g_path;
 
-extern int16_t    position_get;
-extern uint8_t    is_racing;
-extern float      add_angle;
-extern BlackPointResult_t result_BlackPoint;
+/* 里程参数（根据实际编码器标定调整） */
+#define ENCODER_TICKS_PER_CM    6.0f    /* 编码器脉冲/cm（示例值，需实测 */
 
-/* ========== 私有辅助 ========== */
-static void Path_SwitchSegment(PathSegment_t seg)
-{
-    g_path.current_segment    = seg;
-    g_path.seg_ticks          = 0;
-    g_path.line_stable_count  = 0;
-    g_path.line_lost_count    = 0;
-}
+/* 计数器饱和上限 */
+#define COUNT_SAT               1000
 
-/* ========== 公共接口 ========== */
+/* 段距离阈值 (cm) */
+#define DIST_START_SEARCH       30.0f   /* 起步寻线距离 */
+#define DIST_START_STRAIGHT     20.0f   /* 起步直行稳定 */
+#define DIST_U_TURN_ZONE        80.0f   /* U弯检测区 */
+#define DIST_S_CURVE_ZONE       150.0f  /* S弯检测区 */
+#define DIST_BOX_ZONE           250.0f  /* 方框区 */
+#define DIST_CIRCLE_ZONE        350.0f  /* 圆圈区 */
+#define DIST_RADAR_APPROACH     600.0f  /* 雷达区 */
+#define DIST_FINISH             750.0f  /* 终点区 */
+
+/* 速度定义 (占空比 /1000) */
+#define SPEED_SEARCH            250
+#define SPEED_STRAIGHT          400
+#define SPEED_LINE_FOLLOW       350
+#define SPEED_U_TURN            200
+#define SPEED_S_CURVE           250
+#define SPEED_BOX               200
+#define SPEED_CIRCLE            200
+#define SPEED_RADAR             150
+#define SPEED_FINISH            300
+
+/* 丢线/稳线计数阈值 */
+#define LINE_LOST_THRESHOLD     30
+#define LINE_STABLE_THRESHOLD   10
+
+/* ========== 初始化 ========== */
 void Path_Init(void)
 {
-    g_path.current_segment     = SEG_IDLE;
-    g_path.seg_ticks           = 0;
-    g_path.line_stable_count   = 0;
-    g_path.line_lost_count     = 0;
-    g_path.current_target_speed = 0.0f;
+    g_path.current_segment      = SEG_IDLE;
+    g_path.seg_ticks            = 0;
+    g_path.line_stable_count    = 0;
+    g_path.line_lost_count      = 0;
+    g_path.current_target_speed = 0;
+    g_path.total_dist_cm        = 0.0f;
+    g_path.seg_start_dist_cm    = 0.0f;
+    g_path.track_side           = TRACK_UNKNOWN;
+    g_path.curve_strength       = 0.0f;
+    g_path.was_in_curve         = 0;
+    g_path.seg_had_line_loss    = 0;
 }
 
 void Path_StartRace(void)
 {
-    Path_SwitchSegment(SEG_START_SEARCH);
+    Path_Init();
+    g_path.current_segment      = SEG_START_SEARCH;
+    g_path.current_target_speed = SPEED_SEARCH;
+    g_path.seg_start_dist_cm    = 0.0f;
 }
 
 void Path_StopRace(void)
 {
-    Path_SwitchSegment(SEG_IDLE);
-    is_racing = 0;
-    Motor_Disable();
+    g_path.current_segment      = SEG_IDLE;
+    g_path.current_target_speed = 0;
 }
 
+/* ========== 里程更新（由编码器中断或主循环调用） ========== */
+void Path_UpdateOdometer(int32_t left_delta, int32_t right_delta)
+{
+    float avg_ticks = (float)(left_delta + right_delta) * 0.5f;
+    g_path.total_dist_cm += avg_ticks / ENCODER_TICKS_PER_CM;
+}
+
+/* ========== 弯道检测辅助 ========== */
+static float CalcCurveStrength(void)
+{
+    /* 使用 position_get 的方差近似弯道强度 */
+    static float pos_history[8];
+    static uint8_t idx = 0;
+    float mean = 0.0f;
+    float var  = 0.0f;
+
+    pos_history[idx] = (float)position_get;
+    idx = (idx + 1) & 0x07;
+
+    for (uint8_t i = 0; i < 8; i++) {
+        mean += pos_history[i];
+    }
+    mean /= 8.0f;
+    for (uint8_t i = 0; i < 8; i++) {
+        float d = pos_history[i] - mean;
+        var += d * d;
+    }
+    var /= 8.0f;
+    return var;
+}
+
+/* ========== 赛道侧检测 ========== */
+static void DetectTrackSide(void)
+{
+    if (g_path.track_side == TRACK_UNKNOWN) {
+        if (position_get > 50) {
+            g_path.track_side = TRACK_LEFT;
+        } else if (position_get < -50) {
+            g_path.track_side = TRACK_RIGHT;
+        }
+    }
+}
+
+/* ========== 段转移辅助 ========== */
+static void TransitionTo(PathSegment_t seg, uint16_t speed)
+{
+    g_path.current_segment      = seg;
+    g_path.current_target_speed = speed;
+    g_path.seg_ticks            = 0;
+    g_path.seg_start_dist_cm    = g_path.total_dist_cm;
+    g_path.seg_had_line_loss    = 0;
+}
+
+/* ========== 路径状态机主更新（主循环 2ms 调用一次） ========== */
+void Path_Update(void)
+{
+    if (g_path.current_segment == SEG_IDLE || g_path.current_segment == SEG_FINISH) {
+        return;
+    }
+
+    g_path.seg_ticks++;
+    float seg_dist = g_path.total_dist_cm - g_path.seg_start_dist_cm;
+
+    /* 弯道检测 */
+    g_path.curve_strength = CalcCurveStrength();
+    uint8_t in_curve = (g_path.curve_strength > 2000.0f) ? 1 : 0;
+
+    /* 线跟踪状态 */
+    if (result_BlackPoint.found) {
+        if (g_path.line_lost_count > 0) g_path.line_lost_count--;
+        if (g_path.line_stable_count < COUNT_SAT) g_path.line_stable_count++;
+    } else {
+        if (g_path.line_lost_count < COUNT_SAT) g_path.line_lost_count++;
+        if (g_path.line_stable_count > 0) g_path.line_stable_count--;
+        if (g_path.line_lost_count > LINE_LOST_THRESHOLD) g_path.seg_had_line_loss = 1;
+    }
+
+    /* 赛道侧检测 */
+    DetectTrackSide();
+
+    /* ---- 状态机 ---- */
+    switch (g_path.current_segment) {
+
+    case SEG_START_SEARCH:
+        if (g_path.line_stable_count >= LINE_STABLE_THRESHOLD) {
+            TransitionTo(SEG_START_STRAIGHT, SPEED_STRAIGHT);
+        } else if (seg_dist > DIST_START_SEARCH) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_START_STRAIGHT:
+        if (seg_dist > DIST_START_STRAIGHT) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_LINE_FOLLOW:
+        /* 依据里程判断是否进入特殊路段 */
+        if (g_path.total_dist_cm > DIST_U_TURN_ZONE &&
+            g_path.total_dist_cm < DIST_U_TURN_ZONE + 60.0f &&
+            in_curve && !g_path.was_in_curve) {
+            TransitionTo(SEG_U_TURN, SPEED_U_TURN);
+        } else if (g_path.total_dist_cm > DIST_S_CURVE_ZONE &&
+                   g_path.total_dist_cm < DIST_S_CURVE_ZONE + 100.0f &&
+                   in_curve) {
+            TransitionTo(SEG_S_CURVE, SPEED_S_CURVE);
+        } else if (g_path.total_dist_cm > DIST_BOX_ZONE &&
+                   g_path.total_dist_cm < DIST_BOX_ZONE + 80.0f &&
+                   g_path.line_lost_count > LINE_LOST_THRESHOLD) {
+            TransitionTo(SEG_BOX_1, SPEED_BOX);
+        } else if (g_path.total_dist_cm > DIST_CIRCLE_ZONE &&
+                   g_path.total_dist_cm < DIST_CIRCLE_ZONE + 80.0f) {
+            TransitionTo(SEG_QUAD_CIRCLES, SPEED_CIRCLE);
+        } else if (g_path.total_dist_cm > DIST_RADAR_APPROACH) {
+            TransitionTo(SEG_RADAR_APPROACH, SPEED_RADAR);
+        }
+        break;
+
+    case SEG_U_TURN:
+        /* U弯: 段内曾丢线且重新找回线 → 回到循迹 */
+        if (g_path.seg_had_line_loss &&
+            g_path.line_stable_count >= LINE_STABLE_THRESHOLD) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        } else if (seg_dist > 100.0f) {
+            /* 安全兜底 */
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_S_CURVE:
+        if (!in_curve && g_path.line_stable_count >= LINE_STABLE_THRESHOLD) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        } else if (seg_dist > 150.0f) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_BOX_1:
+        if (g_path.line_stable_count >= LINE_STABLE_THRESHOLD && !in_curve) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        } else if (seg_dist > 120.0f) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_QUAD_CIRCLES:
+        /* 圆圈区: 连续循迹 + 距离判断退出 */
+        if (seg_dist > 120.0f && g_path.line_stable_count >= LINE_STABLE_THRESHOLD) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        } else if (seg_dist > 200.0f) {
+            TransitionTo(SEG_LINE_FOLLOW, SPEED_LINE_FOLLOW);
+        }
+        break;
+
+    case SEG_RADAR_APPROACH:
+        if (g_path.total_dist_cm > DIST_FINISH) {
+            TransitionTo(SEG_FINISH_APPROACH, SPEED_FINISH);
+        }
+        break;
+
+    case SEG_FINISH_APPROACH:
+        if (seg_dist > 60.0f || g_path.total_dist_cm > DIST_FINISH + 60.0f) {
+            TransitionTo(SEG_FINISH, 0);
+        }
+        break;
+
+    case SEG_FINISH:
+    case SEG_IDLE:
+    default:
+        break;
+    }
+
+    g_path.was_in_curve = in_curve;
+}
+
+/* ========== 公共查询接口 ========== */
 PathSegment_t Path_GetCurrentSegment(void)
 {
     return g_path.current_segment;
@@ -61,75 +263,29 @@ float Path_GetTargetSpeed(void)
 
 void Path_SetSegment(PathSegment_t seg)
 {
-    Path_SwitchSegment(seg);
+    uint16_t speed = SPEED_LINE_FOLLOW;
+    switch (seg) {
+    case SEG_START_SEARCH:   speed = SPEED_SEARCH;    break;
+    case SEG_START_STRAIGHT: speed = SPEED_STRAIGHT;  break;
+    case SEG_U_TURN:         speed = SPEED_U_TURN;    break;
+    case SEG_S_CURVE:        speed = SPEED_S_CURVE;   break;
+    case SEG_BOX_1:          speed = SPEED_BOX;       break;
+    case SEG_QUAD_CIRCLES:   speed = SPEED_CIRCLE;    break;
+    case SEG_RADAR_APPROACH: speed = SPEED_RADAR;     break;
+    case SEG_FINISH_APPROACH: speed = SPEED_FINISH;   break;
+    case SEG_FINISH:         speed = 0;               break;
+    case SEG_IDLE:           speed = 0;               break;
+    default:                 speed = SPEED_LINE_FOLLOW; break;
+    }
+    TransitionTo(seg, speed);
 }
 
-/* ========== 核心状态机（在 PID_Control_Update 中调用，500Hz） ========== */
-void Path_Update(void)
+TrackSide_t Path_GetTrackSide(void)
 {
-    g_path.seg_ticks++;
+    return g_path.track_side;
+}
 
-    /* 全局丢线保护 */
-    if (result_BlackPoint.found) {
-        g_path.line_stable_count++;
-        g_path.line_lost_count = 0;
-    } else {
-        g_path.line_lost_count++;
-        g_path.line_stable_count = 0;
-    }
-
-    /* 丢线超时 → 停车 */
-    if (g_path.line_lost_count > 1000 && g_path.current_segment != SEG_IDLE) {
-        Path_StopRace();
-        return;
-    }
-
-    switch (g_path.current_segment) {
-
-    case SEG_IDLE:
-        g_path.current_target_speed = 0.0f;
-        break;
-
-    case SEG_START_SEARCH:
-        g_path.current_target_speed = SPEED_VERY_SLOW;
-        /* 稳定找到黑线 → 进入直行 */
-        if (g_path.line_stable_count >= 5) {
-            Path_SwitchSegment(SEG_START_STRAIGHT);
-        }
-        /* 10秒超时 → 停车 */
-        else if (g_path.seg_ticks > 5000) {
-            Path_StopRace();
-        }
-        break;
-
-    case SEG_START_STRAIGHT:
-        g_path.current_target_speed = SPEED_SLOW;
-        /* 3秒后进入正常循迹 */
-        if (g_path.seg_ticks > 1500) {
-            Path_SwitchSegment(SEG_LINE_FOLLOW);
-        }
-        break;
-
-    case SEG_LINE_FOLLOW:
-        g_path.current_target_speed = SPEED_NORMAL;
-        break;
-
-    case SEG_CURVE:
-        g_path.current_target_speed = SPEED_SLOW;
-        /* 弯道结束后回到循迹 */
-        if (g_path.seg_ticks > 2000) {
-            Path_SwitchSegment(SEG_LINE_FOLLOW);
-        }
-        break;
-
-    case SEG_FINISH:
-        g_path.current_target_speed = 0.0f;
-        is_racing = 0;
-        Motor_Disable();
-        break;
-
-    default:
-        Path_SwitchSegment(SEG_IDLE);
-        break;
-    }
+float Path_GetTotalDistCm(void)
+{
+    return g_path.total_dist_cm;
 }

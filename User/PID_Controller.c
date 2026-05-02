@@ -1,6 +1,7 @@
 #include "PID_Controller.h"
 #include "LSM6DSR_Config.h"
 #include "Path.h"
+#include "ABEncoder.h"
 #include <math.h>
  extern int16_t position_get;
 // ==================== 速度环PID实现 ====================
@@ -253,7 +254,8 @@ void PID_Init(void)
 extern uint8_t is_racing;
 void PID_Control_Update(void)
 {
-    Path_Update();  // 先更新路径状态机
+    Path_UpdateOdometer(speed_left, speed_right);  // 里程累积
+    Path_Update();  // 更新路径状态机
     float current_position;
     float avg_speed;
     float speed_output;
