@@ -328,9 +328,9 @@ void LSM6DSR_ConvertToPhysics(LSM6DSR_DATA_T *physics)
 	// 转换步骤：
 	//   1. 度/秒 = 原始值 / 14.3f
 	//   2. 弧度/秒 = 度/秒 × (π/180)
-	const float GYRO_LSB_TO_RAD_PER_SEC = 1637.022271802352025f;  
+	const float GYRO_LSB_TO_RAD_PER_SEC = 818.511487f;  // 1/(0.07 * pi/180), ±2000dps sensitivity=70mdps/LSB
 	physics->gx_rads = ((float)physics->gx - 3.519f) / GYRO_LSB_TO_RAD_PER_SEC;
-	physics->gy_rads = ((float)physics->gy  + 12.03f)/ GYRO_LSB_TO_RAD_PER_SEC;
-	physics->gz_rads = ((float)physics->gz + 3.205f)/ GYRO_LSB_TO_RAD_PER_SEC;
+	physics->gy_rads = ((float)physics->gy + 12.03f) / GYRO_LSB_TO_RAD_PER_SEC;
+	physics->gz_rads = ((float)physics->gz + 3.205f) / GYRO_LSB_TO_RAD_PER_SEC;
 }
 

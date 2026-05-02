@@ -1,5 +1,6 @@
 #include "PID_Controller.h"
 #include "LSM6DSR_Config.h"
+#include "Path.h"
 #include <math.h>
  extern int16_t position_get;
 // ==================== 速度环PID实现 ====================
@@ -147,13 +148,13 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	// 微分项：Kd * [e(k) - e(k-1)]
 	float d_term = controller->param.kd * (error - controller->last_error);
 	float gyro_term = controller->param.gyro_kd * LSE6DSR_data.gz_rads;
-	if(gyro_term >= 7000)
+	if(gyro_term >= 3500)
 	{
-		gyro_term = 7000;
+		gyro_term = 3500;
 	}
-	else if(gyro_term <= -7000)
+	else if(gyro_term <= -3500)
 	{
-		gyro_term = -7000;
+		gyro_term = -3500;
 	}
 	// 输出偏差值（直接叠加到速度环输出）
 	output = p_term + i_term + d_term - gyro_term;
@@ -247,11 +248,12 @@ void PID_Init(void)
     SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, 8000.0f, -8000.0f);
     
     // 位置环：输出偏差值，叠加到速度环
-    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 2800.0f, 9000.0f, -9000.0f, 8.0f);
+    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 1400.0f, 9000.0f, -9000.0f, 8.0f);
 }
 extern uint8_t star_car;
 void PID_Control_Update(void)
 {
+    Path_Update();  // 先更新路径状态机
     float current_position;
     float avg_speed;
     float speed_output;
@@ -269,13 +271,13 @@ void PID_Control_Update(void)
     // 3. 计算平均速度
     avg_speed = ((float)speed_left + (float)speed_right) / 2.0f;
     
-		i_speed = 230 - (fmin(fabs(current_position - 8),3)/3) * 100;
+		i_speed = Path_GetTargetSpeed();
     // 4. 速度环计算（输出基础速度）
 		if(star_car)
     {
 			if(statr_speed < i_speed && first_set == 0)
 			{
-				statr_speed += 0.5f;
+				statr_speed += 2.0f;
 			}
 			else
 			{

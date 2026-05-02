@@ -810,6 +810,16 @@
               <FileType>5</FileType>
               <FilePath>.\User\PID_Controller.h</FilePath>
             </File>
+            <File>
+              <FileName>Path.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\Path.c</FilePath>
+            </File>
+            <File>
+              <FileName>Path.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\Path.h</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>
