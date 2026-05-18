@@ -11,6 +11,9 @@ DebugConfig/
 *.d
 *.crf
 *.axf
+*.elf
+*.hex
+*.bin
 *.htm
 *.dep
 *.lnp
@@ -62,3 +65,10 @@ Desktop.ini
 # -------------------------------------------------
 __pycache__/
 *.pyc
+
+# 忽略背景文档和本地文档
+TDPS_Background/
+TDPS_Document/
+
+# 忽略 Obsidian 配置
+.obsidian/
