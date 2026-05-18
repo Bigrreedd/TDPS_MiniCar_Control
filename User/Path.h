@@ -48,7 +48,7 @@ void            Path_Init(void);
 void            Path_StartRace(void);
 void            Path_StopRace(void);
 void            Path_Update(void);              // 在主循环控制环中调用
-void            Path_UpdateOdometer(int32_t left_delta, int32_t right_delta);
+void            Path_UpdateOdometer(int32_t left_pulse_delta, int32_t right_pulse_delta);
 PathSegment_t   Path_GetCurrentSegment(void);
 float           Path_GetTargetSpeed(void);
 void            Path_SetSegment(PathSegment_t seg);

@@ -71,12 +71,12 @@ typedef struct
 	float gy_rads;  // 角速度 Y轴 (弧度/秒)
 	float gz_rads;  // 角速度 Z轴 (弧度/秒)
 }LSM6DSR_DATA_T;
-extern LSM6DSR_DATA_T LSM6DSR_data;
+extern volatile LSM6DSR_DATA_T LSM6DSR_data;
 // 函数声明
 uint8_t LSM6DSR_Init(void);
 uint8_t LSM6DSR_ReadID(void);
-void LSM6DSR_ReadData(LSM6DSR_DATA_T *physics);
-void LSM6DSR_ConvertToPhysics(LSM6DSR_DATA_T *physics);
+void LSM6DSR_ReadData(volatile LSM6DSR_DATA_T *physics);
+void LSM6DSR_ConvertToPhysics(volatile LSM6DSR_DATA_T *physics);
 uint8_t LSM6DSR_ReadReg(uint8_t reg);
 void LSM6DSR_WriteReg(uint8_t reg, uint8_t value);
 void LSM6DSR_ReadRegs(uint8_t reg, uint8_t *buf, uint8_t len);

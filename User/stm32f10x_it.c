@@ -60,15 +60,15 @@ void PendSV_Handler(void)
 {
 }
 
-float add_angle = 0;
-float add_angle_deg_360 = 0;
-float add_angle_num = 0;
+volatile float add_angle = 0;
+volatile float add_angle_deg_360 = 0;
+volatile uint32_t add_angle_num = 0;
 volatile uint8_t g_manual_drive_active = 0;
 volatile uint16_t g_manual_drive_ticks_remaining = 0;
 volatile uint8_t g_control_tick = 0;
-int16_t position_get = 0;
-extern uint16_t uart_rx_timeout;
-extern uint8_t is_racing;
+volatile int16_t position_get = 0;
+extern volatile uint16_t uart_rx_timeout;
+extern volatile uint8_t is_racing;
 
 void SysTick_Handler(void)
 {
@@ -78,8 +78,8 @@ void SysTick_Handler(void)
 	LSM6DSR_ReadData(&LSM6DSR_data);
 	LSM6DSR_ConvertToPhysics(&LSM6DSR_data);
 
-	// 2. 串口看门狗
-	if(!g_manual_drive_active)
+	// 2. 串口看门狗（仅在等待串口指令的待机状态下生效，自动循迹模式下禁用）
+	if(!g_manual_drive_active && !is_racing)
 	{
 		uart_rx_timeout ++;
 		if(uart_rx_timeout > 250)
@@ -91,14 +91,17 @@ void SysTick_Handler(void)
 		}
 	}
 
-	// 3. 角度积分
+	// 3. 角度积分（带漏积分防漂移）
+	// 纯陀螺仪积分会因零偏累积漂移，使用漏积分因子衰减长期漂移
 	add_angle += LSM6DSR_data.gz_rads * dt;
+	add_angle *= 0.9999f;  // 漏积分因子，约 10 秒衰减 1%
 	add_angle_deg_360 += LSM6DSR_data.gz_rads * dt * RAD_TO_DEG;
+	add_angle_deg_360 *= 0.9999f;  // 漏积分，与 add_angle 保持一致
 	if (add_angle_deg_360 >= 360.0f)
 		add_angle_deg_360 -= 360.0f;
 	else if (add_angle_deg_360 < 0.0f)
 		add_angle_deg_360 += 360.0f;
-	add_angle_num += 1.0f;
+	add_angle_num++;
 
 	// 4. 手动驾驶计时
 	if(g_manual_drive_active)

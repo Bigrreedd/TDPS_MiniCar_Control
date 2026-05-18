@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #ifndef USART2_RX_BUFFER_SIZE
-#define USART2_RX_BUFFER_SIZE 128
+#define USART2_RX_BUFFER_SIZE 512
 #endif
 
 static volatile uint8_t s_usart2_rx_buffer[USART2_RX_BUFFER_SIZE];
@@ -63,7 +63,7 @@ void Uart2_Init(uint32_t baudrate)
 	USART_Cmd(USART2, ENABLE);
 }
 
-extern uint16_t uart_rx_timeout;
+extern volatile uint16_t uart_rx_timeout;
 void USART2_IRQHandler(void)
 {
 	if(USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)

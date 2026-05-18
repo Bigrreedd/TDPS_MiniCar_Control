@@ -1,9 +1,9 @@
 #include "stm32f10x.h"
 #include "ABEncoder.h"
 
-static int16_t last_count_left = 0,last_count_right = 0;
-int16_t speed_left = 0,speed_right = 0;
-int32_t left_encoder_cnt = 0, right_encoder_cnt = 0;
+static int16_t last_count_left = 0, last_count_right = 0;
+volatile int16_t speed_left = 0, speed_right = 0;
+volatile int32_t left_encoder_cnt = 0, right_encoder_cnt = 0;
 void ABEncoder_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
@@ -52,11 +52,12 @@ void ABEncoder_Init(void)
 void ABEncoder_UpdateSpeed(void) // 计算速度
 {
     int16_t now_left = -TIM_GetCounter(TIM4);
-    speed_left = now_left - last_count_left;
+    int16_t now_right = TIM_GetCounter(TIM3);
+    // 先用 uint32_t 做差再截断为 int16_t，正确处理 0/65535 边界穿越
+    speed_left = (int16_t)((uint32_t)(uint16_t)now_left - (uint32_t)(uint16_t)last_count_left);
+    speed_right = (int16_t)((uint32_t)(uint16_t)now_right - (uint32_t)(uint16_t)last_count_right);
     last_count_left = now_left;
-		int16_t now_right =  TIM_GetCounter(TIM3);
-	  speed_right = now_right - last_count_right;
     last_count_right = now_right;
-		left_encoder_cnt += speed_left;
-		right_encoder_cnt += speed_right;
+    left_encoder_cnt += speed_left;
+    right_encoder_cnt += speed_right;
 }

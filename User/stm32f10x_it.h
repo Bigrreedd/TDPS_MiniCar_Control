@@ -33,11 +33,12 @@
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/
-extern float add_angle;
-extern float add_angle_deg_360;
+extern volatile float add_angle;
+extern volatile float add_angle_deg_360;
 extern volatile uint8_t g_manual_drive_active;
 extern volatile uint16_t g_manual_drive_ticks_remaining;
 extern volatile uint8_t g_control_tick;
+extern volatile int16_t position_get;
 /* Exported functions ------------------------------------------------------- */
 
 void NMI_Handler(void);

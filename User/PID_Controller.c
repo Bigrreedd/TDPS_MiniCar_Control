@@ -3,7 +3,7 @@
 #include "Path.h"
 #include "ABEncoder.h"
 #include <math.h>
- extern int16_t position_get;
+extern volatile int16_t position_get;
 // ==================== 速度环PID实现 ====================
 
 /**
@@ -21,8 +21,9 @@ void SpeedPID_Init(SpeedPID_Controller_t *controller, float kp, float ki, float 
 	controller->param.output_min = output_min;
 	controller->param.integral_max = output_max * 0.5f;  // 积分限幅设为输出上限的一半
 	controller->param.integral_min = output_min * 0.5f;
-	
+
 	controller->last_error = 0.0f;
+	controller->last_last_error = 0.0f;
 	controller->last_output = 0.0f;
 	controller->integral = 0.0f;
 }
@@ -47,22 +48,23 @@ float SpeedPID_Calculate(SpeedPID_Controller_t *controller, float target_speed, 
 	// 积分项：Ki * e(k)
 	float i_term = controller->param.ki * error;
 	
-	// 微分项：Kd * (e(k) - e(k-1))
-	float d_term = controller->param.kd * (error - controller->last_error);
-	 
+	// 微分项：Kd * (e(k) - 2*e(k-1) + e(k-2))  —— 误差增量的增量
+	float d_term = controller->param.kd * ((error - controller->last_error) - (controller->last_error - controller->last_last_error));
+
 	// 计算增量输出
 	delta_output = p_term + i_term + d_term;
-	
+
 	// 新的输出 = 上一次输出 + 增量
 	new_output = controller->last_output + delta_output;
-	
+
 	// 输出限幅
 	if(new_output > controller->param.output_max)
 		new_output = controller->param.output_max;
 	else if(new_output < controller->param.output_min)
 		new_output = controller->param.output_min;
-	
+
 	// 保存当前误差和输出
+	controller->last_last_error = controller->last_error;
 	controller->last_error = error;
 	controller->last_output = new_output;
 	
@@ -89,6 +91,7 @@ void SpeedPID_Reset(SpeedPID_Controller_t *controller)
 	if(controller == NULL) return;
 	
 	controller->last_error = 0.0f;
+	controller->last_last_error = 0.0f;
 	controller->last_output = 0.0f;
 	controller->integral = 0.0f;
 }
@@ -121,14 +124,14 @@ void PositionPID_Init(PositionPID_Controller_t *controller, float kp, float ki, 
  * @brief 位置环PID计算（位置式）
  * 位置式PID公式：u(k) = Kp*e(k) + Ki*Σe(k) + Kd*[e(k)-e(k-1)]
  * 误差定义：error = current_position - target_position
- * 输出：位置偏右时为正（左轮减速、右轮加速），位置偏左时为负（左轮加速、右轮减速）
+ * 输出：位置偏右时为正（左轮加速、右轮减速，车头左转修正），位置偏左时为负（左轮减速、右轮加速，车头右转修正）
  */
 float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_position)
 {
 	if(controller == NULL) return 0.0f;
 	
 	// 误差 = 当前位置 - 目标位置
-	// 位置偏右（current_position > target_position）时，error为正，输出为正，左轮减速、右轮加速
+	// 位置偏右（current_position > target_position）时，error为正，输出为正，左轮加速、右轮减速（车头左转修正回中心）
 	float error = current_position - controller->param.target_position;
 	float output = 0.0f;
 	
@@ -149,13 +152,17 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	// 微分项：Kd * [e(k) - e(k-1)]
 	float d_term = controller->param.kd * (error - controller->last_error);
 	float gyro_term = controller->param.gyro_kd * LSM6DSR_data.gz_rads;
-	if(gyro_term >= 3500)
+	// gyro_kd * gz_rads 的典型量级远超 3500，需要按实际角速度范围重新标定限幅
+	// 正常行驶 gz_rads ≈ ±5 rad/s，急转弯 ≈ ±20 rad/s
+	// 限幅设为 output_max 的 40%，保证补偿有效但不过度
+	float gyro_limit = controller->param.output_max * 0.4f;
+	if(gyro_term >= gyro_limit)
 	{
-		gyro_term = 3500;
+		gyro_term = gyro_limit;
 	}
-	else if(gyro_term <= -3500)
+	else if(gyro_term <= -gyro_limit)
 	{
-		gyro_term = -3500;
+		gyro_term = -gyro_limit;
 	}
 	// 输出偏差值（直接叠加到速度环输出）
 	output = p_term + i_term + d_term - gyro_term;
@@ -251,7 +258,7 @@ void PID_Init(void)
     // 位置环：输出偏差值，叠加到速度环
     PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 1400.0f, 9000.0f, -9000.0f, 8.0f);
 }
-extern uint8_t is_racing;
+extern volatile uint8_t is_racing;
 void PID_Control_Update(void)
 {
     Path_UpdateOdometer(speed_left, speed_right);  // 里程累积
@@ -289,19 +296,23 @@ void PID_Control_Update(void)
 			speed_output = SpeedPID_Calculate(&g_speed_pid, start_speed, avg_speed);
     }
 		else
-		{	
+		{
 			start_speed = 0;
 			first_set = 0;
 			g_speed_pid.last_output = 0;
 			g_speed_pid.last_error = 0;
+			g_speed_pid.last_last_error = 0;
 			g_speed_pid.integral = 0;
 			speed_output = 0;
+			/* BUG FIX: Position PID also needs reset to prevent stale
+			   integral/error from causing a jerk on restart */
+			PositionPID_Reset(&g_position_pid);
 		}
     // 5. 叠加位置环偏差
-    left_output = speed_output + position_correction;   // 左轮减
-    right_output = speed_output - position_correction;  // 右轮加
+    left_output = speed_output + position_correction;   // 左轮加（位置偏右→左轮加速→车头左转修正）
+    right_output = speed_output - position_correction;  // 右轮减（位置偏右→右轮减速→车头左转修正）
     
-    // 6. 设置电机
-    Motor_SetSpeedWithDirection(MOTOR_L, (int16_t)left_output);
-    Motor_SetSpeedWithDirection(MOTOR_R, (int16_t)right_output);
+    // 6. 设置电机（直接传 float，避免 int16_t 强转溢出 UB）
+    Motor_SetSpeedWithDirection(MOTOR_L, left_output);
+    Motor_SetSpeedWithDirection(MOTOR_R, right_output);
 }

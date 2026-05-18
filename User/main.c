@@ -17,6 +17,8 @@
 #include "PID_Controller.h"
 #include "Path.h"
 #include "TelemetryScreen.h"
+#include "Protocol.h"
+#include "Battery.h"
 #include "stm32f10x_it.h"
 
 // 滴答定时器初始化，2ms中断一次 (500Hz)
@@ -26,20 +28,55 @@ void SysTick_Init(void)
 }
 
 float BDI_V = 0;
-uint8_t is_racing = 0;
+volatile uint8_t is_racing = 0;
 
 // 控制环状态（从 SysTick 移到主循环）
-extern int16_t position_get;
+// position_get 的 extern 声明已在 stm32f10x_it.h 中
 BlackPointResult_t result_BlackPoint;
 static uint32_t lose_time = 0;
+
+// ESP32-S3 雷达数据
+volatile uint16_t radar_distance_cm = 0;
+
+/* 大端字节序解码辅助 */
+#define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
+
+// ========== ESP32 协议回调 ==========
+static void OnLoraSpeed(const ProtoFrame_t *f)
+{
+    if (f->len < 4) return;
+    int16_t left  = PROTO_RD_U16(f->payload, 0);
+    int16_t right = PROTO_RD_U16(f->payload, 2);
+    /* 遥控模式：退出自动循迹，直接驱动电机 */
+    is_racing = 0;
+    Path_StopRace();
+    Motor_Enable();
+    Motor_SetSpeedWithDirection(MOTOR_L, (float)left);
+    Motor_SetSpeedWithDirection(MOTOR_R, (float)right);
+}
+
+static void OnLoraStop(const ProtoFrame_t *f)
+{
+    (void)f;
+    Path_StopRace();
+    Motor_StopAll();
+    Motor_Disable();
+    is_racing = 0;
+}
+
+static void OnRadarDist(const ProtoFrame_t *f)
+{
+    if (f->len < 2) return;
+    radar_distance_cm = (uint16_t)PROTO_RD_U16(f->payload, 0);
+}
 
 // 手动驾驶模式（K3/K4 使用）
 static void StartManualDrive(uint16_t motor_duty)
 {
     is_racing = 0;
     Path_StopRace();
+    g_manual_drive_ticks_remaining = 1000; // 2 seconds — set BEFORE active to avoid ISR race
     g_manual_drive_active = 1;
-    g_manual_drive_ticks_remaining = 1000; // 2 seconds
     Motor_Enable();
     Motor_SetDirection(MOTOR_L, MOTOR_DIR_FORWARD);
     Motor_SetDirection(MOTOR_R, MOTOR_DIR_FORWARD);
@@ -65,6 +102,12 @@ int main(void)
     PID_Init();
     Path_Init();
     TelemetryScreen_Init();
+
+    // ESP32-S3 协议初始化
+    Proto_Init();
+    Proto_RegisterHandler(PROTO_CMD_LORA_SPEED, OnLoraSpeed);
+    Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
+    Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
 
     while (1)
     {
@@ -102,6 +145,9 @@ int main(void)
             }
         }
 
+        // ---- ESP32-S3 协议处理（非实时，低优先级） ----
+        Proto_Process();
+
         // ---- 人机交互（非实时，低优先级） ----
         Key_Scan_Update();
         Key_Event_t *event = Key_GetEvent();
@@ -118,6 +164,7 @@ int main(void)
                 RGB_SetColor(RGB_COLOR_R);
                 Motor_Enable();
                 is_racing = 1;
+                lose_time = 0;  // 复位丢线超时计数器，避免超时后重启立即再超时
                 Path_StartRace();
                 break;
             case KEY_K2:
@@ -142,5 +189,15 @@ int main(void)
         }
 
         TelemetryScreen_Update();
+
+        // 每 ~200ms 发送一次遥测到 ESP32（100 ticks * 2ms）
+        {
+            static uint16_t telem_cnt = 0;
+            if (++telem_cnt >= 100) {
+                telem_cnt = 0;
+                Proto_SendTelemetry(position_get, speed_left, speed_right,
+                                    (uint8_t)Path_GetCurrentSegment(), battery_percent(BDI_V));
+            }
+        }
     }
 }

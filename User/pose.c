@@ -189,7 +189,13 @@ void imuupdate(float_xyz_struct *gyr_rad,float_xyz_struct *acc_g,float_ang_struc
 	q1 = q1 * norm;
 	q2 = q2 * norm;
 	q3 = q3 * norm;
-//
+
+	// Recompute quaternion products from updated (normalized) values
+	q0q0 = q0*q0; q0q1 = q0*q1; q0q2 = q0*q2; q0q3 = q0*q3;
+	q1q1 = q1*q1; q1q2 = q1*q2; q1q3 = q1*q3;
+	q2q2 = q2*q2; q2q3 = q2*q3;
+	q3q3 = q3*q3;
+
 	//????R ???????????(n)??????????????(b)
 	matrix[0] = q0q0 + q1q1 - q2q2 - q3q3;	// 11(???????)
 	matrix[1] = 2.f * (q1q2 + q0q3);	    // 12

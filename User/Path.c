@@ -7,7 +7,7 @@
 #include "stm32f10x_it.h"
 
 /* 文件级 extern（避免函数体内重复声明） */
-extern int16_t          position_get;
+/* position_get 的 extern 声明已在 stm32f10x_it.h 中 */
 extern BlackPointResult_t result_BlackPoint;
 
 /* ========== 内部状态 ========== */
@@ -44,6 +44,17 @@ static PathState_t g_path;
 #define LINE_LOST_THRESHOLD     30
 #define LINE_STABLE_THRESHOLD   10
 
+/* ========== 弯道检测 / 赛道侧检测 内部状态（需在 Path_StartRace 中复位） ========== */
+static float pos_history[8];
+static uint8_t curve_idx = 0;
+static int16_t side_accum = 0;
+
+static void ResetCurveDetector(void)
+{
+    for (uint8_t i = 0; i < 8; i++) pos_history[i] = 0.0f;
+    curve_idx = 0;
+}
+
 /* ========== 初始化 ========== */
 void Path_Init(void)
 {
@@ -63,6 +74,8 @@ void Path_Init(void)
 void Path_StartRace(void)
 {
     Path_Init();
+    ResetCurveDetector();
+    side_accum = 0;
     g_path.current_segment      = SEG_START_SEARCH;
     g_path.current_target_speed = SPEED_SEARCH;
     g_path.seg_start_dist_cm    = 0.0f;
@@ -74,10 +87,11 @@ void Path_StopRace(void)
     g_path.current_target_speed = 0;
 }
 
-/* ========== 里程更新（由编码器中断或主循环调用） ========== */
-void Path_UpdateOdometer(int32_t left_delta, int32_t right_delta)
+/* ========== 里程更新（由主循环每 2ms 调用一次） ========== */
+/* 参数为左右编码器在 2ms 周期内的脉冲增量（即 speed_left / speed_right） */
+void Path_UpdateOdometer(int32_t left_pulse_delta, int32_t right_pulse_delta)
 {
-    float avg_ticks = (float)(left_delta + right_delta) * 0.5f;
+    float avg_ticks = (float)(left_pulse_delta + right_pulse_delta) * 0.5f;
     g_path.total_dist_cm += avg_ticks / ENCODER_TICKS_PER_CM;
 }
 
@@ -85,13 +99,11 @@ void Path_UpdateOdometer(int32_t left_delta, int32_t right_delta)
 static float CalcCurveStrength(void)
 {
     /* 使用 position_get 的方差近似弯道强度 */
-    static float pos_history[8];
-    static uint8_t idx = 0;
     float mean = 0.0f;
     float var  = 0.0f;
 
-    pos_history[idx] = (float)position_get;
-    idx = (idx + 1) & 0x07;
+    pos_history[curve_idx] = (float)position_get;
+    curve_idx = (curve_idx + 1) & 0x07;
 
     for (uint8_t i = 0; i < 8; i++) {
         mean += pos_history[i];
@@ -109,9 +121,18 @@ static float CalcCurveStrength(void)
 static void DetectTrackSide(void)
 {
     if (g_path.track_side == TRACK_UNKNOWN) {
-        if (position_get > 50) {
+        /* 需要连续多次检测到大幅偏移才判定赛道侧，避免噪声误判
+         * position_get 范围 [0,150]，中心约 80（传感器8）
+         * 偏右半区 (>96, 即 precise>9.6) -> 可能是右赛道
+         * 偏左半区 (<64, 即 precise<6.4) -> 可能是左赛道 */
+        if (position_get > 96) {
+            side_accum++;
+        } else if (position_get < 64) {
+            side_accum--;
+        }
+        if (side_accum > 20) {
             g_path.track_side = TRACK_LEFT;
-        } else if (position_get < -50) {
+        } else if (side_accum < -20) {
             g_path.track_side = TRACK_RIGHT;
         }
     }
