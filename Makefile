@@ -22,16 +22,13 @@ C_INCLUDES = \
 -IUser \
 -ISystem \
 -ILibrary \
--ILibrary/inc \
--IStart \
--ICore
+-IStart
 
 # 6. C 语言源文件 (利用 wildcard 自动遍历文件夹下的所有 .c，以后加新文件无需修改此处)
 C_SOURCES = \
 $(wildcard User/*.c) \
 $(wildcard System/*.c) \
 $(wildcard Library/*.c) \
-$(wildcard Library/src/*.c) \
 $(wildcard Start/*.c)
 
 # 7. 汇编源文件 (指向你刚刚放进去的 GCC 专属启动文件)
@@ -42,7 +39,7 @@ LDSCRIPT = STM32F103XB_FLASH.ld
 
 # 9. 编译和链接参数配置
 CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) -O2 -Wall -fdata-sections -ffunction-sections
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) -Wl,-Map=$(TARGET).map,--cref -Wl,--gc-sections -lm
+LDFLAGS = $(MCU) -specs=nano.specs -specs=nosys.specs -T$(LDSCRIPT) -Wl,-Map=$(TARGET).map,--cref -Wl,--gc-sections -lm
 
 # ==========================================
 # 编译执行规则 (Build Rules)
