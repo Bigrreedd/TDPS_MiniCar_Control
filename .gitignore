@@ -11,6 +11,9 @@ DebugConfig/
 *.d
 *.crf
 *.axf
+*.elf
+*.hex
+*.bin
 *.htm
 *.dep
 *.lnp
