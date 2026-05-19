@@ -5,23 +5,12 @@
 #include "ADC_get.h"
 #include "Motor_ctr.h"
 #include "ABEncoder.h"
+#include "Battery.h"
 #include <stdio.h>
 
-#define TELEM_BATTERY_V_MIN 5.5f
-#define TELEM_BATTERY_V_MAX 8.6f
-
-extern float add_angle_deg_360;
-extern int16_t position_get;
+extern volatile float add_angle_deg_360;
+extern volatile int16_t position_get;
 extern float BDI_V;
-
-static uint8_t battery_percent(float v)
-{
-	if (v <= TELEM_BATTERY_V_MIN)
-		return 0;
-	if (v >= TELEM_BATTERY_V_MAX)
-		return 100;
-	return (uint8_t)((v - TELEM_BATTERY_V_MIN) * 100.0f / (TELEM_BATTERY_V_MAX - TELEM_BATTERY_V_MIN));
-}
 
 static uint16_t build_sensor_mask(void)
 {

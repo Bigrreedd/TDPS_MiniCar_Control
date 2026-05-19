@@ -3,7 +3,7 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_spi.h"
 #include "Delay.h"
-LSM6DSR_DATA_T LSE6DSR_data;
+volatile LSM6DSR_DATA_T LSM6DSR_data;
 #ifdef USE_SOFTWARE_SPI
 
 // ==================== 软件SPI接口 ====================
@@ -167,11 +167,14 @@ static void HardwareSPI_CS_High(void)
 // 优化版：使用寄存器直接访问，减少函数调用开销
 static uint8_t HardwareSPI_TransmitByte(uint8_t byte)
 {
+	volatile uint32_t timeout;
 	// 等待发送缓冲区空（使用寄存器直接访问，更快）
-	while((SPI2->SR & SPI_I2S_FLAG_TXE) == RESET);
+	timeout = 1000;
+	while((SPI2->SR & SPI_I2S_FLAG_TXE) == RESET) { if(--timeout == 0) return 0xFF; }
 	SPI2->DR = byte;  // 直接写入数据寄存器
 	// 等待接收完成
-	while((SPI2->SR & SPI_I2S_FLAG_RXNE) == RESET);
+	timeout = 1000;
+	while((SPI2->SR & SPI_I2S_FLAG_RXNE) == RESET) { if(--timeout == 0) return 0xFF; }
 	return SPI2->DR;  // 直接读取数据寄存器
 }
 
@@ -264,7 +267,7 @@ uint8_t LSM6DSR_Init(void)
 		return 0;  // 设备ID错误
 	}
 	
-	// 配置加速度计：52Hz，±2g
+	// 配置加速度计：104Hz，±2g (ODR[7:4]=0010=104Hz, FS[3:2]=00=±2g)
 	LSM6DSR_WriteReg(LSM6DSR_CTRL1_XL, 0x20);
 	
 	// 使能加速度计x,y,z轴
@@ -279,7 +282,7 @@ uint8_t LSM6DSR_Init(void)
 	// 加速度计INT2引脚失能,陀螺仪数据INT2使能
 	LSM6DSR_WriteReg(LSM6DSR_INT2_CTRL, 0x03);
 	
-	// 陀螺仪：±2000dps
+	// 陀螺仪：±1000dps, 208Hz (ODR[7:4]=0101=208Hz, FS[3:2]=10=±1000dps)
 	LSM6DSR_WriteReg(LSM6DSR_CTRL2_G, 0x58);
 	
 	// 使能陀螺仪x,y,z轴
@@ -290,7 +293,7 @@ uint8_t LSM6DSR_Init(void)
 	return 1;  // 初始化成功
 }
 
-void LSM6DSR_ReadData(LSM6DSR_DATA_T *physics)
+void LSM6DSR_ReadData(volatile LSM6DSR_DATA_T *physics)
 {
 	uint8_t buf[12];
 	
@@ -310,27 +313,25 @@ void LSM6DSR_ReadData(LSM6DSR_DATA_T *physics)
  * @brief  将LSM6DSR原始数据转换为标准物理单位
  * @param  physics: 输入输出结构体指针（包含原始数据，转换后填充物理量）
  * @note   加速度计配置：±2g，敏感度 = 16384 LSB/g
- *         陀螺仪配置：±2000dps
- *         角速度转换：1度 = π/180 弧度 ≈ 0.017453293 rad
- *         直接转换公式：rad/s = (原始值 / 14.3) * (π/180) = 原始值 / 14.3f
+ *         陀螺仪配置：±1000dps (CTRL2_G=0x58, FS[3:2]=10)
+ *         敏感度 = 35 mdps/LSB = 0.035 dps/LSB
+ *         GYRO_LSB_TO_RAD_PER_SEC = 1 / (0.035 * pi / 180) ≈ 1637.0183
  */
-void LSM6DSR_ConvertToPhysics(LSM6DSR_DATA_T *physics)
+void LSM6DSR_ConvertToPhysics(volatile LSM6DSR_DATA_T *physics)
 {
 	if(physics == 0) return;
-	
+
 	// 加速度转换为g单位：±2g量程，敏感度 = 16384 LSB/g
 	physics->ax_g = (float)physics->ax / 16384.0f;
 	physics->ay_g = (float)physics->ay / 16384.0f;
 	physics->az_g = (float)physics->az / 16384.0f;
-	
-	// 角速度转换为弧度每秒：±2000dps量程
-	// 根据LSM6DSR数据手册，敏感度 = 70 MLSB/(°/s)0.07
-	// 转换步骤：
-	//   1. 度/秒 = 原始值 / 14.3f
-	//   2. 弧度/秒 = 度/秒 × (π/180)
-	const float GYRO_LSB_TO_RAD_PER_SEC = 1637.022271802352025f;  
+
+	// 角速度转换为弧度每秒：±1000dps量程
+	// 敏感度 = 35 mdps/LSB = 0.035 dps/LSB
+	// rad/s = raw / (1/(0.035 * pi/180)) = raw / 1637.0183
+	const float GYRO_LSB_TO_RAD_PER_SEC = 1637.0183f;  // 1/(0.035 * pi/180), ±1000dps sensitivity=35mdps/LSB
 	physics->gx_rads = ((float)physics->gx - 3.519f) / GYRO_LSB_TO_RAD_PER_SEC;
-	physics->gy_rads = ((float)physics->gy  + 12.03f)/ GYRO_LSB_TO_RAD_PER_SEC;
-	physics->gz_rads = ((float)physics->gz + 3.205f)/ GYRO_LSB_TO_RAD_PER_SEC;
+	physics->gy_rads = ((float)physics->gy + 12.03f) / GYRO_LSB_TO_RAD_PER_SEC;
+	physics->gz_rads = ((float)physics->gz + 3.205f) / GYRO_LSB_TO_RAD_PER_SEC;
 }
 

@@ -107,12 +107,9 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 {
 	uint8_t i;
 	float normalized_values[SENSOR_COUNT];  // 归一化值数组
-	float sum = 0.0f;                       // 归一化值总和
-	float average = 0.0f;                   // 归一化值平均值
 	float min_normalized = 1.0f;            // 归一化最小值（初始化为最大）
 	uint8_t min_index = 0;                  // 最小值对应的传感器索引
 	float precise_pos = 0.0f;               // 精确位置
-	float all_pos_sum = 0;
 	
 	if(adc_values == NULL || result == NULL)
 	{
@@ -152,14 +149,11 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 			// 如果max_val <= min_val，设为0（视为最黑）
 			normalized_values[i] = 0.0f;
 		}
-		
-		sum += normalized_values[i];
 	}
 	
 	// 第二步：找到归一化后的最小值
 	for(i = 0; i < SENSOR_COUNT; i++)
 	{
-		all_pos_sum += normalized_values[i];
 		if(normalized_values[i] < min_normalized)
 		{
 			min_normalized = normalized_values[i];
@@ -167,9 +161,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 		}
 	}
 	
-	// 第三步：计算平均值
-	average = sum / (float)SENSOR_COUNT;
-	
+	// 第三步：验证最小值是否小于归一化值的20%
 	float other_sum = 0.0f;
 	uint8_t other_count = 0;
 	
@@ -199,7 +191,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	}
 	// 第四步：验证最小值是否小于归一化值的20%
 	// 条件：min_normalized < 0.2（归一化值的20%）
-	if(min_normalized / other_average > 0.30f)
+	if(other_average < 1e-6f || min_normalized / other_average > 0.30f)
 	{
 		// 不满足条件，未找到黑点
 		result->found = 0;

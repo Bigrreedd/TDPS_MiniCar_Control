@@ -4,7 +4,7 @@
 #include "stm32f10x.h"
 
 // PWM相关宏定义
-#define PWM_FREQUENCY_17KHZ    37000   // PWM频率17KHz
+#define PWM_FREQUENCY_17KHZ    17000   // PWM频率17KHz
 #define PWM_DUTY_CYCLE_50      50      // 默认占空比50%
 
 // 函数声明

@@ -24,12 +24,12 @@
  *    - 位置环输出：position_correction = PositionPID_Calculate(&position_pid, current_position)
  * 
  * 3. 最终输出（注意极性）：
- *    - left_output = speed_output - position_correction  （位置偏右时，position_correction为正，左轮减速）
- *    - right_output = speed_output + position_correction  （位置偏右时，position_correction为正，右轮加速）
- * 
+ *    - left_output = speed_output + position_correction  （位置偏右时，position_correction为正，左轮加速，车头左转修正）
+ *    - right_output = speed_output - position_correction （位置偏右时，position_correction为正，右轮减速，车头左转修正）
+ *
  * 极性说明：
- * - 位置偏右（position > target）：position_correction > 0，左轮减速、右轮加速，修正回中心
- * - 位置偏左（position < target）：position_correction < 0，左轮加速、右轮减速，修正回中心
+ * - 位置偏右（position > target）：position_correction > 0，左轮加速、右轮减速，车头左转修正回中心
+ * - 位置偏左（position < target）：position_correction < 0，左轮减速、右轮加速，车头右转修正回中心
  */
 
 // ==================== 速度环PID参数 ====================
@@ -50,6 +50,7 @@ typedef struct
 {
 	SpeedPID_Param_t param;  // PID参数
 	float last_error;        // 上一次误差
+	float last_last_error;   // 上上次误差（用于增量式微分项）
 	float last_output;       // 上一次输出
 	float integral;          // 积分项累积
 } SpeedPID_Controller_t;
@@ -132,8 +133,8 @@ void PositionPID_Init(PositionPID_Controller_t *controller, float kp, float ki, 
  * @brief 位置环PID计算（位置式）
  * @param controller: 位置环PID控制器指针
  * @param current_position: 当前位置（寻点位置，左边为0）
- * @return 输出偏差值（直接叠加到速度环输出上，左轮减、右轮加）
- * @note 位置偏右时输出为正，左轮减速、右轮加速；位置偏左时输出为负，左轮加速、右轮减速
+ * @return 输出偏差值（直接叠加到速度环输出上，左轮加、右轮减）
+ * @note 位置偏右时输出为正，左轮加速、右轮减速（车头左转修正回中心）；位置偏左时输出为负，左轮减速、右轮加速（车头右转修正回中心）
  */
 float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_position);
 

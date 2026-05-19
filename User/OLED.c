@@ -215,7 +215,7 @@ void OLED_ShowSignedNum(uint8_t Line, uint8_t Column, int32_t Number, uint8_t Le
 	else
 	{
 		OLED_ShowChar(Line, Column, '-');
-		Number1 = -Number;
+		Number1 = (uint32_t)(-(Number + 1)) + 1u;  /* safe negate: avoids INT32_MIN overflow */
 	}
 	for (i = 0; i < Length; i++)							
 	{
