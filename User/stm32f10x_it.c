@@ -87,6 +87,7 @@ void SysTick_Handler(void)
 			M3PWM_SetDutyCycle(0);
 			is_racing = 0;
 			uart_rx_timeout = 250;
+			Motor_StopAll();
 			Motor_Disable();
 		}
 	}

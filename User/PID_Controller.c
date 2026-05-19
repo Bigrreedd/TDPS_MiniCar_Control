@@ -4,6 +4,20 @@
 #include "ABEncoder.h"
 #include <math.h>
 extern volatile int16_t position_get;
+
+#ifndef PID_GYRO_ENABLE
+#define PID_GYRO_ENABLE 0
+#endif
+#ifndef WHEEL_BALANCE_ENABLE
+#define WHEEL_BALANCE_ENABLE 1
+#endif
+#ifndef WHEEL_BALANCE_KP
+#define WHEEL_BALANCE_KP 2.0f
+#endif
+#ifndef WHEEL_BALANCE_LIMIT
+#define WHEEL_BALANCE_LIMIT 300.0f
+#endif
+
 // ==================== 速度环PID实现 ====================
 
 /**
@@ -151,7 +165,9 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	
 	// 微分项：Kd * [e(k) - e(k-1)]
 	float d_term = controller->param.kd * (error - controller->last_error);
-	float gyro_term = controller->param.gyro_kd * LSM6DSR_data.gz_rads;
+	float gyro_term = 0.0f;
+#if PID_GYRO_ENABLE
+	gyro_term = controller->param.gyro_kd * LSM6DSR_data.gz_rads;
 	// gyro_kd * gz_rads 的典型量级远超 3500，需要按实际角速度范围重新标定限幅
 	// 正常行驶 gz_rads ≈ ±5 rad/s，急转弯 ≈ ±20 rad/s
 	// 限幅设为 output_max 的 40%，保证补偿有效但不过度
@@ -164,6 +180,7 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	{
 		gyro_term = -gyro_limit;
 	}
+#endif
 	// 输出偏差值（直接叠加到速度环输出）
 	output = p_term + i_term + d_term - gyro_term;
 	
@@ -256,7 +273,7 @@ void PID_Init(void)
     SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, 8000.0f, -8000.0f);
     
     // 位置环：输出偏差值，叠加到速度环
-    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 1400.0f, 9000.0f, -9000.0f, 8.0f);
+    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, 8.0f);
 }
 extern volatile uint8_t is_racing;
 void PID_Control_Update(void)
@@ -267,10 +284,20 @@ void PID_Control_Update(void)
     float avg_speed;
     float speed_output;
     float position_correction;
+    float wheel_balance;
     float left_output,right_output;
 		float i_speed = 0;
 		static uint8_t first_set = 0; 
 		static float start_speed = 0; 	
+		if(!is_racing)
+		{
+			start_speed = 0;
+			first_set = 0;
+			SpeedPID_Reset(&g_speed_pid);
+			PositionPID_Reset(&g_position_pid);
+			Motor_StopAll();
+			return;
+		}
     // 1. 获取当前位置（从你的position变量）
     current_position = (float)position_get / 10.0f;
     
@@ -282,8 +309,6 @@ void PID_Control_Update(void)
     
 		i_speed = Path_GetTargetSpeed();
     // 4. 速度环计算（输出基础速度）
-		if(is_racing)
-    {
 			if(start_speed < i_speed && first_set == 0)
 			{
 				start_speed += 2.0f;
@@ -294,23 +319,22 @@ void PID_Control_Update(void)
 				first_set  = 1;
 			}
 			speed_output = SpeedPID_Calculate(&g_speed_pid, start_speed, avg_speed);
-    }
-		else
-		{
-			start_speed = 0;
-			first_set = 0;
-			g_speed_pid.last_output = 0;
-			g_speed_pid.last_error = 0;
-			g_speed_pid.last_last_error = 0;
-			g_speed_pid.integral = 0;
-			speed_output = 0;
-			/* BUG FIX: Position PID also needs reset to prevent stale
-			   integral/error from causing a jerk on restart */
-			PositionPID_Reset(&g_position_pid);
-		}
     // 5. 叠加位置环偏差
-    left_output = speed_output + position_correction;   // 左轮加（位置偏右→左轮加速→车头左转修正）
-    right_output = speed_output - position_correction;  // 右轮减（位置偏右→右轮减速→车头左转修正）
+#if WHEEL_BALANCE_ENABLE
+		wheel_balance = ((float)speed_right - (float)speed_left) * WHEEL_BALANCE_KP;
+		if(wheel_balance > WHEEL_BALANCE_LIMIT)
+		{
+			wheel_balance = WHEEL_BALANCE_LIMIT;
+		}
+		else if(wheel_balance < -WHEEL_BALANCE_LIMIT)
+		{
+			wheel_balance = -WHEEL_BALANCE_LIMIT;
+		}
+#else
+		wheel_balance = 0.0f;
+#endif
+    left_output = speed_output + position_correction + wheel_balance;   // 左轮加（位置偏右→左轮加速→车头左转修正）
+    right_output = speed_output - position_correction - wheel_balance;  // 右轮减（位置偏右→右轮减速→车头左转修正）
     
     // 6. 设置电机（直接传 float，避免 int16_t 强转溢出 UB）
     Motor_SetSpeedWithDirection(MOTOR_L, left_output);

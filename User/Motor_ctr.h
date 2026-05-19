@@ -6,6 +6,7 @@
 // 电机相关宏定义
 #define MOTOR_FREQUENCY_17KHZ    17000   // PWM频率17KHz
 #define MOTOR_DUTY_MAX           10000   // 最大占空比值
+#define MOTOR_DUTY_SAFE_MAX      2000
 #define MOTOR_DUTY_MIN           0       // 最小占空比值
 
 // 电机编号定义

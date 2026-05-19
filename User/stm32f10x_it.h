@@ -35,6 +35,7 @@
 /* Exported macro ------------------------------------------------------------*/
 extern volatile float add_angle;
 extern volatile float add_angle_deg_360;
+extern volatile uint32_t add_angle_num;
 extern volatile uint8_t g_manual_drive_active;
 extern volatile uint16_t g_manual_drive_ticks_remaining;
 extern volatile uint8_t g_control_tick;

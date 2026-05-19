@@ -51,8 +51,11 @@ void ABEncoder_Init(void)
 
 void ABEncoder_UpdateSpeed(void) // 计算速度
 {
-    int16_t now_left = -TIM_GetCounter(TIM4);
-    int16_t now_right = TIM_GetCounter(TIM3);
+    /* 编码器极性：使车体前进时 speed_left/speed_right 均为正
+       原代码左编码器取负、右编码器不取负，实测 K3/K4 单边前进时
+       两边的 EDL/EDR 都为负，会导致 PID 速度反馈正反馈，调不出直线 */
+    int16_t now_left  = (int16_t)TIM_GetCounter(TIM4);   // 左编码器：前进 → 计数增加
+    int16_t now_right = -(int16_t)TIM_GetCounter(TIM3);  // 右编码器：硬件方向相反，软件取反
     // 先用 uint32_t 做差再截断为 int16_t，正确处理 0/65535 边界穿越
     speed_left = (int16_t)((uint32_t)(uint16_t)now_left - (uint32_t)(uint16_t)last_count_left);
     speed_right = (int16_t)((uint32_t)(uint16_t)now_right - (uint32_t)(uint16_t)last_count_right);

@@ -111,7 +111,7 @@ void Motor_SetSpeed(uint8_t motor_id, uint16_t duty)
     uint16_t compare_value;
     
     // 限制占空比范围
-    if(duty > MOTOR_DUTY_MAX) duty = MOTOR_DUTY_MAX;
+    if(duty > MOTOR_DUTY_SAFE_MAX) duty = MOTOR_DUTY_SAFE_MAX;
     
     // 计算比较值 (将0-10000映射到0-4234)
     compare_value = (uint16_t)((TIM1->ARR + 1) * duty / MOTOR_DUTY_MAX);
