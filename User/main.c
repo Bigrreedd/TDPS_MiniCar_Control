@@ -52,7 +52,7 @@ volatile uint16_t radar_distance_cm = 0;
 #define UART_RAW_ADC_DEBUG_ENABLE 1
 #endif
 #ifndef UART_RAW_ADC_PERIOD_TICKS
-#define UART_RAW_ADC_PERIOD_TICKS 500u
+#define UART_RAW_ADC_PERIOD_TICKS 100u
 #endif
 #ifndef OLED_TELEMETRY_ENABLE
 #define OLED_TELEMETRY_ENABLE 1
@@ -74,6 +74,21 @@ volatile uint16_t radar_distance_cm = 0;
 #define STRAIGHT_TEST_START_PULSE_DUTY 1200
 #define STRAIGHT_TEST_START_PULSE_TICKS 75u
 #define STRAIGHT_TEST_LOW_DUTY 950
+#define FAN_MOTOR_TEST_START_DUTY 600u
+#define FAN_MOTOR_TEST_HOLD_DUTY 300u
+#define FAN_MOTOR_TEST_START_TICKS 150u
+#define FAN_MOTOR_TEST_DURATION_TICKS 1000u
+#define FAN_MOTOR_TEST_ON_K1 1
+
+#ifndef LINE_SENSOR_TEST_ONLY
+#define LINE_SENSOR_TEST_ONLY 1
+#endif
+#ifndef SENSOR_DEBUG_MIN_SPAN
+#define SENSOR_DEBUG_MIN_SPAN 80u
+#endif
+#ifndef SENSOR_DEBUG_THRESHOLD_PERCENT
+#define SENSOR_DEBUG_THRESHOLD_PERCENT 35u
+#endif
 
 static uint8_t g_straight_test_active = 0;
 static uint16_t g_straight_test_base_duty = 0;
@@ -85,6 +100,17 @@ static int32_t g_straight_test_last_left_cnt = 0;
 static int32_t g_straight_test_last_right_cnt = 0;
 static SpeedPID_Controller_t g_straight_left_pid;
 static SpeedPID_Controller_t g_straight_right_pid;
+static uint8_t g_fan_motor_test_active = 0;
+static uint32_t g_fan_motor_test_start_tick = 0;
+static uint8_t g_sensor_min_index = 0;
+static uint8_t g_sensor_max_index = 0;
+static uint16_t g_sensor_min_value = 0;
+static uint16_t g_sensor_max_value = 0;
+static uint16_t g_sensor_span = 0;
+static uint16_t g_sensor_low_mask = 0;
+static uint16_t g_sensor_high_mask = 0;
+static int16_t g_sensor_low_pos10 = -1;
+static int16_t g_sensor_high_pos10 = -1;
 
 static uint16_t BuildSensorMask(void)
 {
@@ -98,6 +124,85 @@ static uint16_t BuildSensorMask(void)
         }
     }
     return mask;
+}
+
+static int16_t CalculateSensorDebugPos10(uint16_t mask, uint8_t low_is_target)
+{
+    uint8_t i;
+    uint32_t weight_sum = 0;
+    uint32_t position_sum = 0;
+    for (i = 0; i < SENSOR_COUNT; i++)
+    {
+        uint32_t weight;
+        if ((mask & (uint16_t)(1u << i)) == 0u)
+        {
+            continue;
+        }
+        if (low_is_target)
+        {
+            weight = (uint32_t)g_sensor_max_value - (uint32_t)g_mux_adc_values[i];
+        }
+        else
+        {
+            weight = (uint32_t)g_mux_adc_values[i] - (uint32_t)g_sensor_min_value;
+        }
+        weight++;
+        weight_sum += weight;
+        position_sum += weight * (uint32_t)i * 10u;
+    }
+    if (weight_sum == 0u)
+    {
+        return -1;
+    }
+    return (int16_t)((position_sum + weight_sum / 2u) / weight_sum);
+}
+
+static void UpdateSensorDebugSnapshot(void)
+{
+    uint8_t i;
+    uint16_t low_threshold;
+    uint16_t high_threshold;
+    g_sensor_min_value = 0xFFFFu;
+    g_sensor_max_value = 0u;
+    g_sensor_low_mask = 0u;
+    g_sensor_high_mask = 0u;
+    g_sensor_low_pos10 = -1;
+    g_sensor_high_pos10 = -1;
+    for (i = 0; i < SENSOR_COUNT; i++)
+    {
+        uint16_t value = (uint16_t)g_mux_adc_values[i];
+        if (value < g_sensor_min_value)
+        {
+            g_sensor_min_value = value;
+            g_sensor_min_index = i;
+        }
+        if (value > g_sensor_max_value)
+        {
+            g_sensor_max_value = value;
+            g_sensor_max_index = i;
+        }
+    }
+    g_sensor_span = g_sensor_max_value - g_sensor_min_value;
+    if (g_sensor_span < SENSOR_DEBUG_MIN_SPAN)
+    {
+        return;
+    }
+    low_threshold = g_sensor_min_value + (uint16_t)(((uint32_t)g_sensor_span * SENSOR_DEBUG_THRESHOLD_PERCENT) / 100u);
+    high_threshold = g_sensor_max_value - (uint16_t)(((uint32_t)g_sensor_span * SENSOR_DEBUG_THRESHOLD_PERCENT) / 100u);
+    for (i = 0; i < SENSOR_COUNT; i++)
+    {
+        uint16_t value = (uint16_t)g_mux_adc_values[i];
+        if (value <= low_threshold)
+        {
+            g_sensor_low_mask |= (uint16_t)(1u << i);
+        }
+        if (value >= high_threshold)
+        {
+            g_sensor_high_mask |= (uint16_t)(1u << i);
+        }
+    }
+    g_sensor_low_pos10 = CalculateSensorDebugPos10(g_sensor_low_mask, 1u);
+    g_sensor_high_pos10 = CalculateSensorDebugPos10(g_sensor_high_mask, 0u);
 }
 
 static int32_t ScaleFloat100(float value)
@@ -185,7 +290,7 @@ static void SendTextDebugTelemetry(void)
     PrintFixed3("GY", gy1000);
     printf(" ");
     PrintFixed3("GZ", gz1000);
-    printf(" GR=%d,%d,%d SL=%d SR=%d SD=%d EL=%ld ER=%ld EDL=%ld EDR=%ld T3=%u T4=%u EIO=%X DL=%u DR=%u ",
+    printf(" GR=%d,%d,%d SL=%d SR=%d SD=%d EL=%ld ER=%ld EDL=%ld EDR=%ld T3=%u T4=%u EIO=%X DL=%u DR=%u FAN=%u ",
            (int)LSM6DSR_data.gx,
            (int)LSM6DSR_data.gy,
            (int)LSM6DSR_data.gz,
@@ -200,10 +305,21 @@ static void SendTextDebugTelemetry(void)
            (unsigned)tim4_cnt,
            (unsigned)enc_io,
            (unsigned)Motor_GetDuty(MOTOR_L),
-           (unsigned)Motor_GetDuty(MOTOR_R));
+           (unsigned)Motor_GetDuty(MOTOR_R),
+           (unsigned)M3PWM_GetDutyCycle());
 
     PrintFixed2("DIST", dist100);
-    printf(" ADC=%04X ", (unsigned int)mask);
+    printf(" ADC=%04X LM=%04X HM=%04X S=%u:%u,%u:%u,%u LP=%d HP=%d ",
+           (unsigned int)mask,
+           (unsigned int)g_sensor_low_mask,
+           (unsigned int)g_sensor_high_mask,
+           (unsigned)g_sensor_min_index,
+           (unsigned)g_sensor_min_value,
+           (unsigned)g_sensor_max_index,
+           (unsigned)g_sensor_max_value,
+           (unsigned)g_sensor_span,
+           (int)g_sensor_low_pos10,
+           (int)g_sensor_high_pos10);
     PrintFixed2("BAT", bat100);
     printf(" KEY=%u%u%u%u IMU=%u/%02X\r\n",
            (unsigned)Key_GetState(KEY_K1),
@@ -248,6 +364,7 @@ static void OnLoraSpeed(const ProtoFrame_t *f)
     /* 遥控模式：退出自动循迹，直接驱动电机 */
     is_racing = 0;
     g_straight_test_active = 0;
+    g_fan_motor_test_active = 0;
     g_manual_drive_active = 0;
     g_manual_drive_ticks_remaining = 0;
     Path_StopRace();
@@ -255,6 +372,7 @@ static void OnLoraSpeed(const ProtoFrame_t *f)
     Motor_Enable();
     Motor_SetSpeedWithDirection(MOTOR_L, (float)left);
     Motor_SetSpeedWithDirection(MOTOR_R, (float)right);
+    M3PWM_SetDutyCycle(0);
 }
 
 static void OnLoraStop(const ProtoFrame_t *f)
@@ -263,8 +381,10 @@ static void OnLoraStop(const ProtoFrame_t *f)
     Path_StopRace();
     Motor_StopAll();
     Motor_Disable();
+    M3PWM_SetDutyCycle(0);
     is_racing = 0;
     g_straight_test_active = 0;
+    g_fan_motor_test_active = 0;
     g_manual_drive_active = 0;
     g_manual_drive_ticks_remaining = 0;
 }
@@ -281,9 +401,12 @@ static void StartManualDrive(uint16_t left_duty, uint16_t right_duty, uint16_t d
     is_racing = 0;
 
     Path_StopRace();
+    M3PWM_SetDutyCycle(0);
+    g_fan_motor_test_active = 0;
     g_manual_drive_ticks_remaining = duration_ticks;
 
     g_manual_drive_active = 1;
+
     Motor_Enable();
     Motor_SetDirection(MOTOR_L, MOTOR_DIR_FORWARD);
     Motor_SetDirection(MOTOR_R, MOTOR_DIR_FORWARD);
@@ -439,6 +562,43 @@ static void UpdateStraightTest(void)
     Motor_SetSpeed(MOTOR_R, right_duty);
 }
 
+static void StartFanMotorTest(void)
+{
+    is_racing = 0;
+    Path_StopRace();
+    g_straight_test_active = 0;
+
+    Motor_StopAll();
+    Motor_Disable();
+    g_manual_drive_ticks_remaining = FAN_MOTOR_TEST_DURATION_TICKS;
+    g_manual_drive_active = 1;
+    g_fan_motor_test_active = 1;
+    g_fan_motor_test_start_tick = add_angle_num;
+    M3PWM_Start();
+    M3PWM_SetDutyCycle(FAN_MOTOR_TEST_START_DUTY);
+}
+
+static void UpdateFanMotorTest(void)
+{
+    if (!g_fan_motor_test_active)
+    {
+        return;
+    }
+    if (!g_manual_drive_active)
+    {
+        g_fan_motor_test_active = 0;
+        M3PWM_SetDutyCycle(0);
+        return;
+    }
+    if ((uint32_t)(add_angle_num - g_fan_motor_test_start_tick) >= FAN_MOTOR_TEST_START_TICKS)
+    {
+        if (M3PWM_GetDutyCycle() != FAN_MOTOR_TEST_HOLD_DUTY)
+        {
+            M3PWM_SetDutyCycle(FAN_MOTOR_TEST_HOLD_DUTY);
+        }
+    }
+}
+
 int main(void)
 {
     // 外设初始化
@@ -485,10 +645,12 @@ int main(void)
 
             // ADC 16+1 通道轮询采样（耗时操作，已从中断移出）
             MuxADC_SampleAll();
+            UpdateSensorDebugSnapshot();
 
             if (g_manual_drive_active)
             {
                 UpdateStraightTest();
+                UpdateFanMotorTest();
             }
             else
             {
@@ -557,24 +719,43 @@ int main(void)
             case KEY_NONE:
                 break;
             case KEY_K1:
-                // K1: 启动自动循迹模式
+                // K1: 传感器测试模式下不启动自动循迹
+
+#if FAN_MOTOR_TEST_ON_K1
+                RGB_SetColor(RGB_COLOR_B);
+                StartFanMotorTest();
+#else
                 RGB_SetColor(RGB_COLOR_R);
                 g_straight_test_active = 0;
                 g_manual_drive_active = 0;
+
                 g_manual_drive_ticks_remaining = 0;
+#if LINE_SENSOR_TEST_ONLY
+                Path_StopRace();
+                Motor_StopAll();
+                Motor_Disable();
+                is_racing = 0;
+                lose_time = 0;
+                BlackPoint_Finder_ResetLastPosition();
+#else
                 Motor_Enable();
                 is_racing = 1;
 
                 lose_time = 0;  // 复位丢线超时计数器，避免超时后重启立即再超时
                 Path_StartRace();
+#endif
+#endif
                 break;
             case KEY_K2:
                 // K2: 立即停止所有运动
                 RGB_SetColor(RGB_COLOR_G);
                 Path_StopRace();
+                M3PWM_SetDutyCycle(0);
                 Motor_StopAll();
                 Motor_Disable();
+
                 g_straight_test_active = 0;
+                g_fan_motor_test_active = 0;
                 g_manual_drive_active = 0;
                 g_manual_drive_ticks_remaining = 0;
                 lose_time = 0;
