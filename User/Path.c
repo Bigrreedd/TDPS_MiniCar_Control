@@ -29,16 +29,16 @@ static PathState_t g_path;
 #define DIST_RADAR_APPROACH     600.0f  /* 雷达区 */
 #define DIST_FINISH             750.0f  /* 终点区 */
 
-/* 速度定义 (占空比 /1000) */
-#define SPEED_SEARCH            250
-#define SPEED_STRAIGHT          400
-#define SPEED_LINE_FOLLOW       350
-#define SPEED_U_TURN            200
-#define SPEED_S_CURVE           250
-#define SPEED_BOX               200
-#define SPEED_CIRCLE            200
-#define SPEED_RADAR             150
-#define SPEED_FINISH            300
+/* 速度定义：2ms 控制周期内的编码器增量目标 */
+#define SPEED_SEARCH            3
+#define SPEED_STRAIGHT          5
+#define SPEED_LINE_FOLLOW       5
+#define SPEED_U_TURN            3
+#define SPEED_S_CURVE           4
+#define SPEED_BOX               3
+#define SPEED_CIRCLE            3
+#define SPEED_RADAR             2
+#define SPEED_FINISH            4
 
 /* 丢线/稳线计数阈值 */
 #define LINE_LOST_THRESHOLD     30
@@ -121,15 +121,12 @@ static float CalcCurveStrength(void)
 static void DetectTrackSide(void)
 {
     if (g_path.track_side == TRACK_UNKNOWN) {
-        /* 需要连续多次检测到大幅偏移才判定赛道侧，避免噪声误判
-         * position_get 范围 [0,150]，中心约 80（传感器8）
-         * 偏右半区 (>96, 即 precise>9.6) -> 可能是右赛道
-         * 偏左半区 (<64, 即 precise<6.4) -> 可能是左赛道 */
-        if (position_get > 96) {
+        if (position_get > 42) {
             side_accum++;
-        } else if (position_get < 64) {
+        } else if (position_get < 18) {
             side_accum--;
         }
+
         if (side_accum > 20) {
             g_path.track_side = TRACK_LEFT;
         } else if (side_accum < -20) {

@@ -17,6 +17,12 @@ extern volatile int16_t position_get;
 #ifndef WHEEL_BALANCE_LIMIT
 #define WHEEL_BALANCE_LIMIT 300.0f
 #endif
+#ifndef PID_SPEED_OUTPUT_LIMIT
+#define PID_SPEED_OUTPUT_LIMIT 1200.0f
+#endif
+#ifndef PID_POSITION_OUTPUT_LIMIT
+#define PID_POSITION_OUTPUT_LIMIT 800.0f
+#endif
 
 // ==================== 速度环PID实现 ====================
 
@@ -270,10 +276,10 @@ PositionPID_Controller_t g_position_pid;
 void PID_Init(void)
 {
     // 速度环：控制平均速度
-    SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, 8000.0f, -8000.0f);
+    SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, PID_SPEED_OUTPUT_LIMIT, -PID_SPEED_OUTPUT_LIMIT);
     
     // 位置环：输出偏差值，叠加到速度环
-    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    PositionPID_Init(&g_position_pid, 350.0f, 0.0f, 120.0f, 0.0f, PID_POSITION_OUTPUT_LIMIT, -PID_POSITION_OUTPUT_LIMIT, (float)(SENSOR_COUNT - 1u) / 2.0f);
 }
 extern volatile uint8_t is_racing;
 void PID_Control_Update(void)

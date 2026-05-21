@@ -63,6 +63,12 @@ volatile uint16_t radar_distance_cm = 0;
 #ifndef LINE_SENSOR_TEST_ONLY
 #define LINE_SENSOR_TEST_ONLY 1
 #endif
+#ifndef TDPS_COMPETITION_ENABLE
+#define TDPS_COMPETITION_ENABLE 0
+#endif
+#ifndef TDPS_COMPETITION_LINE_LOST_LIMIT
+#define TDPS_COMPETITION_LINE_LOST_LIMIT 250u
+#endif
 #ifndef SENSOR_DEBUG_MIN_SPAN
 #define SENSOR_DEBUG_MIN_SPAN 80u
 #endif
@@ -325,6 +331,21 @@ static void SafetyStopAll(void)
     g_manual_drive_ticks_remaining = 0;
 }
 
+#if TDPS_COMPETITION_ENABLE
+static void StartCompetitionRace(void)
+{
+    FanMotor_SafetyLock_ForceOff();
+    Motor_StopAll();
+    BlackPoint_Finder_ResetLastPosition();
+    lose_time = 0;
+    g_manual_drive_active = 0;
+    g_manual_drive_ticks_remaining = 0;
+    Path_StartRace();
+    Motor_Enable();
+    is_racing = 1;
+}
+#endif
+
 // ========== ESP32 协议回调 ==========
 static void OnLoraSpeed(const ProtoFrame_t *f)
 {
@@ -403,15 +424,31 @@ int main(void)
             else
             {
                 lose_time++;
-                if (lose_time > 500)
+                if (lose_time > TDPS_COMPETITION_LINE_LOST_LIMIT)
                 {
-                    lose_time = 500;
+                    lose_time = TDPS_COMPETITION_LINE_LOST_LIMIT;
                     SafetyStopAll();
                 }
             }
 
-            // 安全锁状态下不执行闭环电机输出
+#if TDPS_COMPETITION_ENABLE
+            if (is_racing)
+            {
+                PID_Control_Update();
+                if (Path_GetCurrentSegment() == SEG_FINISH)
+                {
+                    SafetyStopAll();
+                }
+            }
+            else
+            {
+                Motor_StopAll();
+                Motor_Disable();
+                FanMotor_SafetyLock_ForceOff();
+            }
+#else
             SafetyStopAll();
+#endif
 
         }
 
@@ -455,9 +492,13 @@ int main(void)
             case KEY_K1:
                 // K1: 传感器测试模式下不启动自动循迹
                 RGB_SetColor(RGB_COLOR_R);
+#if TDPS_COMPETITION_ENABLE
+                StartCompetitionRace();
+#else
                 SafetyStopAll();
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
+#endif
                 break;
             case KEY_K2:
                 // K2: 立即停止所有运动
@@ -470,12 +511,34 @@ int main(void)
             case KEY_K3:
                 // K3: 安全锁状态下只保持停机
                 RGB_SetColor(RGB_COLOR_YELLOW);
+#if TDPS_COMPETITION_ENABLE
+                if (is_racing)
+                {
+                    Path_SetSegment(SEG_LINE_FOLLOW);
+                }
+                else
+                {
+                    SafetyStopAll();
+                }
+#else
                 SafetyStopAll();
+#endif
                 break;
             case KEY_K4:
                 // K4: 安全锁状态下只保持停机
                 RGB_SetColor(RGB_COLOR_CYAN);
+#if TDPS_COMPETITION_ENABLE
+                if (is_racing)
+                {
+                    Path_SetSegment(SEG_RADAR_APPROACH);
+                }
+                else
+                {
+                    SafetyStopAll();
+                }
+#else
                 SafetyStopAll();
+#endif
                 break;
             }
         }
