@@ -60,26 +60,6 @@ volatile uint16_t radar_distance_cm = 0;
 #ifndef OLED_TELEMETRY_PERIOD_TICKS
 #define OLED_TELEMETRY_PERIOD_TICKS 500u
 #endif
-#define STRAIGHT_TEST_PERIOD_TICKS 25u
-#define STRAIGHT_TEST_SPEED_PID_KP 8.0f
-#define STRAIGHT_TEST_SPEED_PID_KI 1.0f
-#define STRAIGHT_TEST_SPEED_PID_KD 2.0f
-#define STRAIGHT_TEST_MAX_ADJUST 450
-#define STRAIGHT_TEST_MIN_DUTY 900
-#define STRAIGHT_TEST_K3_DURATION_TICKS 500u
-#define STRAIGHT_TEST_K4_DURATION_TICKS 500u
-#define STRAIGHT_TEST_RIGHT_BIAS 0
-#define STRAIGHT_TEST_RIGHT_TARGET_BIAS 0.30f
-#define STRAIGHT_TEST_DUTY_TO_DELTA_DIV 250
-#define STRAIGHT_TEST_START_PULSE_DUTY 1200
-#define STRAIGHT_TEST_START_PULSE_TICKS 75u
-#define STRAIGHT_TEST_LOW_DUTY 950
-#define FAN_MOTOR_TEST_START_DUTY 0u
-#define FAN_MOTOR_TEST_HOLD_DUTY 0u
-#define FAN_MOTOR_TEST_START_TICKS 0u
-#define FAN_MOTOR_TEST_DURATION_TICKS 1000u
-#define FAN_MOTOR_TEST_ON_K1 0
-
 #ifndef LINE_SENSOR_TEST_ONLY
 #define LINE_SENSOR_TEST_ONLY 1
 #endif
@@ -90,18 +70,6 @@ volatile uint16_t radar_distance_cm = 0;
 #define SENSOR_DEBUG_THRESHOLD_PERCENT 35u
 #endif
 
-static uint8_t g_straight_test_active = 0;
-static uint16_t g_straight_test_base_duty = 0;
-static uint16_t g_straight_test_pulse_duty = 0;
-static uint16_t g_straight_test_pulse_ticks = 0;
-static uint32_t g_straight_test_start_tick = 0;
-static uint32_t g_straight_test_last_tick = 0;
-static int32_t g_straight_test_last_left_cnt = 0;
-static int32_t g_straight_test_last_right_cnt = 0;
-static SpeedPID_Controller_t g_straight_left_pid;
-static SpeedPID_Controller_t g_straight_right_pid;
-static uint8_t g_fan_motor_test_active = 0;
-static uint32_t g_fan_motor_test_start_tick = 0;
 static uint8_t g_sensor_min_index = 0;
 static uint8_t g_sensor_max_index = 0;
 static uint16_t g_sensor_min_value = 0;
@@ -346,241 +314,34 @@ static void SendRawAdcTelemetry(void)
 }
 #endif
 
-// ========== ESP32 协议回调 ==========
-static void OnLoraSpeed(const ProtoFrame_t *f)
+static void SafetyStopAll(void)
 {
-    if (f->len < 4) return;
-    /* 遥控模式：退出自动循迹，直接驱动电机 */
-    is_racing = 0;
-    g_straight_test_active = 0;
-    g_fan_motor_test_active = 0;
-    g_manual_drive_active = 0;
-    g_manual_drive_ticks_remaining = 0;
     Path_StopRace();
     Motor_StopAll();
     Motor_Disable();
     FanMotor_SafetyLock_ForceOff();
+    is_racing = 0;
+    g_manual_drive_active = 0;
+    g_manual_drive_ticks_remaining = 0;
+}
+
+// ========== ESP32 协议回调 ==========
+static void OnLoraSpeed(const ProtoFrame_t *f)
+{
+    if (f->len < 4) return;
+    SafetyStopAll();
 }
 
 static void OnLoraStop(const ProtoFrame_t *f)
 {
     (void)f;
-    Path_StopRace();
-    Motor_StopAll();
-    Motor_Disable();
-    FanMotor_SafetyLock_ForceOff();
-    is_racing = 0;
-    g_straight_test_active = 0;
-    g_fan_motor_test_active = 0;
-    g_manual_drive_active = 0;
-    g_manual_drive_ticks_remaining = 0;
+    SafetyStopAll();
 }
 
 static void OnRadarDist(const ProtoFrame_t *f)
 {
     if (f->len < 2) return;
     radar_distance_cm = (uint16_t)PROTO_RD_U16(f->payload, 0);
-}
-
-// 手动驾驶模式（K3/K4 使用）
-static void StartManualDrive(uint16_t left_duty, uint16_t right_duty, uint16_t duration_ticks)
-{
-    (void)left_duty;
-    (void)right_duty;
-    (void)duration_ticks;
-    is_racing = 0;
-    Path_StopRace();
-    Motor_StopAll();
-    Motor_Disable();
-    g_fan_motor_test_active = 0;
-    g_straight_test_active = 0;
-    g_manual_drive_ticks_remaining = 0;
-    g_manual_drive_active = 0;
-    FanMotor_SafetyLock_ForceOff();
-}
-
-static int32_t ClampStraightAdjust(int32_t adjust)
-{
-    if (adjust > STRAIGHT_TEST_MAX_ADJUST)
-    {
-        return STRAIGHT_TEST_MAX_ADJUST;
-    }
-    if (adjust < -STRAIGHT_TEST_MAX_ADJUST)
-    {
-        return -STRAIGHT_TEST_MAX_ADJUST;
-    }
-    return adjust;
-}
-
-static uint16_t ClampStraightDuty(int32_t duty)
-{
-    if (duty > MOTOR_DUTY_SAFE_MAX)
-    {
-        return MOTOR_DUTY_SAFE_MAX;
-    }
-    if (duty < STRAIGHT_TEST_MIN_DUTY)
-    {
-        return STRAIGHT_TEST_MIN_DUTY;
-    }
-    return (uint16_t)duty;
-}
-
-static float GetStraightTargetDelta(uint16_t duty)
-{
-    float target_delta = (float)duty / (float)STRAIGHT_TEST_DUTY_TO_DELTA_DIV;
-    if (target_delta < 1.0f)
-    {
-        return 1.0f;
-    }
-    return target_delta;
-}
-
-static void StartStraightTest(uint16_t base_duty, uint16_t duration_ticks, uint16_t pulse_duty, uint16_t pulse_ticks)
-{
-    uint16_t initial_duty;
-
-    if (base_duty > MOTOR_DUTY_SAFE_MAX)
-    {
-        base_duty = MOTOR_DUTY_SAFE_MAX;
-    }
-    if (base_duty < STRAIGHT_TEST_MIN_DUTY)
-    {
-        base_duty = STRAIGHT_TEST_MIN_DUTY;
-    }
-
-    if (pulse_ticks > 0u)
-    {
-        if (pulse_duty > MOTOR_DUTY_SAFE_MAX)
-        {
-            pulse_duty = MOTOR_DUTY_SAFE_MAX;
-        }
-        if (pulse_duty < STRAIGHT_TEST_MIN_DUTY)
-        {
-            pulse_duty = STRAIGHT_TEST_MIN_DUTY;
-        }
-        initial_duty = pulse_duty;
-    }
-    else
-    {
-        pulse_duty = 0;
-        initial_duty = base_duty;
-    }
-
-    StartManualDrive(initial_duty, initial_duty, duration_ticks);
-
-    g_straight_test_active = 1;
-    g_straight_test_base_duty = base_duty;
-    g_straight_test_pulse_duty = pulse_duty;
-    g_straight_test_pulse_ticks = pulse_ticks;
-    g_straight_test_start_tick = add_angle_num;
-    g_straight_test_last_tick = add_angle_num;
-    g_straight_test_last_left_cnt = left_encoder_cnt;
-    g_straight_test_last_right_cnt = right_encoder_cnt;
-    SpeedPID_Init(&g_straight_left_pid, STRAIGHT_TEST_SPEED_PID_KP, STRAIGHT_TEST_SPEED_PID_KI, STRAIGHT_TEST_SPEED_PID_KD,
-                  (float)STRAIGHT_TEST_MAX_ADJUST, (float)-STRAIGHT_TEST_MAX_ADJUST);
-    SpeedPID_Init(&g_straight_right_pid, STRAIGHT_TEST_SPEED_PID_KP, STRAIGHT_TEST_SPEED_PID_KI, STRAIGHT_TEST_SPEED_PID_KD,
-                  (float)STRAIGHT_TEST_MAX_ADJUST, (float)-STRAIGHT_TEST_MAX_ADJUST);
-}
-
-static void UpdateStraightTest(void)
-{
-    uint32_t now_tick;
-    int32_t left_cnt;
-    int32_t right_cnt;
-    int32_t left_delta;
-    int32_t right_delta;
-    float target_delta;
-    float left_target_delta;
-    float right_target_delta;
-
-    int32_t left_adjust;
-    int32_t right_adjust;
-    uint16_t active_duty;
-    uint16_t left_duty;
-    uint16_t right_duty;
-
-    if (!g_straight_test_active)
-    {
-        return;
-    }
-
-    if (!g_manual_drive_active)
-    {
-        g_straight_test_active = 0;
-        return;
-    }
-
-    now_tick = add_angle_num;
-    if ((uint32_t)(now_tick - g_straight_test_last_tick) < STRAIGHT_TEST_PERIOD_TICKS)
-    {
-        return;
-    }
-    g_straight_test_last_tick = now_tick;
-
-    left_cnt = left_encoder_cnt;
-    right_cnt = right_encoder_cnt;
-    left_delta = left_cnt - g_straight_test_last_left_cnt;
-    right_delta = right_cnt - g_straight_test_last_right_cnt;
-    g_straight_test_last_left_cnt = left_cnt;
-    g_straight_test_last_right_cnt = right_cnt;
-
-    active_duty = g_straight_test_base_duty;
-    if ((g_straight_test_pulse_ticks > 0u) &&
-        ((uint32_t)(now_tick - g_straight_test_start_tick) < (uint32_t)g_straight_test_pulse_ticks))
-    {
-        active_duty = g_straight_test_pulse_duty;
-    }
-
-    target_delta = GetStraightTargetDelta(active_duty);
-    left_target_delta = target_delta - STRAIGHT_TEST_RIGHT_TARGET_BIAS;
-    right_target_delta = target_delta + STRAIGHT_TEST_RIGHT_TARGET_BIAS;
-    if (left_target_delta < 1.0f)
-    {
-        left_target_delta = 1.0f;
-    }
-    left_adjust = ClampStraightAdjust((int32_t)SpeedPID_Calculate(&g_straight_left_pid, left_target_delta, (float)left_delta));
-    right_adjust = ClampStraightAdjust((int32_t)SpeedPID_Calculate(&g_straight_right_pid, right_target_delta, (float)right_delta));
-
-    left_duty = ClampStraightDuty((int32_t)active_duty + left_adjust - STRAIGHT_TEST_RIGHT_BIAS);
-    right_duty = ClampStraightDuty((int32_t)active_duty + right_adjust + STRAIGHT_TEST_RIGHT_BIAS);
-    Motor_SetSpeed(MOTOR_L, left_duty);
-    Motor_SetSpeed(MOTOR_R, right_duty);
-}
-
-static void StartFanMotorTest(void)
-{
-    is_racing = 0;
-    Path_StopRace();
-    g_straight_test_active = 0;
-    Motor_StopAll();
-    Motor_Disable();
-    FanMotor_SafetyLock_ForceOff();
-    g_manual_drive_ticks_remaining = 0;
-    g_manual_drive_active = 0;
-    g_fan_motor_test_active = 0;
-}
-
-static void UpdateFanMotorTest(void)
-{
-    if (!g_fan_motor_test_active)
-    {
-        return;
-    }
-    if (!g_manual_drive_active)
-    {
-        g_fan_motor_test_active = 0;
-        FanMotor_SafetyLock_ForceOff();
-        return;
-    }
-#if FAN_MOTOR_TEST_START_TICKS > 0u
-    if ((uint32_t)(add_angle_num - g_fan_motor_test_start_tick) >= FAN_MOTOR_TEST_START_TICKS)
-    {
-        if (FanMotor_SafetyLock_GetDutyCycle() != FAN_MOTOR_TEST_HOLD_DUTY)
-        {
-            FanMotor_SafetyLock_ForceOff();
-        }
-    }
-#endif
 }
 
 int main(void)
@@ -631,46 +392,26 @@ int main(void)
             LineSensor_SampleAll();
             UpdateSensorDebugSnapshot();
 
-            if (g_manual_drive_active)
+            // 黑线识别
+            BlackPoint_Finder_Search(g_line_sensor_values, &result_BlackPoint);
+
+            if (result_BlackPoint.found)
             {
-                UpdateStraightTest();
-                UpdateFanMotorTest();
+                position_get = (int16_t)(result_BlackPoint.precise_position * 10.0f);
+                if (lose_time > 0) lose_time--;
             }
             else
             {
-                // 黑线识别
-                BlackPoint_Finder_Search(g_line_sensor_values, &result_BlackPoint);
-
-                if (result_BlackPoint.found)
+                lose_time++;
+                if (lose_time > 500)
                 {
-                    position_get = (int16_t)(result_BlackPoint.precise_position * 10.0f);
-                    if (lose_time > 0) lose_time--;
-                }
-                else
-                {
-                    lose_time++;
-                    if (lose_time > 500)
-                    {
-                        lose_time = 500;
-                        Motor_StopAll();
-                        Motor_Disable();
-                        is_racing = 0;
-                    }
-
-                }
-
-                // 双环 PID 控制
-                if (is_racing)
-                {
-                    PID_Control_Update();
-                }
-                else
-                {
-                    Motor_StopAll();
-                    Motor_Disable();
-                    FanMotor_SafetyLock_ForceOff();
+                    lose_time = 500;
+                    SafetyStopAll();
                 }
             }
+
+            // 安全锁状态下不执行闭环电机输出
+            SafetyStopAll();
 
         }
 
@@ -713,57 +454,28 @@ int main(void)
                 break;
             case KEY_K1:
                 // K1: 传感器测试模式下不启动自动循迹
-
-#if FAN_MOTOR_TEST_ON_K1
-                RGB_SetColor(RGB_COLOR_B);
-                StartFanMotorTest();
-#else
                 RGB_SetColor(RGB_COLOR_R);
-                g_straight_test_active = 0;
-                g_manual_drive_active = 0;
-
-                g_manual_drive_ticks_remaining = 0;
-#if LINE_SENSOR_TEST_ONLY
-                Path_StopRace();
-                Motor_StopAll();
-                Motor_Disable();
-                is_racing = 0;
+                SafetyStopAll();
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
-#else
-                Path_StopRace();
-                Motor_StopAll();
-                Motor_Disable();
-                FanMotor_SafetyLock_ForceOff();
-                is_racing = 0;
-                lose_time = 0;  // 复位丢线超时计数器，避免超时后重启立即再超时
-#endif
-#endif
                 break;
             case KEY_K2:
                 // K2: 立即停止所有运动
                 RGB_SetColor(RGB_COLOR_G);
-                Path_StopRace();
-                FanMotor_SafetyLock_ForceOff();
-                Motor_StopAll();
-                Motor_Disable();
-
-                g_straight_test_active = 0;
-                g_fan_motor_test_active = 0;
-                g_manual_drive_active = 0;
-                g_manual_drive_ticks_remaining = 0;
+                SafetyStopAll();
                 lose_time = 0;
 
                 break;
+
             case KEY_K3:
-                // K3: 编码器轮速闭环测试 10%
+                // K3: 安全锁状态下只保持停机
                 RGB_SetColor(RGB_COLOR_YELLOW);
-                StartManualDrive(0u, 0u, 0u);
+                SafetyStopAll();
                 break;
             case KEY_K4:
-                // K4: 低速起步脉冲轮速闭环测试 9.5%
+                // K4: 安全锁状态下只保持停机
                 RGB_SetColor(RGB_COLOR_CYAN);
-                StartManualDrive(0u, 0u, 0u);
+                SafetyStopAll();
                 break;
             }
         }
