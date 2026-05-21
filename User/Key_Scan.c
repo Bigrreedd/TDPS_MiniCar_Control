@@ -3,13 +3,13 @@
 #include "stm32f10x_gpio.h"
 
 // 按键GPIO定义
-#define KEY_K1_PORT    GPIOA
-#define KEY_K1_PIN     GPIO_Pin_5
-#define KEY_K1_RCC     RCC_APB2Periph_GPIOA
+#define KEY_K1_PORT    GPIOB
+#define KEY_K1_PIN     GPIO_Pin_14
+#define KEY_K1_RCC     RCC_APB2Periph_GPIOB
 
-#define KEY_K2_PORT    GPIOA
-#define KEY_K2_PIN     GPIO_Pin_4
-#define KEY_K2_RCC     RCC_APB2Periph_GPIOA
+#define KEY_K2_PORT    GPIOB
+#define KEY_K2_PIN     GPIO_Pin_13
+#define KEY_K2_RCC     RCC_APB2Periph_GPIOB
 
 #define KEY_K3_PORT    GPIOC
 #define KEY_K3_PIN     GPIO_Pin_14
@@ -83,7 +83,7 @@ void Key_Scan_Init(void)
     // 使能GPIO时钟
     RCC_APB2PeriphClockCmd(KEY_K1_RCC | KEY_K2_RCC | KEY_K3_RCC | KEY_K4_RCC | RCC_APB2Periph_AFIO, ENABLE);
     
-    // 配置K1 (PA5) 和 K2 (PA4) 为上拉输入
+    // 配置K1 (PB14) 和 K2 (PB13) 为上拉输入
     GPIO_InitStructure.GPIO_Pin = KEY_K1_PIN | KEY_K2_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;  // 上拉输入
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;

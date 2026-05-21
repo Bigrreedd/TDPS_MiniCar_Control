@@ -7,7 +7,7 @@
 #include "stdio.h"
 
 // 传感器数量（可根据实际硬件调整）
-#define SENSOR_COUNT 16
+#define SENSOR_COUNT 7
 
 // 黑点判断阈值百分比（20%）
 #define BLACK_POINT_THRESHOLD_PERCENT 0.2f

@@ -69,6 +69,7 @@ __pycache__/
 # 忽略背景文档和本地文档
 TDPS_Background/
 TDPS_Document/
+pdf_reader/
 
 # 忽略 Obsidian 配置
 .obsidian/

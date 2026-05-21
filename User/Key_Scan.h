@@ -6,8 +6,8 @@
 // 按键定义
 typedef enum {
     KEY_NONE = 0,   // 无按键
-    KEY_K1,         // K1 (PA5)
-    KEY_K2,         // K2 (PA4)
+    KEY_K1,         // K1 (PB14)
+    KEY_K2,         // K2 (PB13)
     KEY_K3,         // K3 (PC14)
     KEY_K4          // K4 (PC13)
 } Key_ID_t;

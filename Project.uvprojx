@@ -686,14 +686,14 @@
               <FilePath>.\User\stm32f10x_it.h</FilePath>
             </File>
             <File>
-              <FileName>M3PWM.c</FileName>
+              <FileName>FanMotor_SafetyLock.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\User\M3PWM.c</FilePath>
+              <FilePath>.\User\FanMotor_SafetyLock.c</FilePath>
             </File>
             <File>
-              <FileName>M3PWM.h</FileName>
+              <FileName>FanMotor_SafetyLock.h</FileName>
               <FileType>5</FileType>
-              <FilePath>.\User\M3PWM.h</FilePath>
+              <FilePath>.\User\FanMotor_SafetyLock.h</FilePath>
             </File>
             <File>
               <FileName>Motor_ctr.c</FileName>
@@ -726,14 +726,14 @@
               <FilePath>.\User\ABEncoder.h</FilePath>
             </File>
             <File>
-              <FileName>ADC_get.c</FileName>
+              <FileName>LineSensor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\User\ADC_get.c</FilePath>
+              <FilePath>.\User\LineSensor.c</FilePath>
             </File>
             <File>
-              <FileName>ADC_get.h</FileName>
+              <FileName>LineSensor.h</FileName>
               <FileType>5</FileType>
-              <FilePath>.\User\ADC_get.h</FilePath>
+              <FilePath>.\User\LineSensor.h</FilePath>
             </File>
             <File>
               <FileName>Uart_Config.c</FileName>
@@ -756,14 +756,14 @@
               <FilePath>.\User\RGB_Led.h</FilePath>
             </File>
             <File>
-              <FileName>LSM6DSR_Config.c</FileName>
+              <FileName>MPU6050_Config.c</FileName>
               <FileType>1</FileType>
-              <FilePath>.\User\LSM6DSR_Config.c</FilePath>
+              <FilePath>.\User\MPU6050_Config.c</FilePath>
             </File>
             <File>
-              <FileName>LSM6DSR_Config.h</FileName>
+              <FileName>MPU6050_Config.h</FileName>
               <FileType>5</FileType>
-              <FilePath>.\User\LSM6DSR_Config.h</FilePath>
+              <FilePath>.\User\MPU6050_Config.h</FilePath>
             </File>
             <File>
               <FileName>pose.c</FileName>

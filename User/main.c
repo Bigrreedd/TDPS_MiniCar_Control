@@ -1,15 +1,15 @@
 #include "stm32f10x.h"                  // Device header
 #include "Delay.h"
-#include "M3PWM.h"
+#include "FanMotor_SafetyLock.h"
 #include "Motor_ctr.h"
 #include "OLED.h"
 #include "ABEncoder.h"
-#include "ADC_get.h"
+#include "LineSensor.h"
 #include "Uart_Config.h"
 #include "stdio.h"
 #include "math.h"
 #include "RGB_Led.h"
-#include "LSM6DSR_Config.h"
+#include "MPU6050_Config.h"
 #include "pose.h"
 #include "Key_Scan.h"
 #include "system_stm32f10x.h"
@@ -74,11 +74,11 @@ volatile uint16_t radar_distance_cm = 0;
 #define STRAIGHT_TEST_START_PULSE_DUTY 1200
 #define STRAIGHT_TEST_START_PULSE_TICKS 75u
 #define STRAIGHT_TEST_LOW_DUTY 950
-#define FAN_MOTOR_TEST_START_DUTY 600u
-#define FAN_MOTOR_TEST_HOLD_DUTY 300u
-#define FAN_MOTOR_TEST_START_TICKS 150u
+#define FAN_MOTOR_TEST_START_DUTY 0u
+#define FAN_MOTOR_TEST_HOLD_DUTY 0u
+#define FAN_MOTOR_TEST_START_TICKS 0u
 #define FAN_MOTOR_TEST_DURATION_TICKS 1000u
-#define FAN_MOTOR_TEST_ON_K1 1
+#define FAN_MOTOR_TEST_ON_K1 0
 
 #ifndef LINE_SENSOR_TEST_ONLY
 #define LINE_SENSOR_TEST_ONLY 1
@@ -118,7 +118,7 @@ static uint16_t BuildSensorMask(void)
     uint8_t i;
     for (i = 0; i < SENSOR_COUNT; i++)
     {
-        if (BlackPoint_Finder_IsBlackPoint(i, (uint16_t)g_mux_adc_values[i]))
+        if (BlackPoint_Finder_IsBlackPoint(i, (uint16_t)g_line_sensor_values[i]))
         {
             mask |= (uint16_t)(1u << i);
         }
@@ -140,11 +140,11 @@ static int16_t CalculateSensorDebugPos10(uint16_t mask, uint8_t low_is_target)
         }
         if (low_is_target)
         {
-            weight = (uint32_t)g_sensor_max_value - (uint32_t)g_mux_adc_values[i];
+            weight = (uint32_t)g_sensor_max_value - (uint32_t)g_line_sensor_values[i];
         }
         else
         {
-            weight = (uint32_t)g_mux_adc_values[i] - (uint32_t)g_sensor_min_value;
+            weight = (uint32_t)g_line_sensor_values[i] - (uint32_t)g_sensor_min_value;
         }
         weight++;
         weight_sum += weight;
@@ -170,7 +170,7 @@ static void UpdateSensorDebugSnapshot(void)
     g_sensor_high_pos10 = -1;
     for (i = 0; i < SENSOR_COUNT; i++)
     {
-        uint16_t value = (uint16_t)g_mux_adc_values[i];
+        uint16_t value = (uint16_t)g_line_sensor_values[i];
         if (value < g_sensor_min_value)
         {
             g_sensor_min_value = value;
@@ -191,7 +191,7 @@ static void UpdateSensorDebugSnapshot(void)
     high_threshold = g_sensor_max_value - (uint16_t)(((uint32_t)g_sensor_span * SENSOR_DEBUG_THRESHOLD_PERCENT) / 100u);
     for (i = 0; i < SENSOR_COUNT; i++)
     {
-        uint16_t value = (uint16_t)g_mux_adc_values[i];
+        uint16_t value = (uint16_t)g_line_sensor_values[i];
         if (value <= low_threshold)
         {
             g_sensor_low_mask |= (uint16_t)(1u << i);
@@ -255,9 +255,9 @@ static void SendTextDebugTelemetry(void)
     static int32_t last_left_encoder_cnt = 0;
     static int32_t last_right_encoder_cnt = 0;
     int32_t yaw100 = ScaleFloat100(add_angle_deg_360);
-    int32_t gx1000 = ScaleFloat1000(LSM6DSR_data.gx_rads);
-    int32_t gy1000 = ScaleFloat1000(LSM6DSR_data.gy_rads);
-    int32_t gz1000 = ScaleFloat1000(LSM6DSR_data.gz_rads);
+    int32_t gx1000 = ScaleFloat1000(MPU6050_data.gx_rads);
+    int32_t gy1000 = ScaleFloat1000(MPU6050_data.gy_rads);
+    int32_t gz1000 = ScaleFloat1000(MPU6050_data.gz_rads);
     int32_t dist100 = ScaleFloat100(Path_GetTotalDistCm());
     int32_t bat100 = ScaleFloat100(BDI_V);
     int32_t left_cnt = left_encoder_cnt;
@@ -291,9 +291,9 @@ static void SendTextDebugTelemetry(void)
     printf(" ");
     PrintFixed3("GZ", gz1000);
     printf(" GR=%d,%d,%d SL=%d SR=%d SD=%d EL=%ld ER=%ld EDL=%ld EDR=%ld T3=%u T4=%u EIO=%X DL=%u DR=%u FAN=%u ",
-           (int)LSM6DSR_data.gx,
-           (int)LSM6DSR_data.gy,
-           (int)LSM6DSR_data.gz,
+           (int)MPU6050_data.gx,
+           (int)MPU6050_data.gy,
+           (int)MPU6050_data.gz,
            (int)speed_left,
            (int)speed_right,
            (int)(speed_left - speed_right),
@@ -306,7 +306,7 @@ static void SendTextDebugTelemetry(void)
            (unsigned)enc_io,
            (unsigned)Motor_GetDuty(MOTOR_L),
            (unsigned)Motor_GetDuty(MOTOR_R),
-           (unsigned)M3PWM_GetDutyCycle());
+           (unsigned)FanMotor_SafetyLock_GetDutyCycle());
 
     PrintFixed2("DIST", dist100);
     printf(" ADC=%04X LM=%04X HM=%04X S=%u:%u,%u:%u,%u LP=%d HP=%d ",
@@ -334,24 +334,15 @@ static void SendTextDebugTelemetry(void)
 #if UART_RAW_ADC_DEBUG_ENABLE
 static void SendRawAdcTelemetry(void)
 {
-    printf("RAW %u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,PA0=%u\r\n",
-           (unsigned)g_mux_adc_values[0],
-           (unsigned)g_mux_adc_values[1],
-           (unsigned)g_mux_adc_values[2],
-           (unsigned)g_mux_adc_values[3],
-           (unsigned)g_mux_adc_values[4],
-           (unsigned)g_mux_adc_values[5],
-           (unsigned)g_mux_adc_values[6],
-           (unsigned)g_mux_adc_values[7],
-           (unsigned)g_mux_adc_values[8],
-           (unsigned)g_mux_adc_values[9],
-           (unsigned)g_mux_adc_values[10],
-           (unsigned)g_mux_adc_values[11],
-           (unsigned)g_mux_adc_values[12],
-           (unsigned)g_mux_adc_values[13],
-           (unsigned)g_mux_adc_values[14],
-           (unsigned)g_mux_adc_values[15],
-           (unsigned)g_mux_adc_values[16]);
+    printf("RAW7 %u,%u,%u,%u,%u,%u,%u,PA0=%u\r\n",
+           (unsigned)g_line_sensor_values[0],
+           (unsigned)g_line_sensor_values[1],
+           (unsigned)g_line_sensor_values[2],
+           (unsigned)g_line_sensor_values[3],
+           (unsigned)g_line_sensor_values[4],
+           (unsigned)g_line_sensor_values[5],
+           (unsigned)g_line_sensor_values[6],
+           (unsigned)g_battery_adc_value);
 }
 #endif
 
@@ -359,8 +350,6 @@ static void SendRawAdcTelemetry(void)
 static void OnLoraSpeed(const ProtoFrame_t *f)
 {
     if (f->len < 4) return;
-    int16_t left  = PROTO_RD_U16(f->payload, 0);
-    int16_t right = PROTO_RD_U16(f->payload, 2);
     /* 遥控模式：退出自动循迹，直接驱动电机 */
     is_racing = 0;
     g_straight_test_active = 0;
@@ -368,11 +357,9 @@ static void OnLoraSpeed(const ProtoFrame_t *f)
     g_manual_drive_active = 0;
     g_manual_drive_ticks_remaining = 0;
     Path_StopRace();
-
-    Motor_Enable();
-    Motor_SetSpeedWithDirection(MOTOR_L, (float)left);
-    Motor_SetSpeedWithDirection(MOTOR_R, (float)right);
-    M3PWM_SetDutyCycle(0);
+    Motor_StopAll();
+    Motor_Disable();
+    FanMotor_SafetyLock_ForceOff();
 }
 
 static void OnLoraStop(const ProtoFrame_t *f)
@@ -381,7 +368,7 @@ static void OnLoraStop(const ProtoFrame_t *f)
     Path_StopRace();
     Motor_StopAll();
     Motor_Disable();
-    M3PWM_SetDutyCycle(0);
+    FanMotor_SafetyLock_ForceOff();
     is_racing = 0;
     g_straight_test_active = 0;
     g_fan_motor_test_active = 0;
@@ -398,20 +385,18 @@ static void OnRadarDist(const ProtoFrame_t *f)
 // 手动驾驶模式（K3/K4 使用）
 static void StartManualDrive(uint16_t left_duty, uint16_t right_duty, uint16_t duration_ticks)
 {
+    (void)left_duty;
+    (void)right_duty;
+    (void)duration_ticks;
     is_racing = 0;
-
     Path_StopRace();
-    M3PWM_SetDutyCycle(0);
+    Motor_StopAll();
+    Motor_Disable();
     g_fan_motor_test_active = 0;
-    g_manual_drive_ticks_remaining = duration_ticks;
-
-    g_manual_drive_active = 1;
-
-    Motor_Enable();
-    Motor_SetDirection(MOTOR_L, MOTOR_DIR_FORWARD);
-    Motor_SetDirection(MOTOR_R, MOTOR_DIR_FORWARD);
-    Motor_SetSpeed(MOTOR_L, left_duty);
-    Motor_SetSpeed(MOTOR_R, right_duty);
+    g_straight_test_active = 0;
+    g_manual_drive_ticks_remaining = 0;
+    g_manual_drive_active = 0;
+    FanMotor_SafetyLock_ForceOff();
 }
 
 static int32_t ClampStraightAdjust(int32_t adjust)
@@ -567,15 +552,12 @@ static void StartFanMotorTest(void)
     is_racing = 0;
     Path_StopRace();
     g_straight_test_active = 0;
-
     Motor_StopAll();
     Motor_Disable();
-    g_manual_drive_ticks_remaining = FAN_MOTOR_TEST_DURATION_TICKS;
-    g_manual_drive_active = 1;
-    g_fan_motor_test_active = 1;
-    g_fan_motor_test_start_tick = add_angle_num;
-    M3PWM_Start();
-    M3PWM_SetDutyCycle(FAN_MOTOR_TEST_START_DUTY);
+    FanMotor_SafetyLock_ForceOff();
+    g_manual_drive_ticks_remaining = 0;
+    g_manual_drive_active = 0;
+    g_fan_motor_test_active = 0;
 }
 
 static void UpdateFanMotorTest(void)
@@ -587,16 +569,18 @@ static void UpdateFanMotorTest(void)
     if (!g_manual_drive_active)
     {
         g_fan_motor_test_active = 0;
-        M3PWM_SetDutyCycle(0);
+        FanMotor_SafetyLock_ForceOff();
         return;
     }
+#if FAN_MOTOR_TEST_START_TICKS > 0u
     if ((uint32_t)(add_angle_num - g_fan_motor_test_start_tick) >= FAN_MOTOR_TEST_START_TICKS)
     {
-        if (M3PWM_GetDutyCycle() != FAN_MOTOR_TEST_HOLD_DUTY)
+        if (FanMotor_SafetyLock_GetDutyCycle() != FAN_MOTOR_TEST_HOLD_DUTY)
         {
-            M3PWM_SetDutyCycle(FAN_MOTOR_TEST_HOLD_DUTY);
+            FanMotor_SafetyLock_ForceOff();
         }
     }
+#endif
 }
 
 int main(void)
@@ -604,15 +588,15 @@ int main(void)
     // 外设初始化
     RGB_Init();
     OLED_Init();
-    g_imu_init_ok = LSM6DSR_Init();
-    g_imu_who_id  = LSM6DSR_ReadID();
-    M3PWM_Init();
+    g_imu_init_ok = MPU6050_Init();
+    g_imu_who_id  = MPU6050_ReadID();
+    FanMotor_SafetyLock_Init();
     SysTick_Init();
     Motor_Init();
-    M3PWM_Start();
+    FanMotor_SafetyLock_ForceOff();
     ABEncoder_Init();
     BlackPoint_Finder_Init();
-    MuxADC_Init();
+    LineSensor_Init();
     Key_Scan_Init();
     Uart2_Init(115200);
     PID_Init();
@@ -643,8 +627,8 @@ int main(void)
         {
             g_control_tick = 0;
 
-            // ADC 16+1 通道轮询采样（耗时操作，已从中断移出）
-            MuxADC_SampleAll();
+            // 7路光电 + PA0电池电压轮询采样（耗时操作，已从中断移出）
+            LineSensor_SampleAll();
             UpdateSensorDebugSnapshot();
 
             if (g_manual_drive_active)
@@ -655,7 +639,7 @@ int main(void)
             else
             {
                 // 黑线识别
-                BlackPoint_Finder_Search(g_mux_adc_values, &result_BlackPoint);
+                BlackPoint_Finder_Search(g_line_sensor_values, &result_BlackPoint);
 
                 if (result_BlackPoint.found)
                 {
@@ -676,7 +660,16 @@ int main(void)
                 }
 
                 // 双环 PID 控制
-                PID_Control_Update();
+                if (is_racing)
+                {
+                    PID_Control_Update();
+                }
+                else
+                {
+                    Motor_StopAll();
+                    Motor_Disable();
+                    FanMotor_SafetyLock_ForceOff();
+                }
             }
 
         }
@@ -710,7 +703,7 @@ int main(void)
         // ---- 人机交互（非实时，低优先级） ----
         Key_Scan_Update();
         Key_Event_t *event = Key_GetEvent();
-        BDI_V = (float)g_mux_adc_values[16] * 0.00426508726f;
+        BDI_V = (float)g_battery_adc_value * 0.00426508726f;
 
         if (event != NULL)
         {
@@ -738,11 +731,12 @@ int main(void)
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
 #else
-                Motor_Enable();
-                is_racing = 1;
-
+                Path_StopRace();
+                Motor_StopAll();
+                Motor_Disable();
+                FanMotor_SafetyLock_ForceOff();
+                is_racing = 0;
                 lose_time = 0;  // 复位丢线超时计数器，避免超时后重启立即再超时
-                Path_StartRace();
 #endif
 #endif
                 break;
@@ -750,7 +744,7 @@ int main(void)
                 // K2: 立即停止所有运动
                 RGB_SetColor(RGB_COLOR_G);
                 Path_StopRace();
-                M3PWM_SetDutyCycle(0);
+                FanMotor_SafetyLock_ForceOff();
                 Motor_StopAll();
                 Motor_Disable();
 
@@ -764,13 +758,12 @@ int main(void)
             case KEY_K3:
                 // K3: 编码器轮速闭环测试 10%
                 RGB_SetColor(RGB_COLOR_YELLOW);
-                StartStraightTest((uint16_t)(MOTOR_DUTY_MAX * 10u / 100u), STRAIGHT_TEST_K3_DURATION_TICKS, 0u, 0u);
+                StartManualDrive(0u, 0u, 0u);
                 break;
             case KEY_K4:
                 // K4: 低速起步脉冲轮速闭环测试 9.5%
                 RGB_SetColor(RGB_COLOR_CYAN);
-                StartStraightTest(STRAIGHT_TEST_LOW_DUTY, STRAIGHT_TEST_K4_DURATION_TICKS,
-                                  STRAIGHT_TEST_START_PULSE_DUTY, STRAIGHT_TEST_START_PULSE_TICKS);
+                StartManualDrive(0u, 0u, 0u);
                 break;
             }
         }

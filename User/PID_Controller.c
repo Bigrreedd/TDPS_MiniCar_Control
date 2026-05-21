@@ -1,5 +1,5 @@
 #include "PID_Controller.h"
-#include "LSM6DSR_Config.h"
+#include "MPU6050_Config.h"
 #include "Path.h"
 #include "ABEncoder.h"
 #include <math.h>
@@ -167,7 +167,7 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	float d_term = controller->param.kd * (error - controller->last_error);
 	float gyro_term = 0.0f;
 #if PID_GYRO_ENABLE
-	gyro_term = controller->param.gyro_kd * LSM6DSR_data.gz_rads;
+	gyro_term = controller->param.gyro_kd * MPU6050_data.gz_rads;
 	// gyro_kd * gz_rads 的典型量级远超 3500，需要按实际角速度范围重新标定限幅
 	// 正常行驶 gz_rads ≈ ±5 rad/s，急转弯 ≈ ±20 rad/s
 	// 限幅设为 output_max 的 40%，保证补偿有效但不过度
@@ -273,7 +273,7 @@ void PID_Init(void)
     SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, 8000.0f, -8000.0f);
     
     // 位置环：输出偏差值，叠加到速度环
-    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, 8.0f);
+    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
 }
 extern volatile uint8_t is_racing;
 void PID_Control_Update(void)

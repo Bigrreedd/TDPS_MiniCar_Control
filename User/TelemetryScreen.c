@@ -2,7 +2,7 @@
 #include "OLED.h"
 #include "OLED_CN.h"
 #include "BlackPoint_Finder.h"
-#include "ADC_get.h"
+#include "LineSensor.h"
 #include "Motor_ctr.h"
 #include "ABEncoder.h"
 #include "Battery.h"
@@ -18,7 +18,7 @@ static uint16_t build_sensor_mask(void)
 	uint8_t i;
 	for (i = 0; i < SENSOR_COUNT; i++)
 	{
-		if (BlackPoint_Finder_IsBlackPoint(i, (uint16_t)g_mux_adc_values[i]))
+		if (BlackPoint_Finder_IsBlackPoint(i, (uint16_t)g_line_sensor_values[i]))
 			m |= (uint16_t)(1u << i);
 	}
 	return m;
@@ -77,7 +77,7 @@ void TelemetryScreen_Update(void)
 	OLED_ShowString(2, 4, ubuf);
 	OLED_CN_DrawGlyph(2, 10, CN_GUANG);
 	OLED_ShowChar(2, 12, ':');
-	OLED_ShowHexNum(2, 13, (uint32_t)mask, 4);
+	OLED_ShowHexNum(2, 13, (uint32_t)mask, 2);
 
 	OLED_ClearLine(3);
 	OLED_CN_DrawGlyph(3, 1, CN_SU);

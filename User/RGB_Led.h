@@ -3,7 +3,7 @@
 
 #include "stm32f10x.h"
 
-// 引脚映射：PB3(G)，PA15(B)，PB8(R)
+// 引脚映射：PB5(R)，PB4(G)，PB3(B)
 
 typedef enum {
 	RGB_COLOR_OFF = 0,

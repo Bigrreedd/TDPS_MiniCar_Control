@@ -4,9 +4,9 @@
 
 // 共阳极LED：低电平点亮，高电平熄灭
 
-static inline void RGB_WriteR(BitAction v) { GPIO_WriteBit(GPIOB, GPIO_Pin_8, v); }
-static inline void RGB_WriteG(BitAction v) { GPIO_WriteBit(GPIOB, GPIO_Pin_3, v); }
-static inline void RGB_WriteB(BitAction v) { GPIO_WriteBit(GPIOA, GPIO_Pin_15, v); }
+static inline void RGB_WriteR(BitAction v) { GPIO_WriteBit(GPIOB, GPIO_Pin_5, v); }
+static inline void RGB_WriteG(BitAction v) { GPIO_WriteBit(GPIOB, GPIO_Pin_4, v); }
+static inline void RGB_WriteB(BitAction v) { GPIO_WriteBit(GPIOB, GPIO_Pin_3, v); }
 
 static void RGB_AllOff(void)
 {
@@ -19,20 +19,16 @@ void RGB_Init(void)
 {
 	GPIO_InitTypeDef gpio;
 
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
 
-	// 释放PB3、PB4、PA15复用功能：关闭JTAG但保留SWD，J-Link可用
+	// 释放PB3、PB4复用功能：关闭JTAG但保留SWD，J-Link可用
 	GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);
 
-	// PB8(R)，PB3(G) 推挽输出
+	// PB5(R)，PB4(G)，PB3(B) 推挽输出
 	gpio.GPIO_Speed = GPIO_Speed_50MHz;
 	gpio.GPIO_Mode = GPIO_Mode_Out_PP;
-	gpio.GPIO_Pin = GPIO_Pin_8 | GPIO_Pin_3;
+	gpio.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_4 | GPIO_Pin_3;
 	GPIO_Init(GPIOB, &gpio);
-
-	// PA15(B) 推挽输出
-	gpio.GPIO_Pin = GPIO_Pin_15;
-	GPIO_Init(GPIOA, &gpio);
 
 	RGB_AllOff();
 }

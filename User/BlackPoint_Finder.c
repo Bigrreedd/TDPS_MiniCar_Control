@@ -16,31 +16,12 @@ static float last_precise_position = (float)(SENSOR_COUNT / 2);
  */
 void BlackPoint_Finder_Init(void)
 {
-	
-//	// 初始化所有传感器的默认配置
-//	// 默认值：最小值=100（白纸），最大值=3500（黑点）
-//	// 实际使用时需要通过校准或调参来设置正确的值
-//	for(i = 0; i < SENSOR_COUNT; i++)
-//	{
-//		sensor_config[i].min_value = 100;   // 默认最小值（白纸）
-//		sensor_config[i].max_value = 3500;  // 默认最大值（黑点）
-//	}
-			sensor_config[0].min_value = 200;sensor_config[0].max_value = 1400;
-			sensor_config[1].min_value = 200;sensor_config[1].max_value = 1700;
-			sensor_config[2].min_value = 320;sensor_config[2].max_value = 1660;
-			sensor_config[3].min_value = 200;sensor_config[3].max_value = 2100;
-			sensor_config[4].min_value = 200;sensor_config[4].max_value = 2000;
-			sensor_config[5].min_value = 200;sensor_config[5].max_value = 1770;
-			sensor_config[6].min_value = 150;sensor_config[6].max_value = 1770;
-			sensor_config[7].min_value = 200;sensor_config[7].max_value = 2220;
-			sensor_config[8].min_value = 200;sensor_config[8].max_value = 2250;
-			sensor_config[9].min_value = 200;sensor_config[9].max_value = 2100;
-			sensor_config[10].min_value = 200;sensor_config[10].max_value = 1700;
-			sensor_config[11].min_value = 200;sensor_config[11].max_value = 1760;
-			sensor_config[12].min_value = 200;sensor_config[12].max_value = 1980;
-			sensor_config[13].min_value = 200;sensor_config[13].max_value = 2530;
-			sensor_config[14].min_value = 220;sensor_config[14].max_value = 2310;
-			sensor_config[15].min_value = 230;sensor_config[15].max_value = 1790;
+	uint8_t i;
+	for(i = 0; i < SENSOR_COUNT; i++)
+	{
+		sensor_config[i].min_value = 0;
+		sensor_config[i].max_value = 4095;
+	}
 	// 初始化上一次位置为中间
 	last_position = SENSOR_COUNT / 2;
 	last_precise_position = (float)(SENSOR_COUNT / 2);
@@ -289,5 +270,6 @@ uint8_t BlackPoint_Finder_GetLastPosition(void)
 void BlackPoint_Finder_ResetLastPosition(void)
 {
 	last_position = SENSOR_COUNT / 2;
+	last_precise_position = (float)(SENSOR_COUNT / 2);
 }
 

@@ -1,5 +1,5 @@
 #include "pose.h"
-#include "LSM6DSR_Config.h"
+#include "MPU6050_Config.h"
 #include <math.h>
 float_ang_struct    att_angle;              //??????????
 float_xyz_struct    gyr_rad;                //??????????????????????????????????
@@ -87,15 +87,15 @@ float arcsin(float i)
 void prepare_data(void)
 {
 	//?????AD? ????? ??/????? 
-	acc_g.x = LSM6DSR_data.ax_g;
-	acc_g.y =	LSM6DSR_data.ay_g;
-	acc_g.z = LSM6DSR_data.az_g;
+	acc_g.x = MPU6050_data.ax_g;
+	acc_g.y =	MPU6050_data.ay_g;
+	acc_g.z = MPU6050_data.az_g;
 //	printf("ax=%0.2f ay=%0.2f az=%0.2f\r\n",acc_g.x,acc_g.y,acc_g.z);
 
 	//??????AD? ????? ????/??    
-	gyr_rad.x = LSM6DSR_data.gx_rads;
-	gyr_rad.y = LSM6DSR_data.gy_rads;
-	gyr_rad.z = LSM6DSR_data.gz_rads;
+	gyr_rad.x = MPU6050_data.gx_rads;
+	gyr_rad.y = MPU6050_data.gy_rads;
+	gyr_rad.z = MPU6050_data.gz_rads;
 	
 }
 void one_filter(float_xyz_struct *acc,float_xyz_struct *gyro, float_xyz_struct *filter_angle)
