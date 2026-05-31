@@ -40,7 +40,9 @@ extern volatile uint8_t g_manual_drive_active;
 extern volatile uint16_t g_manual_drive_ticks_remaining;
 extern volatile uint8_t g_control_tick;
 extern volatile int16_t position_get;
+extern volatile uint32_t g_millis;
 /* Exported functions ------------------------------------------------------- */
+uint32_t Millis_Get(void);
 
 void NMI_Handler(void);
 void HardFault_Handler(void);

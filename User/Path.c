@@ -122,12 +122,12 @@ static void DetectTrackSide(void)
 {
     if (g_path.track_side == TRACK_UNKNOWN) {
         /* 需要连续多次检测到大幅偏移才判定赛道侧，避免噪声误判
-         * position_get 范围 [0,150]，中心约 80（传感器8）
-         * 偏右半区 (>96, 即 precise>9.6) -> 可能是右赛道
-         * 偏左半区 (<64, 即 precise<6.4) -> 可能是左赛道 */
-        if (position_get > 96) {
+         * position_get 范围 [0,60]，中心约 80（传感器8）
+         * 偏右半区 (>40, 即 precise>4.0) -> 可能是右赛道
+         * 偏左半区 (<20, 即 precise<2.0) -> 可能是左赛道 */
+        if (position_get > 40) {
             side_accum++;
-        } else if (position_get < 64) {
+        } else if (position_get < 20) {
             side_accum--;
         }
         if (side_accum > 20) {

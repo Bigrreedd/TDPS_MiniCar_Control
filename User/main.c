@@ -2,6 +2,7 @@
 #include "Delay.h"
 #include "FanMotor_SafetyLock.h"
 #include "Motor_ctr.h"
+#include "M3PWM.h"
 #include "OLED.h"
 #include "ABEncoder.h"
 #include "LineSensor.h"
@@ -58,7 +59,7 @@ volatile uint16_t radar_distance_cm = 0;
 #define OLED_TELEMETRY_ENABLE 1
 #endif
 #ifndef OLED_TELEMETRY_PERIOD_TICKS
-#define OLED_TELEMETRY_PERIOD_TICKS 500u
+#define OLED_TELEMETRY_PERIOD_TICKS 150u
 #endif
 #ifndef LINE_SENSOR_TEST_ONLY
 #define LINE_SENSOR_TEST_ONLY 1
@@ -296,6 +297,17 @@ static void SendTextDebugTelemetry(void)
            (unsigned)Key_GetState(KEY_K4),
            (unsigned)g_imu_init_ok,
            (unsigned)g_imu_who_id);
+    /* 临时诊断：TIM1 硬件寄存器，定位电机不转 */
+    printf("TIMDBG MOE=%u CEN=%u CCER=%04X CCR2=%u CCR4=%u ARR=%u PA12=%u PA9nib=%X PA11nib=%X\r\n",
+           (unsigned)((TIM1->BDTR >> 15) & 1u),
+           (unsigned)(TIM1->CR1 & 1u),
+           (unsigned)TIM1->CCER,
+           (unsigned)TIM1->CCR2,
+           (unsigned)TIM1->CCR4,
+           (unsigned)TIM1->ARR,
+           (unsigned)(GPIO_ReadOutputDataBit(GPIOA, GPIO_Pin_12)),
+           (unsigned)((GPIOA->CRH >> 4) & 0xFu),
+           (unsigned)((GPIOA->CRH >> 12) & 0xFu));
 }
 #endif
 
@@ -326,6 +338,37 @@ static void SafetyStopAll(void)
 }
 
 // ========== ESP32 协议回调 ==========
+/* 开环自检：两电机正转，固定占空比驱动约 1 秒（由 SysTick 计时自动停）。
+ * 上闭环前用它确认电机转向、左右编码器计数方向是否正常。
+ * duty 经 Motor_SetSpeed 内部安全上限(2000=20%)裁剪，不会超限烧机。
+ * K3=1500(15%)、K4=2000(20%) 两档用于找电机起转门槛。 */
+#define OPENLOOP_TEST_DUTY_K3 1500u   /* 15% 满量程(10000) */
+#define OPENLOOP_TEST_DUTY_K4 2000u   /* 20% 满量程(10000)，等于安全上限 */
+#define OPENLOOP_TEST_TICKS   5000u   /* SysTick 2ms/tick -> 约 10s，方便万用表读数 */
+/* GPIO 直接输出测试：绕过 TIM1，把 PA9/PA11/PA12 配成普通推挽并拉高。
+ * 按 K3 触发。万用表量到 3.3V = 引脚物理连通；量不到 = 焊接断路。 */
+static void GpioDirectTest(void)
+{
+    GPIO_InitTypeDef gpio;
+    gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+    gpio.GPIO_Speed = GPIO_Speed_50MHz;
+    gpio.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_11 | GPIO_Pin_12;
+    GPIO_Init(GPIOA, &gpio);
+    GPIO_SetBits(GPIOA, GPIO_Pin_9 | GPIO_Pin_11 | GPIO_Pin_12);
+}
+
+static void StartOpenLoopMotorTest(uint16_t duty)
+{
+    Motor_Enable();
+    Motor_SetDirection(MOTOR_L, MOTOR_DIR_FORWARD);
+    Motor_SetDirection(MOTOR_R, MOTOR_DIR_FORWARD);
+    Motor_SetSpeed(MOTOR_L, duty);
+    Motor_SetSpeed(MOTOR_R, duty);
+    /* 先设剩余 tick 再置 active，避免 SysTick 在中途看到 active=1 而 ticks=0 立即停 */
+    g_manual_drive_ticks_remaining = OPENLOOP_TEST_TICKS;
+    g_manual_drive_active = 1;
+}
+
 static void OnLoraSpeed(const ProtoFrame_t *f)
 {
     if (f->len < 4) return;
@@ -354,6 +397,8 @@ int main(void)
     FanMotor_SafetyLock_Init();
     SysTick_Init();
     Motor_Init();
+    M3PWM_Init();
+    M3PWM_Start();
     FanMotor_SafetyLock_ForceOff();
     ABEncoder_Init();
     BlackPoint_Finder_Init();
@@ -400,7 +445,7 @@ int main(void)
                 position_get = (int16_t)(result_BlackPoint.precise_position * 10.0f);
                 if (lose_time > 0) lose_time--;
             }
-            else
+            else if (!g_manual_drive_active)
             {
                 lose_time++;
                 if (lose_time > 500)
@@ -411,7 +456,10 @@ int main(void)
             }
 
             // 安全锁状态下不执行闭环电机输出
-            SafetyStopAll();
+            if (!g_manual_drive_active)
+            {
+                SafetyStopAll();
+            }
 
         }
 
@@ -453,29 +501,27 @@ int main(void)
             case KEY_NONE:
                 break;
             case KEY_K1:
-                // K1: 传感器测试模式下不启动自动循迹
-                RGB_SetColor(RGB_COLOR_R);
+                // 认键模式：仅显示，不驱动电机
                 SafetyStopAll();
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
+                OLED_ShowString(1, 1, "KEY=K1          ");
                 break;
             case KEY_K2:
-                // K2: 立即停止所有运动
-                RGB_SetColor(RGB_COLOR_G);
+                // 认键模式：仅显示，不驱动电机
                 SafetyStopAll();
                 lose_time = 0;
-
+                OLED_ShowString(1, 1, "KEY=K2          ");
                 break;
-
             case KEY_K3:
-                // K3: 安全锁状态下只保持停机
-                RGB_SetColor(RGB_COLOR_YELLOW);
-                SafetyStopAll();
+                // K3: 开环自检 15%（轮子正转约1秒，SysTick 自动停）
+                OLED_ShowString(1, 1, "KEY=K3 15%      ");
+                StartOpenLoopMotorTest(OPENLOOP_TEST_DUTY_K3);
                 break;
             case KEY_K4:
-                // K4: 安全锁状态下只保持停机
-                RGB_SetColor(RGB_COLOR_CYAN);
-                SafetyStopAll();
+                // K4: 开环自检 20%（轮子正转约1秒，SysTick 自动停）
+                OLED_ShowString(1, 1, "KEY=K4 20%      ");
+                StartOpenLoopMotorTest(OPENLOOP_TEST_DUTY_K4);
                 break;
             }
         }

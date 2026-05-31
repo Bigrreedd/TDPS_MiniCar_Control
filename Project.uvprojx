@@ -336,7 +336,7 @@
               <MiscControls>--diag_suppress=550,1</MiscControls>
               <Define>USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>.\Start;.\Library;.\User;.\System</IncludePath>
+              <IncludePath>.\Start;.\Library;.\User;.\User\eMPL;.\System</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -706,6 +706,16 @@
               <FilePath>.\User\Motor_ctr.h</FilePath>
             </File>
             <File>
+              <FileName>M3PWM.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\M3PWM.c</FilePath>
+            </File>
+            <File>
+              <FileName>M3PWM.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\M3PWM.h</FilePath>
+            </File>
+            <File>
               <FileName>OLED.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\OLED.c</FilePath>
@@ -829,6 +839,46 @@
               <FileName>Protocol.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\Protocol.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>eMPL</GroupName>
+          <Files>
+            <File>
+              <FileName>inv_mpu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\eMPL\inv_mpu.c</FilePath>
+            </File>
+            <File>
+              <FileName>inv_mpu.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\eMPL\inv_mpu.h</FilePath>
+            </File>
+            <File>
+              <FileName>inv_mpu_dmp_motion_driver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\eMPL\inv_mpu_dmp_motion_driver.c</FilePath>
+            </File>
+            <File>
+              <FileName>inv_mpu_dmp_motion_driver.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\eMPL\inv_mpu_dmp_motion_driver.h</FilePath>
+            </File>
+            <File>
+              <FileName>dmpKey.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\eMPL\dmpKey.h</FilePath>
+            </File>
+            <File>
+              <FileName>dmpmap.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\eMPL\dmpmap.h</FilePath>
+            </File>
+            <File>
+              <FileName>empl_port.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\eMPL\empl_port.h</FilePath>
             </File>
           </Files>
         </Group>

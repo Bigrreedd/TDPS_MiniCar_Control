@@ -31,5 +31,15 @@ uint8_t MPU6050_ReadReg(uint8_t reg);
 void MPU6050_WriteReg(uint8_t reg, uint8_t value);
 void MPU6050_ReadRegs(uint8_t reg, uint8_t *buf, uint8_t len);
 
+/* eMPL/DMP 平台胶水接口：使用 7 位从机地址（如 0x68），返回 0 表示成功，非 0 失败 */
+int MPU6050_I2C_WriteLen(uint8_t slave_addr7, uint8_t reg, uint8_t len, const uint8_t *data);
+int MPU6050_I2C_ReadLen(uint8_t slave_addr7, uint8_t reg, uint8_t len, uint8_t *buf);
+void MPU6050_I2C_PinInit(void);
+
+/* DMP 占用软件 I2C 期间挂起/恢复 SysTick 的 IMU 自动读，避免总线竞争 */
+void MPU6050_SuspendAutoRead(void);
+void MPU6050_ResumeAutoRead(void);
+uint8_t MPU6050_IsAutoReadSuspended(void);
+
 #endif
 

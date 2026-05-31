@@ -20,6 +20,7 @@ C_DEFS = -DUSE_STDPERIPH_DRIVER -DSTM32F10X_MD
 # 5. 头文件包含路径 (根据你的目录结构动态匹配)
 C_INCLUDES = \
 -IUser \
+-IUser/eMPL \
 -ISystem \
 -ILibrary \
 -IStart
@@ -27,6 +28,7 @@ C_INCLUDES = \
 # 6. C 语言源文件 (利用 wildcard 自动遍历文件夹下的所有 .c，以后加新文件无需修改此处)
 C_SOURCES = \
 $(wildcard User/*.c) \
+$(wildcard User/eMPL/*.c) \
 $(wildcard System/*.c) \
 $(wildcard Library/*.c) \
 $(wildcard Start/*.c)

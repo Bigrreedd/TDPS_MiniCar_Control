@@ -3,7 +3,7 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_rcc.h"
 
-#define LINE_SENSOR_ACTIVE_LOW 1
+#define LINE_SENSOR_ACTIVE_LOW 0
 #define LINE_SENSOR_BLACK_VALUE 0u
 #define LINE_SENSOR_WHITE_VALUE 4095u
 
