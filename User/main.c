@@ -148,7 +148,7 @@ static void OnLinkReset(const ProtoFrame_t *f)
 #define TUNE_PRINT_MS        100u     /* 遥测打印周期(ms)，与测速窗口同步 */
 #define TUNE_UART_IDLE_MS    20u      /* 串口命令无换行时，空闲20ms自动提交 */
 #define TUNE_MIN_TARGET      70.0f    /* 低于此速度容易跨不过起步死区 */
-#define TUNE_DEFAULT_TARGET  70.0f    /* 无串口时，按 K1 默认跑 70 cnt/s */
+#define TUNE_DEFAULT_TARGET  80.0f    /* 无串口时，按 K1 默认跑 80 cnt/s */
 #define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
 
 typedef struct
@@ -451,7 +451,7 @@ int main(void)
     Key_ClearEvent();
 
     /* 速度环：低速调参只允许前进输出，避免过目标后反转抽动 */
-    tune_pid_init(&g_tune_pid, 8.0f, 0.8f, 0.0f, TUNE_HARD_CAP, 0.0f);
+    tune_pid_init(&g_tune_pid, 6.0f, 0.3f, 0.0f, TUNE_HARD_CAP, 0.0f);
 
     Motor_StopAll();
     Motor_Disable();
@@ -464,6 +464,7 @@ int main(void)
     printf("\r\n=== LOWER PID TUNE (speed loop) ===\r\n");
     printf("keys: K1 run/stop, K2 stop, K3 target+10, K4 target-10\r\n");
     printf("uart: p<Kp> i<Ki> d<Kd> t<target cnt/s> g(run) s(stop) ?(show)\r\n");
+    printf("telemetry: RAW=2ms ticks, CPS=cnt/s over %dms window.\r\n", (int)TUNE_SPEED_WIN_MS);
     printf("default target=%d cnt/s; wheels off ground! no watchdog in tune mode.\r\n", (int)target_speed);
 
     while (1)
