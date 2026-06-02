@@ -3,6 +3,8 @@
 #include "OLED_CN.h"
 #include "BlackPoint_Finder.h"
 #include "LineSensor.h"
+#include "ABEncoder.h"
+#include "Motor_ctr.h"
 #include "Battery.h"
 #include <stdio.h>
 
@@ -10,10 +12,10 @@ extern volatile float add_angle_deg_360;
 extern volatile int16_t position_get;
 extern float BDI_V;
 
-/* 二合一板：下板经 MOTOR_STATUS 帧回传的电机数据（定义于上板 main.c） */
-extern volatile int16_t g_link_spd_l;
-extern volatile int16_t g_link_spd_r;
-extern volatile uint8_t g_link_pwm_pct;
+/* 二合一板上板：轮速来自下板 ENC_FEEDBACK(写入 speed_left/right)，
+ * 电机目标占空比来自本地控制算法 g_motor_target_l/r */
+extern volatile float g_motor_target_l;
+extern volatile float g_motor_target_r;
 
 void TelemetryScreen_Init(void)
 {
@@ -34,13 +36,15 @@ void TelemetryScreen_Update(void)
 	if (pos < -99999)
 		pos = -99999;
 
-	int spd_sum = (int)g_link_spd_l + (int)g_link_spd_r;
+	int spd_sum = (int)speed_left + (int)speed_right;
 	if (spd_sum > 9999)
 		spd_sum = 9999;
 	if (spd_sum < -9999)
 		spd_sum = -9999;
 
-	uint8_t pwm_pct = g_link_pwm_pct;
+	float duty_avg = (g_motor_target_l + g_motor_target_r) * 0.5f;
+	if (duty_avg < 0.0f) duty_avg = -duty_avg;
+	uint8_t pwm_pct = (uint8_t)((duty_avg * 100.0f) / (float)MOTOR_DUTY_MAX);
 	if (pwm_pct > 100u)
 		pwm_pct = 100;
 

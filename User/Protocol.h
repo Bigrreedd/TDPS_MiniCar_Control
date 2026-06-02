@@ -19,19 +19,16 @@
  *   0x03 RADAR_DIST   : [dist_hi][dist_lo]  (uint16, cm)
  *   0x10 PING         : 无 payload
  *
- * 二合一板 上板(传感) -> 下板(电机) 命令:
- *   0x20 SENSOR_DATA  : [pos_hi][pos_lo][flags][seg][gz_hi][gz_lo]
- *                       - pos     : int16, 循迹位置 = precise_position * 10（范围约 0~60）
- *                       - flags   : bit0=循线找到(found), bit1=启动(racing)
- *                       - seg     : 预留(0)，段状态由下板本地 Path 计算
- *                       - gz      : int16, 角速度 gz * 1000 (rad/s)，供下板角度环使用
+ * 二合一板 上板(大脑) -> 下板(执行器) 命令:
+ *   0x20 MOTOR_CMD    : [duty_l_hi][duty_l_lo][duty_r_hi][duty_r_lo][flags]
+ *                       - duty_l/r : int16, 左右轮带符号占空比(-10000~+10000)，
+ *                                    正=前进 负=后退，绝对值=占空比(满量程10000)
+ *                       - flags    : bit0=电机使能(enable)。为0时下板立即停车下电
  *
- * 二合一板 下板(电机) -> 上板(传感) 命令:
- *   0x21 MOTOR_STATUS : [spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][pwm_pct][seg][flags]
- *                       - spd_l/r : int16, 左右轮编码器测速
- *                       - pwm_pct : uint8, 平均占空比百分比(0~100)
- *                       - seg     : uint8, 当前 Path 段号
- *                       - flags   : bit0=racing
+ * 二合一板 下板(执行器) -> 上板(大脑) 命令:
+ *   0x21 ENC_FEEDBACK : [spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][cnt_l_3..0][cnt_r_3..0]
+ *                       - spd_l/r : int16, 左右轮编码器测速(每控制周期增量)
+ *                       - cnt_l/r : int32, 左右轮编码器累计计数(大端)
  *
  * STM32 -> ESP32 命令:
  *   0x80 TELEMETRY    : [pos_hi][pos_lo][spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][seg][batt_pct]
@@ -46,19 +43,17 @@
 #define PROTO_CMD_LORA_STOP    0x02
 #define PROTO_CMD_RADAR_DIST   0x03
 #define PROTO_CMD_PING         0x10
-#define PROTO_CMD_SENSOR_DATA  0x20
-#define PROTO_CMD_MOTOR_STATUS 0x21
+#define PROTO_CMD_MOTOR_CMD    0x20
+#define PROTO_CMD_ENC_FEEDBACK 0x21
 #define PROTO_CMD_TELEMETRY    0x80
 #define PROTO_CMD_ACK          0x81
 
-/* SENSOR_DATA 帧 payload 长度与 flags 位定义 */
-#define PROTO_SENSOR_DATA_LEN  6
-#define PROTO_SENSOR_FLAG_FOUND   0x01u
-#define PROTO_SENSOR_FLAG_RACING  0x02u
+/* MOTOR_CMD 帧 payload 长度与 flags 位定义 */
+#define PROTO_MOTOR_CMD_LEN     5
+#define PROTO_MOTOR_FLAG_ENABLE 0x01u
 
-/* MOTOR_STATUS 帧 payload 长度与 flags 位定义 */
-#define PROTO_MOTOR_STATUS_LEN  7
-#define PROTO_MOTOR_FLAG_RACING 0x01u
+/* ENC_FEEDBACK 帧 payload 长度 */
+#define PROTO_ENC_FEEDBACK_LEN  12
 
 /* 解析状态机 */
 typedef enum {
@@ -112,22 +107,17 @@ void Proto_SendTelemetry(int16_t position, int16_t speed_l, int16_t speed_r,
                          uint8_t segment, uint8_t battery_pct);
 
 /**
- * @brief 上板发送传感数据帧到下板（二合一板）
- * @param position: 循迹位置 = precise_position * 10
- * @param found:    循线是否找到（1/0）
- * @param racing:   是否处于启动/运行状态（1/0）
- * @param gz_rads:  角速度 gz (rad/s)，内部按 *1000 编码为 int16
+ * @brief 上板(大脑)发送电机指令帧到下板(执行器)
+ * @param duty_l/duty_r: 左右轮带符号占空比(-10000~+10000)，正前进负后退
+ * @param enable: 电机使能(1)/停车下电(0)
  */
-void Proto_SendSensorData(int16_t position, uint8_t found, uint8_t racing, float gz_rads);
+void Proto_SendMotorCmd(int16_t duty_l, int16_t duty_r, uint8_t enable);
 
 /**
- * @brief 下板发送电机状态帧到上板（二合一板，全双工链路）
- * @param speed_l/speed_r: 左右轮编码器测速
- * @param pwm_pct: 平均占空比百分比 (0~100)
- * @param segment: 当前 Path 段号
- * @param racing:  是否运行中 (1/0)
+ * @brief 下板(执行器)回传编码器反馈帧到上板(大脑)
+ * @param speed_l/speed_r: 左右轮测速
+ * @param cnt_l/cnt_r: 左右轮编码器累计计数
  */
-void Proto_SendMotorStatus(int16_t speed_l, int16_t speed_r, uint8_t pwm_pct,
-                           uint8_t segment, uint8_t racing);
+void Proto_SendEncFeedback(int16_t speed_l, int16_t speed_r, int32_t cnt_l, int32_t cnt_r);
 
 #endif /* __PROTOCOL_H__ */

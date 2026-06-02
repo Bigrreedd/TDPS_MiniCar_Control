@@ -14,17 +14,22 @@
 #include "TelemetryScreen.h"
 #include "Protocol.h"
 #include "Battery.h"
+#include "ABEncoder.h"
+#include "PID_Controller.h"
+#include "Path.h"
+#include "Motor_ctr.h"
 #include "stm32f10x_it.h"
 
 /*
  * ============================================================
- *  二合一板 —— 上板（传感/“手”）固件
+ *  二合一板 —— 上板（大脑）固件
  *  职责：7 路灰度循迹 + MPU6050 + OLED + 按键启动，
- *        通过 USART2 把 [循迹位置 / 找线标志 / 启停 / 角速度]
- *        发送给下板（电机/“脚”）。
- *  本板不接电机、编码器、风扇，相关逻辑全部交给下板。
- *  注意：USART2 现在是“板间链路”，只发二进制 SENSOR_DATA 帧，
- *        不再输出人类可读调试文本，避免污染下板解析器。
+ *        本地运行全部控制算法：位置环 + 速度环 + Path
+ *        + 15% 起步 + 丢线保护，最终通过 USART2 下发
+ *        MOTOR_CMD（左/右带符号占空比 + 使能）给下板。
+ *  轮速反馈来自下板的 ENC_FEEDBACK 帧。
+ *  设计目标：调试时只烧上板，下板（纯执行器）烧一次永不变。
+ *  注意：USART2 是“板间链路”，只发二进制帧，不输出调试文本。
  * ============================================================
  */
 
@@ -47,11 +52,19 @@ static uint32_t lose_time = 0;
 // ESP32-S3 雷达数据（保留协议兼容）
 volatile uint16_t radar_distance_cm = 0;
 
-/* 下板经 MOTOR_STATUS 帧回传的电机数据，供 OLED 显示真实轮速/占空比 */
-volatile int16_t g_link_spd_l = 0;
-volatile int16_t g_link_spd_r = 0;
-volatile uint8_t g_link_pwm_pct = 0;
-volatile uint8_t g_link_seg = 0;
+/* 起步占空比：满量程 10000 的 15% */
+#define START_DUTY_15PCT  1500.0f
+
+/* 下板经 ENC_FEEDBACK 帧回传的编码器计数（调试/里程备用） */
+volatile int32_t g_link_cnt_l = 0;
+volatile int32_t g_link_cnt_r = 0;
+static uint8_t g_prev_racing = 0;
+
+/* 速度环控制器（定义于 PID_Controller.c），起步时给其初始输出做前馈 */
+extern SpeedPID_Controller_t g_speed_pid;
+/* 位置环/速度环计算出的带符号电机目标（定义于 PID_Controller.c） */
+extern volatile float g_motor_target_l;
+extern volatile float g_motor_target_r;
 
 /* 大端字节序解码辅助 */
 #define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
@@ -169,7 +182,7 @@ static void StopRun(void)
     lose_time = 0;
 }
 
-// ========== ESP32 协议回调（保留兼容，本板不驱动电机） ==========
+// ========== ESP32 协议回调（保留兼容） ==========
 static void OnLoraStop(const ProtoFrame_t *f)
 {
     (void)f;
@@ -182,19 +195,21 @@ static void OnRadarDist(const ProtoFrame_t *f)
     radar_distance_cm = (uint16_t)PROTO_RD_U16(f->payload, 0);
 }
 
-// 下板 -> 上板 电机状态帧
-static void OnMotorStatus(const ProtoFrame_t *f)
+// 下板 -> 上板 编码器反馈帧：更新轮速（供本地速度环使用）
+static void OnEncFeedback(const ProtoFrame_t *f)
 {
-    if (f->len < PROTO_MOTOR_STATUS_LEN) return;
-    g_link_spd_l   = PROTO_RD_U16(f->payload, 0);
-    g_link_spd_r   = PROTO_RD_U16(f->payload, 2);
-    g_link_pwm_pct = f->payload[4];
-    g_link_seg     = f->payload[5];
+    if (f->len < PROTO_ENC_FEEDBACK_LEN) return;
+    speed_left  = PROTO_RD_U16(f->payload, 0);
+    speed_right = PROTO_RD_U16(f->payload, 2);
+    g_link_cnt_l = (int32_t)(((uint32_t)f->payload[4] << 24) | ((uint32_t)f->payload[5] << 16) |
+                             ((uint32_t)f->payload[6] << 8)  |  (uint32_t)f->payload[7]);
+    g_link_cnt_r = (int32_t)(((uint32_t)f->payload[8] << 24) | ((uint32_t)f->payload[9] << 16) |
+                             ((uint32_t)f->payload[10] << 8) |  (uint32_t)f->payload[11]);
 }
 
 int main(void)
 {
-    // 外设初始化（仅传感/显示/交互，无电机/编码器）
+    // 外设初始化（传感/显示/交互 + 本地控制算法，电机PWM输出经串口转发）
     RGB_Init();
     OLED_Init();
     g_imu_init_ok = MPU6050_Init();
@@ -205,6 +220,8 @@ int main(void)
     Key_Scan_Init();
     Uart2_Init(115200);
     TelemetryScreen_Init();
+    PID_Init();
+    Path_Init();
 
     (void)g_imu_init_ok;
     (void)g_imu_who_id;
@@ -215,10 +232,8 @@ int main(void)
     Proto_Init();
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
-    Proto_RegisterHandler(PROTO_CMD_MOTOR_STATUS, OnMotorStatus);
+    Proto_RegisterHandler(PROTO_CMD_ENC_FEEDBACK, OnEncFeedback);
 
-    uint8_t sensor_due = 0;
-    uint32_t sensor_last_tick = add_angle_num;
 #if OLED_TELEMETRY_ENABLE
     uint8_t oled_due = 1;
     uint32_t oled_last_tick = add_angle_num;
@@ -247,28 +262,47 @@ int main(void)
                 lose_time++;
                 if (lose_time > 500)
                 {
-                    lose_time = 500;       /* 丢线由下板根据 found 标志决定是否停车 */
+                    lose_time = 500;
+                    StopRun();             /* 丢线超时：本地停车 */
                 }
             }
+
+            // racing 上升沿：复位 Path/PID 并给速度环 15% 前馈起步
+            if (is_racing && !g_prev_racing)
+            {
+                Path_StartRace();
+                lose_time = 0;
+                g_speed_pid.last_output = START_DUTY_15PCT;
+            }
+            else if (!is_racing && g_prev_racing)
+            {
+                Path_StopRace();
+            }
+            g_prev_racing = is_racing;
+
+            // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
+            PID_Control_Update();
+
+            // 下发电机指令到下板执行器（带符号占空比 + 使能）
+            Proto_SendMotorCmd((int16_t)g_motor_target_l,
+                               (int16_t)g_motor_target_r,
+                               is_racing);
         }
 
         {
             uint32_t now_tick = add_angle_num;
-            if ((uint32_t)(now_tick - sensor_last_tick) >= SENSOR_DATA_PERIOD_TICKS)
-            {
-                sensor_last_tick = now_tick;
-                sensor_due = 1;
-            }
 #if OLED_TELEMETRY_ENABLE
             if ((uint32_t)(now_tick - oled_last_tick) >= OLED_TELEMETRY_PERIOD_TICKS)
             {
                 oled_last_tick = now_tick;
                 oled_due = 1;
             }
+#else
+            (void)now_tick;
 #endif
         }
 
-        // ---- 板间协议接收处理（ESP32/雷达兼容，低优先级） ----
+        // ---- 板间协议接收处理（编码器反馈 + ESP32/雷达兼容） ----
         Proto_Process();
 
         // ---- 人机交互：按键启动/停止 ----
@@ -283,7 +317,7 @@ int main(void)
             case KEY_NONE:
                 break;
             case KEY_K1:
-                // K1: 启动运行（通知下板开始循迹/PID）
+                // K1: 启动运行
                 is_racing = 1;
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
@@ -291,7 +325,7 @@ int main(void)
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
             case KEY_K2:
-                // K2: 停止运行（通知下板停车）
+                // K2: 停止运行
                 StopRun();
                 RGB_SetColor(RGB_COLOR_R);
                 OLED_ShowString(1, 1, "STOP K2         ");
@@ -315,15 +349,5 @@ int main(void)
             TelemetryScreen_Update();
         }
 #endif
-
-        // ---- 发送传感数据帧到下板（二进制，板间链路专用） ----
-        if (sensor_due)
-        {
-            sensor_due = 0;
-            Proto_SendSensorData(position_get,
-                                 result_BlackPoint.found,
-                                 is_racing,
-                                 MPU6050_data.gz_rads);
-        }
     }
 }

@@ -235,11 +235,18 @@ void PositionPID_Reset(PositionPID_Controller_t *controller)
  * @brief 根据速度目标值设置电机（自动处理方向和速度）
  * @note 速度负值为后退，正值为前进
  */
+/* 最近一次电机目标输出（带符号占空比），供二合一板上板转发到下板执行器 */
+volatile float g_motor_target_l = 0.0f;
+volatile float g_motor_target_r = 0.0f;
 void Motor_SetSpeedWithDirection(uint8_t motor_id, float speed_target)
 {
 	uint16_t duty = 0;
 	uint8_t direction = MOTOR_DIR_FORWARD;
 	
+	// 记录带符号目标，供上板(大脑)经串口转发给下板(执行器)
+	if(motor_id == MOTOR_L) g_motor_target_l = speed_target;
+	else if(motor_id == MOTOR_R) g_motor_target_r = speed_target;
+
 	// 判断方向
 	if(speed_target < 0.0f)
 	{
