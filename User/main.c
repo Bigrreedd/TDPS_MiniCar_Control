@@ -139,13 +139,13 @@ static void OnLinkReset(const ProtoFrame_t *f)
 /* ==================== 速度环脱机调参 harness ==================== */
 
 /* 口径常量：与上板逐一对齐 */
-#define TUNE_SPEED_WIN_MS    50u      /* 速度窗口(ms)，= 上板 SPEED_WIN_MS */
+#define TUNE_SPEED_WIN_MS    100u     /* 低速调参窗口；100ms 下 1 tick = 10 cnt/s */
 #define TUNE_HARD_CAP        1000.0f  /* PID 调节量限幅，= 上板 MOTOR_DUTY_HARD_CAP */
 #define TUNE_DEADZONE_L      750.0f   /* 左轮起步死区，= 上板 MOTOR_DEADZONE_L */
 #define TUNE_DEADZONE_R      950.0f   /* 右轮起步死区，= 上板 MOTOR_DEADZONE_R */
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
-#define TUNE_PRINT_MS        50u      /* 遥测打印周期(ms) */
+#define TUNE_PRINT_MS        100u     /* 遥测打印周期(ms)，与测速窗口同步 */
 #define TUNE_MIN_TARGET      70.0f    /* 低于此速度容易跨不过起步死区 */
 #define TUNE_DEFAULT_TARGET  70.0f    /* 无串口时，按 K1 默认跑 70 cnt/s */
 #define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
@@ -425,6 +425,8 @@ int main(void)
     uint32_t vel_t0;
     uint32_t print_t0;
     int16_t spd_l = 0, spd_r = 0;    /* 最近一次窗口换算的计数/秒，供打印 */
+    int32_t win_ticks_l = 0, win_ticks_r = 0;
+    uint32_t win_dt = 0u;
     float duty_cmd = 0.0f;           /* 速度环输出(死区前) */
     uint32_t now;
     int32_t cnt_l, cnt_r;
@@ -474,8 +476,11 @@ int main(void)
         if ((uint32_t)(now - vel_t0) >= TUNE_SPEED_WIN_MS)
         {
             dt = now - vel_t0;
-            spd_l = (int16_t)((vel_accum_l * 1000) / (int32_t)dt);
-            spd_r = (int16_t)((vel_accum_r * 1000) / (int32_t)dt);
+            win_dt = dt;
+            win_ticks_l = vel_accum_l;
+            win_ticks_r = vel_accum_r;
+            spd_l = (int16_t)((win_ticks_l * 1000) / (int32_t)dt);
+            spd_r = (int16_t)((win_ticks_r * 1000) / (int32_t)dt);
             vel_accum_l = 0;
             vel_accum_r = 0;
             vel_t0 = now;
@@ -499,8 +504,9 @@ int main(void)
         {
             print_t0 = now;
             if (run)
-                printf("T=%d L=%d R=%d out=%d\r\n",
-                       (int)target_speed, (int)spd_l, (int)spd_r, (int)duty_cmd);
+                printf("T=%d L=%d R=%d out=%d tickL=%ld tickR=%ld dt=%lu\r\n",
+                       (int)target_speed, (int)spd_l, (int)spd_r, (int)duty_cmd,
+                       (long)win_ticks_l, (long)win_ticks_r, (unsigned long)win_dt);
         }
     }
 }
