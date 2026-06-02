@@ -3,13 +3,13 @@
 #include "stm32f10x_gpio.h"
 
 // 按键GPIO定义
-#define KEY_K1_PORT    GPIOB
-#define KEY_K1_PIN     GPIO_Pin_14
-#define KEY_K1_RCC     RCC_APB2Periph_GPIOB
+#define KEY_K1_PORT    GPIOC      /* PCB2: KEY1 = PC13 */
+#define KEY_K1_PIN     GPIO_Pin_13
+#define KEY_K1_RCC     RCC_APB2Periph_GPIOC
 
-#define KEY_K2_PORT    GPIOB
-#define KEY_K2_PIN     GPIO_Pin_13
-#define KEY_K2_RCC     RCC_APB2Periph_GPIOB
+#define KEY_K2_PORT    GPIOC      /* PCB2: KEY2 = PC14 */
+#define KEY_K2_PIN     GPIO_Pin_14
+#define KEY_K2_RCC     RCC_APB2Periph_GPIOC
 
 #define KEY_K3_PORT    GPIOC
 #define KEY_K3_PIN     GPIO_Pin_14
@@ -49,10 +49,10 @@ static inline uint8_t Key_ReadRaw(Key_ID_t key_id)
             state = (GPIO_ReadInputDataBit(KEY_K2_PORT, KEY_K2_PIN) == Bit_RESET) ? 1 : 0;
             break;
         case KEY_K3:
-            state = (GPIO_ReadInputDataBit(KEY_K3_PORT, KEY_K3_PIN) == Bit_RESET) ? 1 : 0;
+            state = 0; /* PCB2: 新板仅 KEY1/KEY2 两个按键，K3 无物理按键，恒为未按下 */
             break;
         case KEY_K4:
-            state = (GPIO_ReadInputDataBit(KEY_K4_PORT, KEY_K4_PIN) == Bit_RESET) ? 1 : 0;
+            state = 0; /* PCB2: 新板仅 KEY1/KEY2 两个按键，K4 无物理按键，恒为未按下 */
             break;
         default:
             break;

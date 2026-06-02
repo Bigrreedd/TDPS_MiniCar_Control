@@ -397,8 +397,8 @@ int main(void)
     FanMotor_SafetyLock_Init();
     SysTick_Init();
     Motor_Init();
-    M3PWM_Init();
-    M3PWM_Start();
+    /* M3PWM_Init();  PCB2: PB11 改作第7路巡线(S7)，弃用风扇 TIM2_CH4，不再初始化 */
+    /* M3PWM_Start(); PCB2: 同上，停用风扇 PWM */
     FanMotor_SafetyLock_ForceOff();
     ABEncoder_Init();
     BlackPoint_Finder_Init();
