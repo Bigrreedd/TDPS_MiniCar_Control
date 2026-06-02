@@ -5,12 +5,10 @@
 #include "LineSensor.h"
 #include "ABEncoder.h"
 #include "Motor_ctr.h"
-#include "Battery.h"
 #include <stdio.h>
 
 extern volatile float add_angle_deg_360;
 extern volatile int16_t position_get;
-extern float BDI_V;
 
 /* 二合一板上板：轮速来自下板 ENC_FEEDBACK(写入 speed_left/right)，
  * 电机目标占空比来自本地控制算法 g_motor_target_l/r */
@@ -24,8 +22,8 @@ void TelemetryScreen_Init(void)
 void TelemetryScreen_Update(void)
 {
 	char pbuf[8];
-	char bbuf[8];
 	uint8_t i;
+	int spd_l, spd_r;
 	uint16_t yaw_deg = (uint16_t)add_angle_deg_360;
 	if (yaw_deg >= 360u)
 		yaw_deg = 0u;
@@ -36,19 +34,19 @@ void TelemetryScreen_Update(void)
 	if (pos < -99999)
 		pos = -99999;
 
-	int spd_sum = (int)speed_left + (int)speed_right;
-	if (spd_sum > 9999)
-		spd_sum = 9999;
-	if (spd_sum < -9999)
-		spd_sum = -9999;
+	/* 左右轮速分别显示，限幅 ±999 适配 3 位 */
+	spd_l = (int)speed_left;
+	if (spd_l > 999) spd_l = 999;
+	if (spd_l < -999) spd_l = -999;
+	spd_r = (int)speed_right;
+	if (spd_r > 999) spd_r = 999;
+	if (spd_r < -999) spd_r = -999;
 
 	float duty_avg = (g_motor_target_l + g_motor_target_r) * 0.5f;
 	if (duty_avg < 0.0f) duty_avg = -duty_avg;
 	uint8_t pwm_pct = (uint8_t)((duty_avg * 100.0f) / (float)MOTOR_DUTY_MAX);
 	if (pwm_pct > 100u)
 		pwm_pct = 100;
-
-	uint8_t bat = battery_percent(BDI_V);
 
 	OLED_ClearLine(1);
 	OLED_CN_DrawGlyph(1, 1, CN_WEI);
@@ -64,19 +62,19 @@ void TelemetryScreen_Update(void)
 	for (i = 0; i < SENSOR_COUNT; i++)
 		OLED_ShowChar(2, (uint8_t)(4 + i * 2), (g_line_sensor_values[i] != 0u) ? '1' : '0');
 
+	/* 第 3 行：左右轮实时速度  L:±xxx R:±xxx */
 	OLED_ClearLine(3);
-	OLED_CN_DrawGlyph(3, 1, CN_SU);
-	OLED_ShowChar(3, 3, ':');
-	OLED_ShowSignedNum(3, 4, spd_sum, 4);
-	OLED_CN_DrawGlyph(3, 9, CN_GONG);
-	OLED_ShowChar(3, 11, ':');
-	snprintf(pbuf, sizeof(pbuf), "%u%%", (unsigned)pwm_pct);
-	OLED_ShowString(3, 12, pbuf);
+	OLED_ShowChar(3, 1, 'L');
+	OLED_ShowChar(3, 2, ':');
+	OLED_ShowSignedNum(3, 3, spd_l, 3);
+	OLED_ShowChar(3, 8, 'R');
+	OLED_ShowChar(3, 9, ':');
+	OLED_ShowSignedNum(3, 10, spd_r, 3);
 
+	/* 第 4 行：电机输出占空比（电量显示已移除） */
 	OLED_ClearLine(4);
-	OLED_CN_DrawGlyph(4, 1, CN_DIAN);
-	OLED_CN_DrawGlyph(4, 3, CN_LIANG);
-	OLED_ShowChar(4, 5, ':');
-	snprintf(bbuf, sizeof(bbuf), "%u%%", (unsigned)bat);
-	OLED_ShowString(4, 6, bbuf);
+	OLED_CN_DrawGlyph(4, 1, CN_GONG);
+	OLED_ShowChar(4, 3, ':');
+	snprintf(pbuf, sizeof(pbuf), "%u%%", (unsigned)pwm_pct);
+	OLED_ShowString(4, 4, pbuf);
 }
