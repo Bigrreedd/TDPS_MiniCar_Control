@@ -78,11 +78,6 @@ static uint32_t g_link_lost_ticks = 0;
 /* 大端字节序解码辅助 */
 #define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
 
-/* SENSOR_DATA 发送周期：每 N 个 2ms 控制 tick 发一帧。
- * 2 tick = 4ms ≈ 250Hz，兼顾循迹实时性与链路占用（约 22%@115200）。 */
-#ifndef SENSOR_DATA_PERIOD_TICKS
-#define SENSOR_DATA_PERIOD_TICKS 2u
-#endif
 #ifndef OLED_TELEMETRY_ENABLE
 #define OLED_TELEMETRY_ENABLE 1
 #endif
