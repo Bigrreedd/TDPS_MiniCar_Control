@@ -83,10 +83,11 @@ void SysTick_Handler(void)
 	g_millis += 2u;
 
 	// 1. 串口看门狗：上板停发 MOTOR_CMD（链路断/上板复位）超时立即停车下电
+	//    100 tick = 200ms，缩短上板重烧时的窜车窗口
 	uart_rx_timeout++;
-	if(uart_rx_timeout > 250)
+	if(uart_rx_timeout > 100)
 	{
-		uart_rx_timeout = 250;
+		uart_rx_timeout = 100;
 		is_racing = 0;
 		Motor_StopAll();
 		Motor_Disable();

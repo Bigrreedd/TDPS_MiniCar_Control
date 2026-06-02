@@ -112,6 +112,17 @@ static void OnRadarDist(const ProtoFrame_t *f)
     radar_distance_cm = (uint16_t)PROTO_RD_U16(f->payload, 0);
 }
 
+// 上板 -> 下板 链路复位：上板刚开机/重烧，立即复位到安全态
+static void OnLinkReset(const ProtoFrame_t *f)
+{
+    (void)f;
+    MotorsOffSafe();
+    /* 清理里程计数，与上板重新对齐 */
+    left_encoder_cnt = 0;
+    right_encoder_cnt = 0;
+    uart_rx_timeout = 0;
+}
+
 int main(void)
 {
     // 外设初始化（仅电机/编码器/串口）
@@ -125,9 +136,16 @@ int main(void)
     Proto_RegisterHandler(PROTO_CMD_MOTOR_CMD, OnMotorCmd);
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
+    Proto_RegisterHandler(PROTO_CMD_LINK_RESET, OnLinkReset);
 
     Motor_StopAll();
     Motor_Disable();
+
+    /* 下板开机/重烧：通告上板解除运行+复位PID，防止下板刚上电
+     * 就被上板陈旧/饱和的 PID 输出猛冲。多发几帧防丢包。 */
+    Proto_SendLinkReset();
+    Delay_ms(5);
+    Proto_SendLinkReset();
 
     uint32_t fb_last_tick = add_angle_num;
 
