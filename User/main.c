@@ -139,7 +139,7 @@ static void OnLinkReset(const ProtoFrame_t *f)
 /* ==================== 速度环脱机调参 harness ==================== */
 
 /* 口径常量：与上板逐一对齐 */
-#define TUNE_SPEED_WIN_MS    100u     /* 低速调参窗口；100ms 下 1 tick = 10 cnt/s */
+#define TUNE_SPEED_WIN_MS    100u     /* 低速诊断窗口；100ms 下 1 tick = 10 cnt/s */
 #define TUNE_HARD_CAP        1000.0f  /* PID 调节量限幅，= 上板 MOTOR_DUTY_HARD_CAP */
 #define TUNE_DEADZONE_L      750.0f   /* 左轮起步死区，= 上板 MOTOR_DEADZONE_L */
 #define TUNE_DEADZONE_R      950.0f   /* 右轮起步死区，= 上板 MOTOR_DEADZONE_R */
@@ -418,13 +418,14 @@ static void tune_poll_uart(float *p_target, uint8_t *p_run)
 
 int main(void)
 {
-    float target_speed = TUNE_DEFAULT_TARGET;  /* 目标速度(计数/秒)，K3/K4 或串口 t 命令可改 */
+    float target_speed = TUNE_DEFAULT_TARGET;  /* 目标速度(cnt/s)，K3/K4 或串口 t 命令可改 */
     uint8_t run = 0u;                /* 1=速度环运行中 */
     int32_t last_cnt_l = 0, last_cnt_r = 0;
     int32_t vel_accum_l = 0, vel_accum_r = 0;
     uint32_t vel_t0;
     uint32_t print_t0;
-    int16_t spd_l = 0, spd_r = 0;    /* 最近一次窗口换算的计数/秒，供打印 */
+    int16_t spd_l = 0, spd_r = 0;    /* 诊断显示：窗口换算后的 cnt/s */
+    int16_t raw_l = 0, raw_r = 0;    /* legacy口径：SysTick 2ms内编码器增量 */
     int32_t win_ticks_l = 0, win_ticks_r = 0;
     uint32_t win_dt = 0u;
     float duty_cmd = 0.0f;           /* 速度环输出(死区前) */
@@ -465,7 +466,10 @@ int main(void)
         tune_handle_key_event(&target_speed, &run);
         tune_poll_uart(&target_speed, &run);
 
-        /* 2. 速度窗口：与上板同口径，累计计数到 50ms 换算计数/秒 */
+        raw_l = speed_left;
+        raw_r = speed_right;
+
+        /* 2. 诊断速度窗口：累计编码器计数并换算为 cnt/s */
         cnt_l = left_encoder_cnt;
         cnt_r = right_encoder_cnt;
         vel_accum_l += (cnt_l - last_cnt_l);
@@ -485,7 +489,7 @@ int main(void)
             vel_accum_r = 0;
             vel_t0 = now;
 
-            /* 3. 有新速度样本才算速度环(与上板一致，约 20Hz) */
+            /* 3. 有新诊断窗口才算速度环；控制反馈使用窗口换算后的 cnt/s */
             if (run)
             {
                 avg = ((float)spd_l + (float)spd_r) * 0.5f;
@@ -499,13 +503,13 @@ int main(void)
             }
         }
 
-        /* 4. 周期打印遥测：目标 实测L 实测R 速度环输出 */
+        /* 4. 周期打印遥测：T/RAW 为 legacy 2ms增量口径，CPS 为窗口换算值 */
         if ((uint32_t)(now - print_t0) >= TUNE_PRINT_MS)
         {
             print_t0 = now;
             if (run)
-                printf("T=%d L=%d R=%d out=%d tickL=%ld tickR=%ld dt=%lu\r\n",
-                       (int)target_speed, (int)spd_l, (int)spd_r, (int)duty_cmd,
+                printf("T=%d RAWL=%d RAWR=%d CPSL=%d CPSR=%d out=%d tickL=%ld tickR=%ld dt=%lu\r\n",
+                       (int)target_speed, (int)raw_l, (int)raw_r, (int)spd_l, (int)spd_r, (int)duty_cmd,
                        (long)win_ticks_l, (long)win_ticks_r, (unsigned long)win_dt);
         }
     }
