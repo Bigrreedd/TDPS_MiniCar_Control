@@ -280,9 +280,9 @@ void PID_Init(void)
     // 反馈单位已改为"计数/秒"(见 main.c OnEncFeedback)，与旧的"计数/2ms"
     // 相差约 500x，故增益须整体大幅下调。旧增益是针对恒≈0 的坏反馈调的，
     // 无可保留的有效整定值。下列为按新量纲推算的保守起点，需上车微调：
-    //   反馈≈数十计数/秒，输出经 ClampMotorDuty 限到 ±1500，
-    //   Kp 主导跟随、Ki 小量消差、Kd 先置 0 避免放大低速量化噪声。
-    SpeedPID_Init(&g_speed_pid, 12.0f, 2.5f, 0.0f, 8000.0f, -8000.0f);
+    //   反馈≈数十计数/秒，输出经 ClampMotorDuty 限到 ±1500。
+    //   起点沿用下板低速架空调稳值，Kd 先置 0 避免放大低速量化噪声。
+    SpeedPID_Init(&g_speed_pid, 6.0f, 0.5f, 0.0f, 8000.0f, -8000.0f);
     
     // 位置环：输出偏差值，叠加到速度环（循迹响应，未改量纲，保持原整定）
     PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
