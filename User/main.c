@@ -456,7 +456,7 @@ int main(void)
     Key_ClearEvent();
 
     /* 速度环：低速调参只允许前进输出，避免过目标后反转抽动 */
-    tune_pid_init(&g_tune_pid, 6.0f, 0.3f, 0.0f, TUNE_HARD_CAP, 0.0f);
+    tune_pid_init(&g_tune_pid, 6.0f, 0.5f, 0.0f, TUNE_HARD_CAP, 0.0f);
 
     Motor_StopAll();
     Motor_Disable();
