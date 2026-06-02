@@ -83,6 +83,8 @@ void SysTick_Handler(void)
 
 	// 1. 串口看门狗：上板停发 MOTOR_CMD（链路断/上板复位）超时立即停车下电
 	//    100 tick = 200ms，缩短上板重烧时的窜车窗口
+	//    LOWER_PID_TUNE 脱机调参模式下不喂狗，故关闭看门狗，否则 200ms 必停电机
+#if !LOWER_PID_TUNE
 	uart_rx_timeout++;
 	if(uart_rx_timeout > 100)
 	{
@@ -91,6 +93,7 @@ void SysTick_Handler(void)
 		Motor_StopAll();
 		Motor_Disable();
 	}
+#endif
 
 	add_angle_num++;
 
