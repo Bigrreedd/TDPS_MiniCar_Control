@@ -423,32 +423,115 @@ void MPU6050_ReadData(volatile MPU6050_DATA_T *physics)
 	physics->gx = (int16_t)((int16_t)(((uint16_t)buf[8] << 8) | buf[9]) - g_gyro_off_x);
 	physics->gy = (int16_t)((int16_t)(((uint16_t)buf[10] << 8) | buf[11]) - g_gyro_off_y);
 	physics->gz = (int16_t)((int16_t)(((uint16_t)buf[12] << 8) | buf[13]) - g_gyro_off_z);
+
+	/* 静止自适应零偏跟踪(仅 Z/航向轴)：扣偏后若 gz 持续很小，说明车静止，
+	 * 缓慢把残余零偏吸收进 g_gyro_off_z，消除标定后温漂导致的航向持续漂移。
+	 * 阈值取得很小(±60LSB≈0.03rad/s)，车一旦真正转动就不会被误吸收。 */
+	{
+		const int16_t still_gz_limit = 60;   /* 判静止的扣偏后阈值(LSB) */
+		const uint16_t still_need = 100u;    /* 连续静止采样数(约 1s@10ms)后才开始微调 */
+		static uint16_t still_cnt = 0u;
+		int16_t gz_corr = physics->gz;
+		int16_t gz_abs = (gz_corr < 0) ? (int16_t)(-gz_corr) : gz_corr;
+
+		if (gz_abs <= still_gz_limit)
+		{
+			if (still_cnt < 0xFFFFu) still_cnt++;
+			/* 持续静止足够久后，每次把零偏朝残差方向挪 1 LSB(极慢，不影响动态) */
+			if (still_cnt >= still_need)
+			{
+				if (gz_corr > 0)      g_gyro_off_z++;
+				else if (gz_corr < 0) g_gyro_off_z--;
+			}
+		}
+		else
+		{
+			still_cnt = 0u;   /* 检测到运动，重新计时 */
+		}
+	}
 }
 
-/* 静止零偏标定：连续采样陀螺仪原始值求平均，作为零偏存储。调用时务必保持车静止 */
+/* 静止零偏标定：连续采样陀螺仪原始值求平均作为零偏。
+ * 增加晃动检测：标定期间若车在动(峰峰值超阈值)，本轮作废并重采，
+ * 最多重试若干轮，全部超标则采用峰峰值最小(最接近静止)的一轮。
+ * 这样可消除“上电那 0.4 秒车没静止 -> 错误零偏 -> 之后持续漂移”的偶发故障。 */
 static void MPU6050_CalibrateGyro(void)
 {
 	uint8_t buf[14];
-	int32_t sx = 0, sy = 0, sz = 0;
 	uint16_t i;
+	uint8_t round;
 	const uint16_t samples = 200u;
+	const uint8_t max_rounds = 5u;
+	/* 静止判据：陀螺原始读数峰峰值上限(LSB)。±1000dps 量程下 1879.299 LSB≈1rad/s，
+	 * 取 300 LSB ≈ 0.16rad/s ≈ 9°/s 作为“这轮采样期间确实基本静止”的门槛 */
+	const int16_t still_pp_limit = 300;
 
-	g_gyro_off_x = 0;
-	g_gyro_off_y = 0;
-	g_gyro_off_z = 0;
-	for (i = 0u; i < samples; i++)
+	int16_t best_pp = 0x7FFF;
+	int16_t best_x = 0, best_y = 0, best_z = 0;
+
+	for (round = 0u; round < max_rounds; round++)
 	{
-		if (MPU6050_ReadRegsChecked(MPU6050_ACCEL_XOUT_H, buf, 14u))
+		int32_t sx = 0, sy = 0, sz = 0;
+		int16_t min_x = 0x7FFF, min_y = 0x7FFF, min_z = 0x7FFF;
+		int16_t max_x = -0x8000, max_y = -0x8000, max_z = -0x8000;
+		uint16_t got = 0u;
+
+		for (i = 0u; i < samples; i++)
 		{
-			sx += (int16_t)(((uint16_t)buf[8] << 8) | buf[9]);
-			sy += (int16_t)(((uint16_t)buf[10] << 8) | buf[11]);
-			sz += (int16_t)(((uint16_t)buf[12] << 8) | buf[13]);
+			if (MPU6050_ReadRegsChecked(MPU6050_ACCEL_XOUT_H, buf, 14u))
+			{
+				int16_t gx = (int16_t)(((uint16_t)buf[8] << 8) | buf[9]);
+				int16_t gy = (int16_t)(((uint16_t)buf[10] << 8) | buf[11]);
+				int16_t gz = (int16_t)(((uint16_t)buf[12] << 8) | buf[13]);
+				sx += gx; sy += gy; sz += gz;
+				if (gx < min_x) min_x = gx;
+				if (gx > max_x) max_x = gx;
+				if (gy < min_y) min_y = gy;
+				if (gy > max_y) max_y = gy;
+				if (gz < min_z) min_z = gz;
+				if (gz > max_z) max_z = gz;
+				got++;
+			}
+			Delay_ms(2);
 		}
-		Delay_ms(2);
+
+		if (got == 0u)
+			continue;   /* 整轮 I2C 全失败，重来 */
+
+		/* 本轮三轴最大峰峰值，作为“静止程度”评分 */
+		int16_t pp_x = (int16_t)(max_x - min_x);
+		int16_t pp_y = (int16_t)(max_y - min_y);
+		int16_t pp_z = (int16_t)(max_z - min_z);
+		int16_t pp = pp_x;
+		if (pp_y > pp) pp = pp_y;
+		if (pp_z > pp) pp = pp_z;
+
+		int16_t off_x = (int16_t)(sx / (int32_t)got);
+		int16_t off_y = (int16_t)(sy / (int32_t)got);
+		int16_t off_z = (int16_t)(sz / (int32_t)got);
+
+		/* 记录目前最静止的一轮，作为兜底 */
+		if (pp < best_pp)
+		{
+			best_pp = pp;
+			best_x = off_x; best_y = off_y; best_z = off_z;
+		}
+
+		/* 这轮确实静止 -> 直接采用，结束标定 */
+		if (pp <= still_pp_limit)
+		{
+			g_gyro_off_x = off_x;
+			g_gyro_off_y = off_y;
+			g_gyro_off_z = off_z;
+			return;
+		}
+		/* 否则说明标定期间车在动，重采 */
 	}
-	g_gyro_off_x = (int16_t)(sx / (int32_t)samples);
-	g_gyro_off_y = (int16_t)(sy / (int32_t)samples);
-	g_gyro_off_z = (int16_t)(sz / (int32_t)samples);
+
+	/* 多轮都没达到静止门槛：用最接近静止的一轮兜底，避免使用最后一轮(可能很差) */
+	g_gyro_off_x = best_x;
+	g_gyro_off_y = best_y;
+	g_gyro_off_z = best_z;
 }
 
 void MPU6050_ConvertToPhysics(volatile MPU6050_DATA_T *physics)
