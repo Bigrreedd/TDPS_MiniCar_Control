@@ -41,6 +41,11 @@ static uint8_t  g_prev_racing = 0;
 /* 起步占空比：满量程 10000 的 15% */
 #define START_DUTY_15PCT  1500.0f
 
+/* 回传电机状态周期：每 N 个 2ms tick 发一帧（5 tick = 10ms = 100Hz，OLED 显示足够） */
+#ifndef MOTOR_STATUS_PERIOD_TICKS
+#define MOTOR_STATUS_PERIOD_TICKS 5u
+#endif
+
 /* 速度环控制器（定义在 PID_Controller.c），起步时给其初始输出做前馈 */
 extern SpeedPID_Controller_t g_speed_pid;
 
@@ -123,6 +128,8 @@ int main(void)
     Motor_StopAll();
     Motor_Disable();
 
+    uint32_t status_last_tick = add_angle_num;
+
     while (1)
     {
         // ---- 主循环控制环：由 SysTick 标志位驱动（2ms） ----
@@ -161,6 +168,22 @@ int main(void)
 
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位）
             PID_Control_Update();
+        }
+
+        // ---- 周期回传电机状态给上板（全双工链路） ----
+        {
+            uint32_t now_tick = add_angle_num;
+            if ((uint32_t)(now_tick - status_last_tick) >= MOTOR_STATUS_PERIOD_TICKS)
+            {
+                uint32_t duty;
+                uint8_t pwm_pct;
+                status_last_tick = now_tick;
+                duty = ((uint32_t)Motor_GetDuty(MOTOR_L) + (uint32_t)Motor_GetDuty(MOTOR_R)) / 2u;
+                pwm_pct = (uint8_t)((duty * 100u) / MOTOR_DUTY_MAX);
+                if (pwm_pct > 100u) pwm_pct = 100u;
+                Proto_SendMotorStatus(speed_left, speed_right, pwm_pct,
+                                      (uint8_t)Path_GetCurrentSegment(), is_racing);
+            }
         }
 
         // ---- 板间协议接收处理 ----
