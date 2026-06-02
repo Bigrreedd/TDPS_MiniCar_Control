@@ -211,17 +211,22 @@ static void tune_apply_motor(uint8_t motor_id, float duty_cmd)
     Motor_SetSpeed(motor_id, duty);
 }
 
-static float tune_clamp(float v, float cap)
+static float tune_clamp_forward(float v, float cap)
 {
     if (v > cap) return cap;
     if (v < 0.0f) return 0.0f;
     return v;
 }
 
-static float tune_deadzone(float duty, float dz)
+static float tune_add_forward_deadzone(float duty, float dz)
 {
     if (duty > TUNE_CMD_EPS) return duty + dz;
     return 0.0f;
+}
+
+static float tune_wheel_duty(float duty_cmd, float deadzone)
+{
+    return tune_clamp_forward(tune_add_forward_deadzone(tune_clamp_forward(duty_cmd, TUNE_HARD_CAP), deadzone), TUNE_FINAL_CAP);
 }
 
 /* 打印 float 的千分位，避开 Keil microlib 常见的 printf 浮点支持问题 */
@@ -505,8 +510,8 @@ int main(void)
                 duty_cmd = tune_pid_calc(&g_tune_pid, target_speed, avg);
 
                 /* 左右用同一速度环输出，各自加自己的死区前馈 */
-                dl = tune_clamp(tune_deadzone(tune_clamp(duty_cmd, TUNE_HARD_CAP), TUNE_DEADZONE_L), TUNE_FINAL_CAP);
-                dr = tune_clamp(tune_deadzone(tune_clamp(duty_cmd, TUNE_HARD_CAP), TUNE_DEADZONE_R), TUNE_FINAL_CAP);
+                dl = tune_wheel_duty(duty_cmd, TUNE_DEADZONE_L);
+                dr = tune_wheel_duty(duty_cmd, TUNE_DEADZONE_R);
                 tune_apply_motor(MOTOR_L, dl);
                 tune_apply_motor(MOTOR_R, dr);
             }
