@@ -52,8 +52,8 @@ static uint32_t lose_time = 0;
 // ESP32-S3 雷达数据（保留协议兼容）
 volatile uint16_t radar_distance_cm = 0;
 
-/* 起步占空比：满量程 10000 的 15% */
-#define START_DUTY_15PCT  1500.0f
+/* 起步占空比：满量程 10000 的 12% */
+#define START_DUTY_15PCT  1200.0f
 
 /* 下板经 ENC_FEEDBACK 帧回传的编码器计数（调试/里程备用） */
 volatile int32_t g_link_cnt_l = 0;

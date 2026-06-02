@@ -29,16 +29,18 @@ static PathState_t g_path;
 #define DIST_RADAR_APPROACH     600.0f  /* 雷达区 */
 #define DIST_FINISH             750.0f  /* 终点区 */
 
-/* 速度定义 (占空比 /1000) */
-#define SPEED_SEARCH            250
-#define SPEED_STRAIGHT          400
-#define SPEED_LINE_FOLLOW       350
-#define SPEED_U_TURN            200
-#define SPEED_S_CURVE           250
-#define SPEED_BOX               200
-#define SPEED_CIRCLE            200
-#define SPEED_RADAR             150
-#define SPEED_FINISH            300
+/* 速度定义 (速度环目标值，编码器增量/控制周期)
+ * 用户要求整体跑慢、越低越稳：原值基础上整体下调约 45%。
+ * 下限保持 ~100，过低则速度环推力不足会走走停停。 */
+#define SPEED_SEARCH            140
+#define SPEED_STRAIGHT          220
+#define SPEED_LINE_FOLLOW       190
+#define SPEED_U_TURN            120
+#define SPEED_S_CURVE           140
+#define SPEED_BOX               120
+#define SPEED_CIRCLE            120
+#define SPEED_RADAR             100
+#define SPEED_FINISH            160
 
 /* 丢线/稳线计数阈值 */
 #define LINE_LOST_THRESHOLD     30
