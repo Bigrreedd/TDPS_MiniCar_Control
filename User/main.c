@@ -139,7 +139,7 @@ static uint32_t g_link_lost_ticks = 0;
  *   看 OLED 第3行 L/R 速度是否随占空比阶梯上升 → 编码器反馈可信，PID 才能闭环。
  * 置 0：恢复正常 K1 启动/K2 停/K3 复位的循迹模式。 */
 #ifndef OPENLOOP_TEST_ENABLE
-#define OPENLOOP_TEST_ENABLE 0
+#define OPENLOOP_TEST_ENABLE 1
 #endif
 #if OPENLOOP_TEST_ENABLE
 #define OPENLOOP_DUTY_5PCT   500   /* 满量程 10000 的 5% */
