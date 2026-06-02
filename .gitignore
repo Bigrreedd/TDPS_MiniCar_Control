@@ -72,3 +72,7 @@ TDPS_Document/
 
 # 忽略 Obsidian 配置
 .obsidian/
+
+# 忽略本地图片/视频读取工具输出
+image_reader/
+video_reader/
