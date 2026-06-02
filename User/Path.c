@@ -30,17 +30,17 @@ static PathState_t g_path;
 #define DIST_FINISH             750.0f  /* 终点区 */
 
 /* 速度定义 (速度环目标值，编码器增量/控制周期)
- * 用户要求整体跑慢、越低越稳：原值基础上整体下调约 45%。
- * 下限保持 ~100，过低则速度环推力不足会走走停停。 */
-#define SPEED_SEARCH            140
-#define SPEED_STRAIGHT          220
-#define SPEED_LINE_FOLLOW       190
-#define SPEED_U_TURN            120
-#define SPEED_S_CURVE           140
-#define SPEED_BOX               120
-#define SPEED_CIRCLE            120
-#define SPEED_RADAR             100
-#define SPEED_FINISH            160
+ * 用户要求继续调低：在上一版基础上再整体下调约 40%。
+ * 下限保持 ~80，再低电机可能因摩擦/死区带不动(通电不走/走走停停)。 */
+#define SPEED_SEARCH            90
+#define SPEED_STRAIGHT          140
+#define SPEED_LINE_FOLLOW       115
+#define SPEED_U_TURN            80
+#define SPEED_S_CURVE           90
+#define SPEED_BOX               80
+#define SPEED_CIRCLE            80
+#define SPEED_RADAR             80
+#define SPEED_FINISH            100
 
 /* 丢线/稳线计数阈值 */
 #define LINE_LOST_THRESHOLD     30
