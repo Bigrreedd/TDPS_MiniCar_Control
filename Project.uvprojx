@@ -725,6 +725,16 @@
               <FileType>5</FileType>
               <FilePath>.\User\Protocol.h</FilePath>
             </File>
+            <File>
+              <FileName>Key_Scan.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\Key_Scan.c</FilePath>
+            </File>
+            <File>
+              <FileName>Key_Scan.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\Key_Scan.h</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>

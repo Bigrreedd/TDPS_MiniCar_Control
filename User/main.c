@@ -8,6 +8,7 @@
 #include "system_stm32f10x.h"
 #include "Protocol.h"
 #include "stm32f10x_it.h"
+#include "Key_Scan.h"
 
 /* LOWER_PID_TUNE 开关定义在 stm32f10x_it.h（main 与 SysTick 共用同一值）。
  *   =1 速度环脱机调参：开机跑速度环，串口(USART2,115200) ASCII 命令调
@@ -145,6 +146,8 @@ static void OnLinkReset(const ProtoFrame_t *f)
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
 #define TUNE_PRINT_MS        50u      /* 遥测打印周期(ms) */
+#define TUNE_DEFAULT_TARGET  60.0f    /* 无串口时，按 K1 默认跑 60 cnt/s */
+#define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
 
 typedef struct
 {
@@ -277,6 +280,60 @@ static float tune_parse_float(const char *s)
     return (float)sign * ((float)ip + (float)fp / (float)scale);
 }
 
+static void tune_start(uint8_t *p_run)
+{
+    tune_pid_reset(&g_tune_pid);
+    Motor_Enable();
+    *p_run = 1u;
+    printf("OK run\r\n");
+}
+
+static void tune_stop(uint8_t *p_run)
+{
+    *p_run = 0u;
+    Motor_StopAll();
+    Motor_Disable();
+    tune_pid_reset(&g_tune_pid);
+    printf("OK stop\r\n");
+}
+
+static void tune_print_target(float target)
+{
+    printf("OK target=%d cnt/s\r\n", (int)target);
+}
+
+static void tune_handle_key_event(float *p_target, uint8_t *p_run)
+{
+    Key_Event_t *ev;
+    Key_Scan_Update();
+    while (Key_HasEvent())
+    {
+        ev = Key_GetEvent();
+        if (ev == 0) return;
+        switch (ev->key_id)
+        {
+        case KEY_K1:
+            if (*p_run) tune_stop(p_run);
+            else tune_start(p_run);
+            break;
+        case KEY_K2:
+            tune_stop(p_run);
+            break;
+        case KEY_K3:
+            *p_target += TUNE_TARGET_STEP;
+            tune_print_target(*p_target);
+            break;
+        case KEY_K4:
+            *p_target -= TUNE_TARGET_STEP;
+            if (*p_target < 0.0f) *p_target = 0.0f;
+            tune_print_target(*p_target);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 /* 解析一行命令：p/i/d 设增益, t 设目标速度(计数/秒), g 启动, s 停车, ? 查看 */
 static void tune_handle_line(char *line, float *p_target, uint8_t *p_run)
 {
@@ -304,20 +361,13 @@ static void tune_handle_line(char *line, float *p_target, uint8_t *p_run)
         break;
     case 't': case 'T':
         *p_target = val;
-        printf("OK target=%d cnt/s\r\n", (int)val);
+        tune_print_target(val);
         break;
     case 'g': case 'G':
-        tune_pid_reset(&g_tune_pid);
-        Motor_Enable();
-        *p_run = 1u;
-        printf("OK run\r\n");
+        tune_start(p_run);
         break;
     case 's': case 'S':
-        *p_run = 0u;
-        Motor_StopAll();
-        Motor_Disable();
-        tune_pid_reset(&g_tune_pid);
-        printf("OK stop\r\n");
+        tune_stop(p_run);
         break;
     case '?':
         printf("Kp=");
@@ -361,7 +411,7 @@ static void tune_poll_uart(float *p_target, uint8_t *p_run)
 
 int main(void)
 {
-    float target_speed = 0.0f;       /* 目标速度(计数/秒)，串口 t 命令设置 */
+    float target_speed = TUNE_DEFAULT_TARGET;  /* 目标速度(计数/秒)，K3/K4 或串口 t 命令可改 */
     uint8_t run = 0u;                /* 1=速度环运行中 */
     int32_t last_cnt_l = 0, last_cnt_r = 0;
     int32_t vel_accum_l = 0, vel_accum_r = 0;
@@ -379,6 +429,8 @@ int main(void)
     Motor_Init();
     ABEncoder_Init();
     Uart2_Init(115200);
+    Key_Scan_Init();
+    Key_ClearEvent();
 
     /* 速度环：初值用上板调好的增益，串口可改；输出上限用 HARD_CAP(调节量) */
     tune_pid_init(&g_tune_pid, 12.0f, 2.5f, 0.0f, TUNE_HARD_CAP, -TUNE_HARD_CAP);
@@ -392,14 +444,16 @@ int main(void)
     last_cnt_r = right_encoder_cnt;
 
     printf("\r\n=== LOWER PID TUNE (speed loop) ===\r\n");
-    printf("cmd: p<Kp> i<Ki> d<Kd> t<target cnt/s> g(run) s(stop) ?(show)\r\n");
-    printf("WARN: wheels off ground! no watchdog in tune mode.\r\n");
+    printf("keys: K1 run/stop, K2 stop, K3 target+10, K4 target-10\r\n");
+    printf("uart: p<Kp> i<Ki> d<Kd> t<target cnt/s> g(run) s(stop) ?(show)\r\n");
+    printf("default target=%d cnt/s; wheels off ground! no watchdog in tune mode.\r\n", (int)target_speed);
 
     while (1)
     {
         now = Millis_Get();
 
-        /* 1. 串口命令轮询 */
+        /* 1. 按键/串口命令轮询 */
+        tune_handle_key_event(&target_speed, &run);
         tune_poll_uart(&target_speed, &run);
 
         /* 2. 速度窗口：与上板同口径，累计计数到 50ms 换算计数/秒 */

@@ -79,6 +79,7 @@ static void Key_AddEvent(Key_ID_t key_id)
 void Key_Scan_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
+    uint8_t i;
     
     // 使能GPIO时钟
     RCC_APB2PeriphClockCmd(KEY_K1_RCC | KEY_K2_RCC | KEY_K3_RCC | KEY_K4_RCC | RCC_APB2Periph_AFIO, ENABLE);
@@ -97,7 +98,7 @@ void Key_Scan_Init(void)
     GPIO_Init(GPIOC, &GPIO_InitStructure);
     
     // 初始化状态
-    for(uint8_t i = 0; i < 4; i++)
+    for(i = 0; i < 4; i++)
     {
         key_status[i].last_state = Key_ReadRaw((Key_ID_t)(i + 1));
         key_status[i].is_pressed = 0;
@@ -113,14 +114,18 @@ void Key_Scan_Init(void)
 void Key_Scan_Update(void)
 {
     Key_ID_t key_ids[] = {KEY_K1, KEY_K2, KEY_K3, KEY_K4};
+    uint8_t i;
+    Key_ID_t key_id;
+    Key_Status_t *status;
+    uint8_t current_state;
     
-    for(uint8_t i = 0; i < 4; i++)
+    for(i = 0; i < 4; i++)
     {
-        Key_ID_t key_id = key_ids[i];
-        Key_Status_t *status = &key_status[i];
+        key_id = key_ids[i];
+        status = &key_status[i];
         
         // 读取当前状态
-        uint8_t current_state = Key_ReadRaw(key_id);
+        current_state = Key_ReadRaw(key_id);
         
         // 检测按下：从释放(0)到按下(1)
         if(current_state == 1 && status->last_state == 0)
@@ -154,12 +159,13 @@ uint8_t Key_GetState(Key_ID_t key_id)
 // 获取按键事件
 Key_Event_t* Key_GetEvent(void)
 {
+    Key_Event_t *event;
     if(event_count == 0)
     {
         return 0;  // 无事件
     }
     
-    Key_Event_t *event = &key_event_buffer[event_read_index];
+    event = &key_event_buffer[event_read_index];
     event_read_index = (event_read_index + 1) % KEY_EVENT_BUFFER_SIZE;
     event_count--;
     
