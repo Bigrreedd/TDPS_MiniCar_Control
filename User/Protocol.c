@@ -74,8 +74,8 @@ static void Proto_FeedByte(uint8_t byte)
                     break;
                 }
             }
-            /* 发送 ACK（PING 不回 ACK 避免风暴） */
-            if (s_cmd != PROTO_CMD_PING) {
+            /* 发送 ACK（PING / SENSOR_DATA 不回 ACK：高频帧避免风暴/占用半双工链路） */
+            if (s_cmd != PROTO_CMD_PING && s_cmd != PROTO_CMD_SENSOR_DATA) {
                 Proto_SendFrame(PROTO_CMD_ACK, &s_cmd, 1);
             }
         }
@@ -140,4 +140,20 @@ void Proto_SendTelemetry(int16_t position, int16_t speed_l, int16_t speed_r,
     buf[6] = segment;
     buf[7] = battery_pct;
     Proto_SendFrame(PROTO_CMD_TELEMETRY, buf, 8);
+}
+
+void Proto_SendSensorData(int16_t position, uint8_t found, uint8_t racing, float gz_rads)
+{
+    uint8_t buf[PROTO_SENSOR_DATA_LEN];
+    int16_t gz_scaled = (int16_t)(gz_rads * 1000.0f);
+    uint8_t flags = 0u;
+    if (found)  flags |= PROTO_SENSOR_FLAG_FOUND;
+    if (racing) flags |= PROTO_SENSOR_FLAG_RACING;
+    buf[0] = (uint8_t)(position >> 8);
+    buf[1] = (uint8_t)(position);
+    buf[2] = flags;
+    buf[3] = 0u;                       /* seg 预留，下板本地 Path 计算 */
+    buf[4] = (uint8_t)(gz_scaled >> 8);
+    buf[5] = (uint8_t)(gz_scaled);
+    Proto_SendFrame(PROTO_CMD_SENSOR_DATA, buf, PROTO_SENSOR_DATA_LEN);
 }
