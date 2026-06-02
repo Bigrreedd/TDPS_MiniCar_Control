@@ -146,7 +146,8 @@ static void OnLinkReset(const ProtoFrame_t *f)
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
 #define TUNE_PRINT_MS        50u      /* 遥测打印周期(ms) */
-#define TUNE_DEFAULT_TARGET  120.0f   /* 无串口时，按 K1 默认跑 120 cnt/s */
+#define TUNE_MIN_TARGET      70.0f    /* 低于此速度容易跨不过起步死区 */
+#define TUNE_DEFAULT_TARGET  70.0f    /* 无串口时，按 K1 默认跑 70 cnt/s */
 #define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
 
 typedef struct
@@ -297,6 +298,12 @@ static void tune_stop(uint8_t *p_run)
     printf("OK stop\r\n");
 }
 
+static float tune_limit_target(float target)
+{
+    if (target < TUNE_MIN_TARGET) return TUNE_MIN_TARGET;
+    return target;
+}
+
 static void tune_print_target(float target)
 {
     printf("OK target=%d cnt/s\r\n", (int)target);
@@ -325,8 +332,7 @@ static void tune_handle_key_event(float *p_target, uint8_t *p_run)
             tune_print_target(*p_target);
             break;
         case KEY_K4:
-            *p_target -= TUNE_TARGET_STEP;
-            if (*p_target < 0.0f) *p_target = 0.0f;
+            *p_target = tune_limit_target(*p_target - TUNE_TARGET_STEP);
             tune_print_target(*p_target);
             break;
         default:
@@ -361,8 +367,8 @@ static void tune_handle_line(char *line, float *p_target, uint8_t *p_run)
         printf("\r\n");
         break;
     case 't': case 'T':
-        *p_target = val;
-        tune_print_target(val);
+        *p_target = tune_limit_target(val);
+        tune_print_target(*p_target);
         break;
     case 'g': case 'G':
         tune_start(p_run);
