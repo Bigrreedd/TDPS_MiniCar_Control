@@ -146,6 +146,7 @@ static void OnLinkReset(const ProtoFrame_t *f)
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
 #define TUNE_PRINT_MS        100u     /* 遥测打印周期(ms)，与测速窗口同步 */
+#define TUNE_UART_IDLE_MS    20u      /* 串口命令无换行时，空闲20ms自动提交 */
 #define TUNE_MIN_TARGET      70.0f    /* 低于此速度容易跨不过起步死区 */
 #define TUNE_DEFAULT_TARGET  70.0f    /* 无串口时，按 K1 默认跑 70 cnt/s */
 #define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
@@ -385,14 +386,19 @@ static void tune_handle_line(char *line, float *p_target, uint8_t *p_run)
     }
 }
 
-/* 从串口环形缓冲非阻塞读取，攒到换行(\r 或 \n)再解析一行 */
+/* 从串口环形缓冲非阻塞读取；支持换行提交，也支持无换行空闲自动提交 */
 static void tune_poll_uart(float *p_target, uint8_t *p_run)
 {
     static char buf[32];
     static uint8_t idx = 0u;
+    static uint32_t last_rx_ms = 0u;
+    uint8_t got_byte = 0u;
+    uint32_t now;
     while (Uart2_BytesAvailable() > 0)
     {
         uint8_t ch = Uart2_ReadByteBlocking();
+        got_byte = 1u;
+        last_rx_ms = Millis_Get();
         if (ch == '\r' || ch == '\n')
         {
             if (idx > 0u)
@@ -407,6 +413,14 @@ static void tune_poll_uart(float *p_target, uint8_t *p_run)
             buf[idx++] = (char)ch;
         }
         /* 超长行：丢弃多余字节直到换行，避免越界 */
+    }
+
+    now = Millis_Get();
+    if (!got_byte && idx > 0u && (uint32_t)(now - last_rx_ms) >= TUNE_UART_IDLE_MS)
+    {
+        buf[idx] = '\0';
+        tune_handle_line(buf, p_target, p_run);
+        idx = 0u;
     }
 }
 
