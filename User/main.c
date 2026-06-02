@@ -310,6 +310,7 @@ static void tune_handle_key_event(float *p_target, uint8_t *p_run)
     {
         ev = Key_GetEvent();
         if (ev == 0) return;
+        printf("KEY=%d\r\n", (int)ev->key_id);
         switch (ev->key_id)
         {
         case KEY_K1:
