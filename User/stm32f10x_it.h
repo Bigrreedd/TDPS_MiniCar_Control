@@ -34,9 +34,9 @@
  * 定义在此公共头，使 main.c 与 stm32f10x_it.c 看到同一值：
  *   =1 调参模式(main 跑速度环+串口调参，SysTick 关看门狗)
  *   =0 原纯执行器固件
- * 调参完把参数搬到上板后，本分支可整体丢弃或置 0。 */
+ * 双层恢复阶段默认烧执行器模式；需要脱机调参时再手动置 1。 */
 #ifndef LOWER_PID_TUNE
-#define LOWER_PID_TUNE 1
+#define LOWER_PID_TUNE 0
 #endif
 
 /* Exported types ------------------------------------------------------------*/
