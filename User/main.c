@@ -139,13 +139,13 @@ static void OnLinkReset(const ProtoFrame_t *f)
 /* ==================== 速度环脱机调参 harness ==================== */
 
 /* 口径常量：与上板逐一对齐 */
-#define TUNE_SPEED_WIN_MS    100u     /* 低速诊断窗口；100ms 下 1 tick = 10 cnt/s */
+#define TUNE_SPEED_WIN_MS    200u     /* 低速诊断窗口；200ms 下 1 tick = 5 cnt/s */
 #define TUNE_HARD_CAP        1000.0f  /* PID 调节量限幅，= 上板 MOTOR_DUTY_HARD_CAP */
 #define TUNE_DEADZONE_L      750.0f   /* 左轮起步死区，= 上板 MOTOR_DEADZONE_L */
 #define TUNE_DEADZONE_R      950.0f   /* 右轮起步死区，= 上板 MOTOR_DEADZONE_R */
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
-#define TUNE_PRINT_MS        100u     /* 遥测打印周期(ms)，与测速窗口同步 */
+#define TUNE_PRINT_MS        200u     /* 遥测打印周期(ms)，与测速窗口同步 */
 #define TUNE_UART_IDLE_MS    20u      /* 串口命令无换行时，空闲20ms自动提交 */
 #define TUNE_MIN_TARGET      70.0f    /* 低于此速度容易跨不过起步死区 */
 #define TUNE_DEFAULT_TARGET  80.0f    /* 无串口时，按 K1 默认跑 80 cnt/s */
