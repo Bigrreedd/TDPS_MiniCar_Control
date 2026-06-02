@@ -135,16 +135,16 @@ static uint32_t g_link_lost_ticks = 0;
 
 /* ==== 开环测试模式 ====
  * 置 1：按键直接给固定占空比、不跑 PID，用来验证"占空比→编码器读数"是否单调可信。
- *   K1=5%(500)  K2=8%(800)  K3=10%(1000)  K4=立即停。
+ *   K1=12%(1200)  K2=15%(1500)  K3=18%(1800)  K4=立即停。
  *   看 OLED 第3行 L/R 速度是否随占空比阶梯上升 → 编码器反馈可信，PID 才能闭环。
  * 置 0：恢复正常 K1 启动/K2 停/K3 复位的循迹模式。 */
 #ifndef OPENLOOP_TEST_ENABLE
 #define OPENLOOP_TEST_ENABLE 1
 #endif
 #if OPENLOOP_TEST_ENABLE
-#define OPENLOOP_DUTY_5PCT   500   /* 满量程 10000 的 5% */
-#define OPENLOOP_DUTY_8PCT   800   /* 8% */
-#define OPENLOOP_DUTY_10PCT  1000  /* 10% */
+#define OPENLOOP_DUTY_12PCT  1200  /* 跨过左右电机起步死区 */
+#define OPENLOOP_DUTY_15PCT  1500
+#define OPENLOOP_DUTY_18PCT  1800
 static int16_t g_openloop_duty   = 0;   /* 当前开环测试占空比(带符号，正=前进) */
 static uint8_t g_openloop_active = 0;   /* 1=开环测试运行中 */
 #endif
@@ -502,22 +502,22 @@ int main(void)
             case KEY_NONE:
                 break;
             case KEY_K1:
-                g_openloop_duty = OPENLOOP_DUTY_5PCT;
+                g_openloop_duty = OPENLOOP_DUTY_12PCT;
                 g_openloop_active = 1;
                 RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K1 DUTY 5%   ");
+                OLED_ShowString(1, 1, "OL K1 DUTY 12%  ");
                 break;
             case KEY_K2:
-                g_openloop_duty = OPENLOOP_DUTY_8PCT;
+                g_openloop_duty = OPENLOOP_DUTY_15PCT;
                 g_openloop_active = 1;
                 RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K2 DUTY 8%   ");
+                OLED_ShowString(1, 1, "OL K2 DUTY 15%  ");
                 break;
             case KEY_K3:
-                g_openloop_duty = OPENLOOP_DUTY_10PCT;
+                g_openloop_duty = OPENLOOP_DUTY_18PCT;
                 g_openloop_active = 1;
                 RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K3 DUTY 10%  ");
+                OLED_ShowString(1, 1, "OL K3 DUTY 18%  ");
                 break;
             case KEY_K4:
                 g_openloop_duty = 0;
