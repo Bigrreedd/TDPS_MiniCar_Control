@@ -26,6 +26,13 @@
  *                       - seg     : 预留(0)，段状态由下板本地 Path 计算
  *                       - gz      : int16, 角速度 gz * 1000 (rad/s)，供下板角度环使用
  *
+ * 二合一板 下板(电机) -> 上板(传感) 命令:
+ *   0x21 MOTOR_STATUS : [spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][pwm_pct][seg][flags]
+ *                       - spd_l/r : int16, 左右轮编码器测速
+ *                       - pwm_pct : uint8, 平均占空比百分比(0~100)
+ *                       - seg     : uint8, 当前 Path 段号
+ *                       - flags   : bit0=racing
+ *
  * STM32 -> ESP32 命令:
  *   0x80 TELEMETRY    : [pos_hi][pos_lo][spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][seg][batt_pct]
  *   0x81 ACK          : [echo_cmd]
@@ -40,6 +47,7 @@
 #define PROTO_CMD_RADAR_DIST   0x03
 #define PROTO_CMD_PING         0x10
 #define PROTO_CMD_SENSOR_DATA  0x20
+#define PROTO_CMD_MOTOR_STATUS 0x21
 #define PROTO_CMD_TELEMETRY    0x80
 #define PROTO_CMD_ACK          0x81
 
@@ -47,6 +55,10 @@
 #define PROTO_SENSOR_DATA_LEN  6
 #define PROTO_SENSOR_FLAG_FOUND   0x01u
 #define PROTO_SENSOR_FLAG_RACING  0x02u
+
+/* MOTOR_STATUS 帧 payload 长度与 flags 位定义 */
+#define PROTO_MOTOR_STATUS_LEN  7
+#define PROTO_MOTOR_FLAG_RACING 0x01u
 
 /* 解析状态机 */
 typedef enum {
@@ -107,5 +119,15 @@ void Proto_SendTelemetry(int16_t position, int16_t speed_l, int16_t speed_r,
  * @param gz_rads:  角速度 gz (rad/s)，内部按 *1000 编码为 int16
  */
 void Proto_SendSensorData(int16_t position, uint8_t found, uint8_t racing, float gz_rads);
+
+/**
+ * @brief 下板发送电机状态帧到上板（二合一板，全双工链路）
+ * @param speed_l/speed_r: 左右轮编码器测速
+ * @param pwm_pct: 平均占空比百分比 (0~100)
+ * @param segment: 当前 Path 段号
+ * @param racing:  是否运行中 (1/0)
+ */
+void Proto_SendMotorStatus(int16_t speed_l, int16_t speed_r, uint8_t pwm_pct,
+                           uint8_t segment, uint8_t racing);
 
 #endif /* __PROTOCOL_H__ */

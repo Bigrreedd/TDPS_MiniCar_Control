@@ -3,14 +3,17 @@
 #include "OLED_CN.h"
 #include "BlackPoint_Finder.h"
 #include "LineSensor.h"
-#include "Motor_ctr.h"
-#include "ABEncoder.h"
 #include "Battery.h"
 #include <stdio.h>
 
 extern volatile float add_angle_deg_360;
 extern volatile int16_t position_get;
 extern float BDI_V;
+
+/* 二合一板：下板经 MOTOR_STATUS 帧回传的电机数据（定义于上板 main.c） */
+extern volatile int16_t g_link_spd_l;
+extern volatile int16_t g_link_spd_r;
+extern volatile uint8_t g_link_pwm_pct;
 
 void TelemetryScreen_Init(void)
 {
@@ -31,14 +34,13 @@ void TelemetryScreen_Update(void)
 	if (pos < -99999)
 		pos = -99999;
 
-	int spd_sum = (int)speed_left + (int)speed_right;
+	int spd_sum = (int)g_link_spd_l + (int)g_link_spd_r;
 	if (spd_sum > 9999)
 		spd_sum = 9999;
 	if (spd_sum < -9999)
 		spd_sum = -9999;
 
-	uint32_t duty = ((uint32_t)Motor_GetDuty(MOTOR_L) + (uint32_t)Motor_GetDuty(MOTOR_R)) / 2u;
-	uint8_t pwm_pct = (uint8_t)((duty * 100u) / MOTOR_DUTY_MAX);
+	uint8_t pwm_pct = g_link_pwm_pct;
 	if (pwm_pct > 100u)
 		pwm_pct = 100;
 

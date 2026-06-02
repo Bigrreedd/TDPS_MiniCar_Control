@@ -47,6 +47,12 @@ static uint32_t lose_time = 0;
 // ESP32-S3 雷达数据（保留协议兼容）
 volatile uint16_t radar_distance_cm = 0;
 
+/* 下板经 MOTOR_STATUS 帧回传的电机数据，供 OLED 显示真实轮速/占空比 */
+volatile int16_t g_link_spd_l = 0;
+volatile int16_t g_link_spd_r = 0;
+volatile uint8_t g_link_pwm_pct = 0;
+volatile uint8_t g_link_seg = 0;
+
 /* 大端字节序解码辅助 */
 #define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
 
@@ -176,6 +182,16 @@ static void OnRadarDist(const ProtoFrame_t *f)
     radar_distance_cm = (uint16_t)PROTO_RD_U16(f->payload, 0);
 }
 
+// 下板 -> 上板 电机状态帧
+static void OnMotorStatus(const ProtoFrame_t *f)
+{
+    if (f->len < PROTO_MOTOR_STATUS_LEN) return;
+    g_link_spd_l   = PROTO_RD_U16(f->payload, 0);
+    g_link_spd_r   = PROTO_RD_U16(f->payload, 2);
+    g_link_pwm_pct = f->payload[4];
+    g_link_seg     = f->payload[5];
+}
+
 int main(void)
 {
     // 外设初始化（仅传感/显示/交互，无电机/编码器）
@@ -199,6 +215,7 @@ int main(void)
     Proto_Init();
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
+    Proto_RegisterHandler(PROTO_CMD_MOTOR_STATUS, OnMotorStatus);
 
     uint8_t sensor_due = 0;
     uint32_t sensor_last_tick = add_angle_num;
