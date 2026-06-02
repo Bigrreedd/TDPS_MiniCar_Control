@@ -257,6 +257,64 @@ static void StopRun(void)
     lose_time = 0;
 }
 
+#if OPENLOOP_TEST_ENABLE
+static void OpenLoop_Set(uint8_t active, int16_t duty)
+{
+    g_openloop_active = active;
+    g_openloop_duty = active ? duty : 0;
+    g_motor_target_l = (float)g_openloop_duty;
+    g_motor_target_r = (float)g_openloop_duty;
+    RGB_SetColor(active ? RGB_COLOR_G : RGB_COLOR_R);
+}
+
+static void OpenLoop_ShowStatus(void)
+{
+    OLED_ClearLine(1);
+    OLED_ShowString(1, 1, g_openloop_active ? "OPENLOOP RUN    " : "OPENLOOP STOP   ");
+    OLED_ClearLine(4);
+    OLED_ShowString(4, 1, "K:");
+    OLED_ShowChar(4, 3, Key_GetState(KEY_K1) ? '1' : '0');
+    OLED_ShowChar(4, 4, Key_GetState(KEY_K2) ? '2' : '0');
+    OLED_ShowChar(4, 5, Key_GetState(KEY_K3) ? '3' : '0');
+    OLED_ShowChar(4, 6, Key_GetState(KEY_K4) ? '4' : '0');
+    OLED_ShowString(4, 8, "D:");
+    OLED_ShowSignedNum(4, 10, g_openloop_duty, 4);
+}
+
+static void OpenLoop_HandleKeys(void)
+{
+    uint8_t next_active = g_openloop_active;
+    int16_t next_duty = g_openloop_duty;
+
+    if (Key_GetState(KEY_K4))
+    {
+        next_active = 0;
+        next_duty = 0;
+    }
+    else if (Key_GetState(KEY_K3))
+    {
+        next_active = 1;
+        next_duty = OPENLOOP_DUTY_18PCT;
+    }
+    else if (Key_GetState(KEY_K2))
+    {
+        next_active = 1;
+        next_duty = OPENLOOP_DUTY_15PCT;
+    }
+    else if (Key_GetState(KEY_K1))
+    {
+        next_active = 1;
+        next_duty = OPENLOOP_DUTY_12PCT;
+    }
+
+    if (next_active != g_openloop_active || next_duty != g_openloop_duty)
+    {
+        OpenLoop_Set(next_active, next_duty);
+        OpenLoop_ShowStatus();
+    }
+}
+#endif
+
 // ========== ESP32 协议回调（保留兼容） ==========
 static void OnLoraStop(const ProtoFrame_t *f)
 {
@@ -455,6 +513,8 @@ int main(void)
 #if OPENLOOP_TEST_ENABLE
             // 开环测试：跳过 PID 输出，直接下发固定占空比，观察编码器原始响应。
             // 仍接受心跳监视与硬上限保护；enable 取决于是否处于测试运行态。
+            g_motor_target_l = (float)g_openloop_duty;
+            g_motor_target_r = (float)g_openloop_duty;
             Proto_SendMotorCmd((int16_t)ClampMotorDuty((float)g_openloop_duty),
                                (int16_t)ClampMotorDuty((float)g_openloop_duty),
                                g_openloop_active);
@@ -493,39 +553,14 @@ int main(void)
         Key_Event_t *event = Key_GetEvent();
         BDI_V = (float)g_battery_adc_value * 0.00426508726f;
 
+#if OPENLOOP_TEST_ENABLE
+        OpenLoop_HandleKeys();
+#endif
+
         if (event != NULL)
         {
 #if OPENLOOP_TEST_ENABLE
-            // 开环测试：K1/K2/K3 给固定占空比，K4 立即停。不跑 PID，看编码器原始响应。
-            switch (event->key_id)
-            {
-            case KEY_NONE:
-                break;
-            case KEY_K1:
-                g_openloop_duty = OPENLOOP_DUTY_12PCT;
-                g_openloop_active = 1;
-                RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K1 DUTY 12%  ");
-                break;
-            case KEY_K2:
-                g_openloop_duty = OPENLOOP_DUTY_15PCT;
-                g_openloop_active = 1;
-                RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K2 DUTY 15%  ");
-                break;
-            case KEY_K3:
-                g_openloop_duty = OPENLOOP_DUTY_18PCT;
-                g_openloop_active = 1;
-                RGB_SetColor(RGB_COLOR_G);
-                OLED_ShowString(1, 1, "OL K3 DUTY 18%  ");
-                break;
-            case KEY_K4:
-                g_openloop_duty = 0;
-                g_openloop_active = 0;
-                RGB_SetColor(RGB_COLOR_R);
-                OLED_ShowString(1, 1, "OL K4 STOP      ");
-                break;
-            }
+            (void)event;
 #else
             switch (event->key_id)
             {
@@ -563,6 +598,9 @@ int main(void)
         {
             oled_due = 0;
             TelemetryScreen_Update();
+#if OPENLOOP_TEST_ENABLE
+            OpenLoop_ShowStatus();
+#endif
         }
 #endif
     }
