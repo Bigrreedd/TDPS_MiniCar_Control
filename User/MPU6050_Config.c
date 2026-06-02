@@ -424,24 +424,50 @@ void MPU6050_ReadData(volatile MPU6050_DATA_T *physics)
 	physics->gy = (int16_t)((int16_t)(((uint16_t)buf[10] << 8) | buf[11]) - g_gyro_off_y);
 	physics->gz = (int16_t)((int16_t)(((uint16_t)buf[12] << 8) | buf[13]) - g_gyro_off_z);
 
-	/* 静止自适应零偏跟踪(仅 Z/航向轴)：扣偏后若 gz 持续很小，说明车静止，
-	 * 缓慢把残余零偏吸收进 g_gyro_off_z，消除标定后温漂导致的航向持续漂移。
-	 * 阈值取得很小(±60LSB≈0.03rad/s)，车一旦真正转动就不会被误吸收。 */
+	/* 静止自适应零偏跟踪(仅 Z/航向轴)。
+	 * 关键：用"运动幅度(原始读数窗口峰峰值)"判静止，而非扣偏后的幅度。
+	 * 原因：上电标定若在晃动中完成，零偏本身是错的，扣偏后 gz 会是一个很大的常量，
+	 * 旧逻辑(看扣偏后幅度<60LSB)会永远判定"车在动"，零偏永远纠不回来，
+	 * 表现就是：上电时晃车 -> 之后静止 -> 航向却持续跳变/漂移。
+	 * 改为看原始 gz 的窗口峰峰值：车真静止时峰峰值很小(与零偏对错无关)，
+	 * 一旦确认静止，就把 Z 零偏直接拉到窗口均值，立刻纠正错误的上电标定。 */
 	{
-		const int16_t still_gz_limit = 60;   /* 判静止的扣偏后阈值(LSB) */
-		const uint16_t still_need = 100u;    /* 连续静止采样数(约 1s@10ms)后才开始微调 */
+		const int16_t still_pp_limit = 80;   /* 窗口峰峰值静止门槛(LSB)，只与运动幅度相关 */
+		const uint16_t still_need = 50u;     /* 连续静止窗口数(约 0.5s@10ms)后才接管零偏 */
+		static int16_t win[16];
+		static uint8_t widx = 0u;
+		static uint8_t wfill = 0u;
 		static uint16_t still_cnt = 0u;
-		int16_t gz_corr = physics->gz;
-		int16_t gz_abs = (gz_corr < 0) ? (int16_t)(-gz_corr) : gz_corr;
+		int16_t raw_gz;
+		int16_t mn = 0x7FFF, mx = (int16_t)0x8000;
+		int32_t sum = 0;
+		int16_t pp, mean;
+		uint8_t k;
 
-		if (gz_abs <= still_gz_limit)
+		/* 原始(未扣偏)的 Z 角速度，推回窗口 */
+		raw_gz = (int16_t)(((uint16_t)buf[12] << 8) | buf[13]);
+		win[widx] = raw_gz;
+		widx = (uint8_t)((widx + 1u) & 0x0Fu);
+		if (wfill < 16u) wfill++;
+
+		for (k = 0u; k < wfill; k++)
+		{
+			int16_t v = win[k];
+			sum += v;
+			if (v < mn) mn = v;
+			if (v > mx) mx = v;
+		}
+		pp   = (int16_t)(mx - mn);
+		mean = (int16_t)(sum / (int32_t)wfill);
+
+		/* 窗口填满且运动幅度足够小 -> 视为静止 */
+		if (wfill >= 16u && pp <= still_pp_limit)
 		{
 			if (still_cnt < 0xFFFFu) still_cnt++;
-			/* 持续静止足够久后，每次把零偏朝残差方向挪 1 LSB(极慢，不影响动态) */
+			/* 持续静止足够久后，把 Z 零偏直接对齐到窗口均值(下一次读取即生效) */
 			if (still_cnt >= still_need)
 			{
-				if (gz_corr > 0)      g_gyro_off_z++;
-				else if (gz_corr < 0) g_gyro_off_z--;
+				g_gyro_off_z = mean;
 			}
 		}
 		else

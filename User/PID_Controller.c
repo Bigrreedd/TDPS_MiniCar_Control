@@ -276,16 +276,25 @@ PositionPID_Controller_t g_position_pid;
 // 在main函数中初始化
 void PID_Init(void)
 {
-    // 速度环：控制平均速度
-    SpeedPID_Init(&g_speed_pid, 5.5f, 5.1f, 5.8f, 8000.0f, -8000.0f);
+    // 速度环：控制平均速度。
+    // 反馈单位已改为"计数/秒"(见 main.c OnEncFeedback)，与旧的"计数/2ms"
+    // 相差约 500x，故增益须整体大幅下调。旧增益是针对恒≈0 的坏反馈调的，
+    // 无可保留的有效整定值。下列为按新量纲推算的保守起点，需上车微调：
+    //   反馈≈数十计数/秒，输出经 ClampMotorDuty 限到 ±1500，
+    //   Kp 主导跟随、Ki 小量消差、Kd 先置 0 避免放大低速量化噪声。
+    SpeedPID_Init(&g_speed_pid, 12.0f, 2.5f, 0.0f, 8000.0f, -8000.0f);
     
-    // 位置环：输出偏差值，叠加到速度环
+    // 位置环：输出偏差值，叠加到速度环（循迹响应，未改量纲，保持原整定）
     PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
 }
 extern volatile uint8_t is_racing;
+/* 速度样本就绪标志(定义于 main.c)：有新窗口速度时为 1 */
+extern volatile uint8_t g_speed_sample_ready;
+/* 速度环输出在样本间保持：无新样本时沿用上次输出 */
+static float g_speed_output = 0.0f;
 void PID_Control_Update(void)
 {
-    Path_UpdateOdometer(speed_left, speed_right);  // 里程累积
+    /* 里程累积已移至 OnEncFeedback(每 10ms 收一帧)，避免 2ms 控制环重复累加同一个 10ms 增量 */
     Path_Update();  // 更新路径状态机
     float current_position;
     float avg_speed;
@@ -300,6 +309,8 @@ void PID_Control_Update(void)
 		{
 			start_speed = 0;
 			first_set = 0;
+			g_speed_output = 0.0f;
+			g_speed_sample_ready = 0;
 			SpeedPID_Reset(&g_speed_pid);
 			PositionPID_Reset(&g_position_pid);
 			Motor_StopAll();
@@ -313,9 +324,14 @@ void PID_Control_Update(void)
     
     // 3. 计算平均速度
     avg_speed = ((float)speed_left + (float)speed_right) / 2.0f;
-    
+
 		i_speed = Path_GetTargetSpeed();
     // 4. 速度环计算（输出基础速度）
+    //    速度反馈≈20Hz刷新，速度环只在有新样本时计算，避免500Hz重复积分陈旧值；
+    //    无新样本时沿用上一次 speed_output，位置环仍每 2ms 更新保证循迹响应。
+    if (g_speed_sample_ready)
+    {
+        g_speed_sample_ready = 0;
 			if(start_speed < i_speed && first_set == 0)
 			{
 				start_speed += 2.0f;
@@ -326,6 +342,12 @@ void PID_Control_Update(void)
 				first_set  = 1;
 			}
 			speed_output = SpeedPID_Calculate(&g_speed_pid, start_speed, avg_speed);
+			g_speed_output = speed_output;
+    }
+    else
+    {
+        speed_output = g_speed_output;   /* 沿用最近一次速度环输出 */
+    }
     // 5. 叠加位置环偏差
 #if WHEEL_BALANCE_ENABLE
 		wheel_balance = ((float)speed_right - (float)speed_left) * WHEEL_BALANCE_KP;

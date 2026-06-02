@@ -5,6 +5,7 @@
 #include "LineSensor.h"
 #include "ABEncoder.h"
 #include "Motor_ctr.h"
+#include "Path.h"
 #include <stdio.h>
 
 extern volatile float add_angle_deg_360;
@@ -62,7 +63,7 @@ void TelemetryScreen_Update(void)
 	for (i = 0; i < SENSOR_COUNT; i++)
 		OLED_ShowChar(2, (uint8_t)(4 + i * 2), (g_line_sensor_values[i] != 0u) ? '1' : '0');
 
-	/* 第 3 行：左右轮实时速度  L:±xxx R:±xxx */
+	/* 第 3 行：左右轮实测速度  L:±xxx R:±xxx (计数/秒) */
 	OLED_ClearLine(3);
 	OLED_ShowChar(3, 1, 'L');
 	OLED_ShowChar(3, 2, ':');
@@ -71,10 +72,19 @@ void TelemetryScreen_Update(void)
 	OLED_ShowChar(3, 9, ':');
 	OLED_ShowSignedNum(3, 10, spd_r, 3);
 
-	/* 第 4 行：电机输出占空比（电量显示已移除） */
-	OLED_ClearLine(4);
-	OLED_CN_DrawGlyph(4, 1, CN_GONG);
-	OLED_ShowChar(4, 3, ':');
-	snprintf(pbuf, sizeof(pbuf), "%u%%", (unsigned)pwm_pct);
-	OLED_ShowString(4, 4, pbuf);
+	/* 第 4 行：目标速度 + 当前 PWM 占空比  T:xxx D:xxx%
+	 * 与第 3 行实测对比 → 速度环是否把实测拉到目标；D% 看 PID 输出量级 */
+	{
+		int tgt = (int)Path_GetTargetSpeed();
+		if (tgt > 999) tgt = 999; else if (tgt < -999) tgt = -999;
+		OLED_ClearLine(4);
+		OLED_ShowChar(4, 1, 'T');
+		OLED_ShowChar(4, 2, ':');
+		OLED_ShowSignedNum(4, 3, tgt, 3);
+		OLED_ShowChar(4, 9, 'D');
+		OLED_ShowChar(4, 10, ':');
+		OLED_ShowNum(4, 11, pwm_pct, 3);
+		OLED_ShowChar(4, 14, '%');
+	}
+	(void)pbuf;
 }

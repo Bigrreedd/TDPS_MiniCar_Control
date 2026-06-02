@@ -16,8 +16,10 @@
 #include "pose.h"
 
 #define RAD_TO_DEG (57.2957795f)
-/* 偏航积分静止死区：|gz| 低于此值(rad/s)不积分，消除零偏残差导致的航向漂移 */
-#define GYRO_YAW_DEADBAND_RADS (0.01f)
+/* 偏航积分静止死区：|gz| 低于此值(rad/s)不积分，消除零偏残差导致的航向漂移
+ * clone MPU6050 静止零偏较大，0.01 太小压不住，上电后角度缓慢自增；
+ * 提到 0.04(≈2.3°/s)止住漂移，代价是慢速转动的小角速度会被吃掉一点 */
+#define GYRO_YAW_DEADBAND_RADS (0.04f)
 /* 偏航角标定系数：补偿 clone 芯片灵敏度偏差/积分微损。
  * 标定方法：把车精确转 360°(或 720°)，读 OLED 角度显示值 measured，
  *   新系数 = 旧系数 × (真实角度 / measured)。

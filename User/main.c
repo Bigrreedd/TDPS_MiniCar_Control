@@ -52,12 +52,67 @@ static uint32_t lose_time = 0;
 // ESP32-S3 雷达数据（保留协议兼容）
 volatile uint16_t radar_distance_cm = 0;
 
-/* 起步占空比：满量程 10000 的 10% */
-#define START_DUTY_15PCT  1000.0f
+/* 起步时给速度环输出的初值(满量程 10000)。
+ * 死区前馈已负责克服起步静摩擦，这里只需给速度环一个小的正向初值避免从 0 慢爬，
+ * 取 200；过大会和死区前馈叠加导致起步窜车。 */
+#define START_DUTY_15PCT  200.0f
+
+/* 电机占空比硬上限（满量程 10000）：钳住 PID 速度环的调节量(不含死区前馈)。
+ * 1000 = 满量程的 10%。叠加右轮最大死区 950 后最终≈1950，仍 <下板 SAFE_MAX(2000)，
+ * 故下板安全限无需改动。调速就改这一个值：想更慢往下调，想更快往上调(但需留出死区余量)。 */
+#ifndef MOTOR_DUTY_HARD_CAP
+#define MOTOR_DUTY_HARD_CAP  1000.0f
+#endif
+
+/* 带符号占空比限幅到 [-CAP, +CAP]，保留方向 */
+static float ClampMotorDuty(float duty)
+{
+    if (duty >  MOTOR_DUTY_HARD_CAP) return  MOTOR_DUTY_HARD_CAP;
+    if (duty < -MOTOR_DUTY_HARD_CAP) return -MOTOR_DUTY_HARD_CAP;
+    return duty;
+}
+
+/* 电机起步死区前馈：实测右轮约需 10%(1000) 才起步、左轮约 8%(800)，
+ * 死区以下电机不动，PID 输出落在死区内等于白调。
+ * 故对带方向的非零命令垫上一个起步基值，把 PID 的工作点抬到电机能动的区间，
+ * 左右分别配置以补偿起步摩擦不对称(右轮更难起步)。
+ * 命令绝对值低于 EPS 视为停车(返回 0)，避免 0 附近抖动与静止蠕行。
+ * 上车微调：某轮起步偏迟就调高对应 DEADZONE；起步窜得猛就调低。 */
+#ifndef MOTOR_DEADZONE_L
+#define MOTOR_DEADZONE_L  750.0f
+#endif
+#ifndef MOTOR_DEADZONE_R
+#define MOTOR_DEADZONE_R  950.0f
+#endif
+#ifndef MOTOR_CMD_EPS
+#define MOTOR_CMD_EPS     1.0f
+#endif
+
+static float ApplyDeadzone(float duty, float deadzone)
+{
+    if (duty >  MOTOR_CMD_EPS) return duty + deadzone;
+    if (duty < -MOTOR_CMD_EPS) return duty - deadzone;
+    return 0.0f;   /* 近零命令直接停，不蠕行 */
+}
+
+/* 死区前馈后的最终安全上限：= PID 上限 + 最大死区，使 PID 满输出叠加死区后不被砍。
+ * 仍兜一个绝对天花板防止异常值窜车。 */
+#ifndef MOTOR_DUTY_FINAL_CAP
+#define MOTOR_DUTY_FINAL_CAP  (MOTOR_DUTY_HARD_CAP + MOTOR_DEADZONE_R)
+#endif
+static float ClampMotorDutyFinal(float duty)
+{
+    if (duty >  MOTOR_DUTY_FINAL_CAP) return  MOTOR_DUTY_FINAL_CAP;
+    if (duty < -MOTOR_DUTY_FINAL_CAP) return -MOTOR_DUTY_FINAL_CAP;
+    return duty;
+}
 
 /* 下板经 ENC_FEEDBACK 帧回传的编码器计数（调试/里程备用） */
 volatile int32_t g_link_cnt_l = 0;
 volatile int32_t g_link_cnt_r = 0;
+/* 新速度样本就绪标志：OnEncFeedback 算出新窗口速度时置 1，速度环消费后清 0。
+ * 让速度环按反馈实际刷新率(≈20Hz)闭环，而非主控制环 500Hz 重复积分陈旧值。 */
+volatile uint8_t g_speed_sample_ready = 0;
 static uint8_t g_prev_racing = 0;
 
 /* 速度环控制器（定义于 PID_Controller.c），起步时给其初始输出做前馈 */
@@ -77,6 +132,22 @@ static uint32_t g_link_lost_ticks = 0;
 
 /* 大端字节序解码辅助 */
 #define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
+
+/* ==== 开环测试模式 ====
+ * 置 1：按键直接给固定占空比、不跑 PID，用来验证"占空比→编码器读数"是否单调可信。
+ *   K1=5%(500)  K2=8%(800)  K3=10%(1000)  K4=立即停。
+ *   看 OLED 第3行 L/R 速度是否随占空比阶梯上升 → 编码器反馈可信，PID 才能闭环。
+ * 置 0：恢复正常 K1 启动/K2 停/K3 复位的循迹模式。 */
+#ifndef OPENLOOP_TEST_ENABLE
+#define OPENLOOP_TEST_ENABLE 0
+#endif
+#if OPENLOOP_TEST_ENABLE
+#define OPENLOOP_DUTY_5PCT   500   /* 满量程 10000 的 5% */
+#define OPENLOOP_DUTY_8PCT   800   /* 8% */
+#define OPENLOOP_DUTY_10PCT  1000  /* 10% */
+static int16_t g_openloop_duty   = 0;   /* 当前开环测试占空比(带符号，正=前进) */
+static uint8_t g_openloop_active = 0;   /* 1=开环测试运行中 */
+#endif
 
 #ifndef OLED_TELEMETRY_ENABLE
 #define OLED_TELEMETRY_ENABLE 1
@@ -200,15 +271,67 @@ static void OnRadarDist(const ProtoFrame_t *f)
 }
 
 // 下板 -> 上板 编码器反馈帧：更新轮速（供本地速度环使用）
+// 速度窗口：下板 100Hz(10ms)回传，单帧增量太小(≈0.6)且量化严重。
+// 用 SPEED_WIN_MS 的滑动窗口累计计数，再按实测耗时换算成"计数/秒"，
+// 量化噪声降到单帧的 1/(窗口帧数)，同时仍是物理上可解释的速度量纲。
+#ifndef SPEED_WIN_MS
+#define SPEED_WIN_MS 50u
+#endif
 static void OnEncFeedback(const ProtoFrame_t *f)
 {
+    int32_t cnt_l, cnt_r, dl, dr;
+    static uint8_t cnt_inited = 0;
+    static int32_t last_cnt_l = 0, last_cnt_r = 0;
+    static int32_t vel_accum_l = 0, vel_accum_r = 0;
+    static uint32_t vel_t0 = 0;
+
     if (f->len < PROTO_ENC_FEEDBACK_LEN) return;
-    speed_left  = PROTO_RD_U16(f->payload, 0);
-    speed_right = PROTO_RD_U16(f->payload, 2);
-    g_link_cnt_l = (int32_t)(((uint32_t)f->payload[4] << 24) | ((uint32_t)f->payload[5] << 16) |
-                             ((uint32_t)f->payload[6] << 8)  |  (uint32_t)f->payload[7]);
-    g_link_cnt_r = (int32_t)(((uint32_t)f->payload[8] << 24) | ((uint32_t)f->payload[9] << 16) |
-                             ((uint32_t)f->payload[10] << 8) |  (uint32_t)f->payload[11]);
+
+    cnt_l = (int32_t)(((uint32_t)f->payload[4] << 24) | ((uint32_t)f->payload[5] << 16) |
+                      ((uint32_t)f->payload[6] << 8)  |  (uint32_t)f->payload[7]);
+    cnt_r = (int32_t)(((uint32_t)f->payload[8] << 24) | ((uint32_t)f->payload[9] << 16) |
+                      ((uint32_t)f->payload[10] << 8) |  (uint32_t)f->payload[11]);
+    g_link_cnt_l = cnt_l;
+    g_link_cnt_r = cnt_r;
+
+    if (!cnt_inited)
+    {
+        cnt_inited = 1;
+        last_cnt_l = cnt_l;
+        last_cnt_r = cnt_r;
+        vel_accum_l = 0;
+        vel_accum_r = 0;
+        vel_t0 = Millis_Get();
+        speed_left = 0;
+        speed_right = 0;
+    }
+    else
+    {
+        /* 本帧原始增量：里程按它累积(每帧恰好计一次，单位=计数) */
+        dl = cnt_l - last_cnt_l;
+        dr = cnt_r - last_cnt_r;
+        last_cnt_l = cnt_l;
+        last_cnt_r = cnt_r;
+        Path_UpdateOdometer(dl, dr);
+
+        /* 速度窗口累计，到窗口期再换算成"计数/秒"，降低低速量化噪声 */
+        vel_accum_l += dl;
+        vel_accum_r += dr;
+        {
+            uint32_t now = Millis_Get();
+            uint32_t dt  = now - vel_t0;          /* 实测耗时(ms)，毫秒回绕安全 */
+            if (dt >= SPEED_WIN_MS)
+            {
+                speed_left  = (int16_t)((vel_accum_l * 1000) / (int32_t)dt);
+                speed_right = (int16_t)((vel_accum_r * 1000) / (int32_t)dt);
+                vel_accum_l = 0;
+                vel_accum_r = 0;
+                vel_t0 = now;
+                g_speed_sample_ready = 1;     /* 通知速度环：有新样本可闭环 */
+            }
+        }
+    }
+
     g_link_alive = 1;          /* 收到下板心跳 */
     g_link_lost_ticks = 0;
 }
@@ -329,10 +452,24 @@ int main(void)
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
             PID_Control_Update();
 
+#if OPENLOOP_TEST_ENABLE
+            // 开环测试：跳过 PID 输出，直接下发固定占空比，观察编码器原始响应。
+            // 仍接受心跳监视与硬上限保护；enable 取决于是否处于测试运行态。
+            Proto_SendMotorCmd((int16_t)ClampMotorDuty((float)g_openloop_duty),
+                               (int16_t)ClampMotorDuty((float)g_openloop_duty),
+                               g_openloop_active);
+#else
             // 下发电机指令到下板执行器（带符号占空比 + 使能）
-            Proto_SendMotorCmd((int16_t)g_motor_target_l,
-                               (int16_t)g_motor_target_r,
-                               is_racing);
+            // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
+            //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
+            {
+                float duty_l = ApplyDeadzone(ClampMotorDuty(g_motor_target_l), MOTOR_DEADZONE_L);
+                float duty_r = ApplyDeadzone(ClampMotorDuty(g_motor_target_r), MOTOR_DEADZONE_R);
+                Proto_SendMotorCmd((int16_t)ClampMotorDutyFinal(duty_l),
+                                   (int16_t)ClampMotorDutyFinal(duty_r),
+                                   is_racing);
+            }
+#endif
         }
 
         {
@@ -358,6 +495,38 @@ int main(void)
 
         if (event != NULL)
         {
+#if OPENLOOP_TEST_ENABLE
+            // 开环测试：K1/K2/K3 给固定占空比，K4 立即停。不跑 PID，看编码器原始响应。
+            switch (event->key_id)
+            {
+            case KEY_NONE:
+                break;
+            case KEY_K1:
+                g_openloop_duty = OPENLOOP_DUTY_5PCT;
+                g_openloop_active = 1;
+                RGB_SetColor(RGB_COLOR_G);
+                OLED_ShowString(1, 1, "OL K1 DUTY 5%   ");
+                break;
+            case KEY_K2:
+                g_openloop_duty = OPENLOOP_DUTY_8PCT;
+                g_openloop_active = 1;
+                RGB_SetColor(RGB_COLOR_G);
+                OLED_ShowString(1, 1, "OL K2 DUTY 8%   ");
+                break;
+            case KEY_K3:
+                g_openloop_duty = OPENLOOP_DUTY_10PCT;
+                g_openloop_active = 1;
+                RGB_SetColor(RGB_COLOR_G);
+                OLED_ShowString(1, 1, "OL K3 DUTY 10%  ");
+                break;
+            case KEY_K4:
+                g_openloop_duty = 0;
+                g_openloop_active = 0;
+                RGB_SetColor(RGB_COLOR_R);
+                OLED_ShowString(1, 1, "OL K4 STOP      ");
+                break;
+            }
+#else
             switch (event->key_id)
             {
             case KEY_NONE:
@@ -386,6 +555,7 @@ int main(void)
                 OLED_ShowString(1, 1, "KEY=K4          ");
                 break;
             }
+#endif
         }
 
 #if OLED_TELEMETRY_ENABLE

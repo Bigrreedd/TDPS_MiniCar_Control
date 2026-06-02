@@ -29,9 +29,9 @@ static PathState_t g_path;
 #define DIST_RADAR_APPROACH     600.0f  /* 雷达区 */
 #define DIST_FINISH             750.0f  /* 终点区 */
 
-/* 速度定义 (速度环目标值，编码器增量/控制周期)
- * 用户要求继续调低：在上一版基础上再整体下调约 40%。
- * 下限保持 ~80，再低电机可能因摩擦/死区带不动(通电不走/走走停停)。 */
+/* 速度定义（速度环目标值，单位=编码器计数/秒，与 main.c 速度反馈同量纲）
+ * 旧版单位是“计数/控制周期”，反馈改为“计数/秒”后这些数才与反馈可比。
+ * 实测低速约数十计数/秒，设定值取数十~百余；实际车速由 MOTOR_DUTY_HARD_CAP 钳住，需上车微调。 */
 #define SPEED_SEARCH            90
 #define SPEED_STRAIGHT          140
 #define SPEED_LINE_FOLLOW       115
@@ -89,8 +89,8 @@ void Path_StopRace(void)
     g_path.current_target_speed = 0;
 }
 
-/* ========== 里程更新（由主循环每 2ms 调用一次） ========== */
-/* 参数为左右编码器在 2ms 周期内的脉冲增量（即 speed_left / speed_right） */
+/* ========== 里程更新（由 main.c OnEncFeedback 每收到一帧 ENC_FEEDBACK 调用一次） ========== */
+/* 参数为左右编码器自上一帧以来的原始计数增量(单位=计数)，每个增量恰好累积一次 */
 void Path_UpdateOdometer(int32_t left_pulse_delta, int32_t right_pulse_delta)
 {
     float avg_ticks = (float)(left_pulse_delta + right_pulse_delta) * 0.5f;
