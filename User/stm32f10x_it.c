@@ -18,6 +18,14 @@
 #define RAD_TO_DEG (57.2957795f)
 /* 偏航积分静止死区：|gz| 低于此值(rad/s)不积分，消除零偏残差导致的航向漂移 */
 #define GYRO_YAW_DEADBAND_RADS (0.01f)
+/* 偏航角标定系数：补偿 clone 芯片灵敏度偏差/积分微损。
+ * 标定方法：把车精确转 360°(或 720°)，读 OLED 角度显示值 measured，
+ *   新系数 = 旧系数 × (真实角度 / measured)。
+ *   例：转 360° 显示 350°，则 GYRO_YAW_SCALE = 1.000 × 360/350 ≈ 1.029。
+ * 仅影响显示积分角，不改 PID 用的瞬时 gz_rads(转向阻尼不受影响)。 */
+#ifndef GYRO_YAW_SCALE
+#define GYRO_YAW_SCALE (1.0f)
+#endif
 
 /******************************************************************************/
 /*            Cortex-M3 Processor Exceptions Handlers                         */
@@ -92,8 +100,9 @@ void SysTick_Handler(void)
 
 	// 2. 角度积分（陀螺仪零偏已在 MPU6050 标定）
 	// 静止死区：|gz| 低于阈值视为零偏残差噪声，不积分，消除静止时航向缓慢漂移
+	// GYRO_YAW_SCALE：补偿 clone 芯片灵敏度偏差，让显示角度对得上真实转角
 	{
-		float gz = MPU6050_data.gz_rads;
+		float gz = MPU6050_data.gz_rads * GYRO_YAW_SCALE;
 		float gz_abs = (gz < 0.0f) ? -gz : gz;
 		if (gz_abs >= GYRO_YAW_DEADBAND_RADS)
 		{
