@@ -62,9 +62,18 @@ static uint8_t g_prev_racing = 0;
 
 /* 速度环控制器（定义于 PID_Controller.c），起步时给其初始输出做前馈 */
 extern SpeedPID_Controller_t g_speed_pid;
+extern PositionPID_Controller_t g_position_pid;
 /* 位置环/速度环计算出的带符号电机目标（定义于 PID_Controller.c） */
 extern volatile float g_motor_target_l;
 extern volatile float g_motor_target_r;
+
+/* 下板链路监视：收到 ENC_FEEDBACK 心跳清零；丢失超时则解除运行防窜车 */
+static volatile uint8_t g_link_alive = 0;
+static uint32_t g_link_lost_ticks = 0;
+/* 心跳丢失阈值：下板 100Hz 回传，连续 50 个控制 tick(=100ms) 无心跳判为断链 */
+#ifndef LINK_LOST_TICKS
+#define LINK_LOST_TICKS 50u
+#endif
 
 /* 大端字节序解码辅助 */
 #define PROTO_RD_U16(buf, i) ((int16_t)((uint16_t)(buf)[(i)] << 8 | (buf)[(i)+1]))
@@ -205,6 +214,21 @@ static void OnEncFeedback(const ProtoFrame_t *f)
                              ((uint32_t)f->payload[6] << 8)  |  (uint32_t)f->payload[7]);
     g_link_cnt_r = (int32_t)(((uint32_t)f->payload[8] << 24) | ((uint32_t)f->payload[9] << 16) |
                              ((uint32_t)f->payload[10] << 8) |  (uint32_t)f->payload[11]);
+    g_link_alive = 1;          /* 收到下板心跳 */
+    g_link_lost_ticks = 0;
+}
+
+// 下板 -> 上板 链路复位：下板刚开机/重烧，必须解除运行防止用陈旧状态窜车
+static void OnLinkReset(const ProtoFrame_t *f)
+{
+    (void)f;
+    StopRun();                 /* is_racing=0，停止下发使能 */
+    SpeedPID_Reset(&g_speed_pid);
+    PositionPID_Reset(&g_position_pid);
+    g_link_alive = 1;
+    g_link_lost_ticks = 0;
+    RGB_SetColor(RGB_COLOR_R);
+    OLED_ShowString(1, 1, "LOWER RESET     ");
 }
 
 int main(void)
@@ -233,6 +257,14 @@ int main(void)
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
     Proto_RegisterHandler(PROTO_CMD_ENC_FEEDBACK, OnEncFeedback);
+    Proto_RegisterHandler(PROTO_CMD_LINK_RESET, OnLinkReset);
+
+    /* 上板开机/重烧：通告下板复位到安全态（停车下电、清里程），
+     * 避免上板重启瞬间下板仍按陈旧指令运行。多发几帧防丢包。 */
+    is_racing = 0;
+    Proto_SendLinkReset();
+    Delay_ms(5);
+    Proto_SendLinkReset();
 
 #if OLED_TELEMETRY_ENABLE
     uint8_t oled_due = 1;
@@ -279,6 +311,25 @@ int main(void)
                 Path_StopRace();
             }
             g_prev_racing = is_racing;
+
+            // 下板心跳监视：运行中若下板断链(掉电/重烧/线松)，解除运行防窜车
+            if (g_link_alive)
+            {
+                g_link_lost_ticks++;
+                if (g_link_lost_ticks > LINK_LOST_TICKS)
+                {
+                    g_link_lost_ticks = LINK_LOST_TICKS + 1u;
+                    if (is_racing)
+                    {
+                        StopRun();
+                        SpeedPID_Reset(&g_speed_pid);
+                        PositionPID_Reset(&g_position_pid);
+                        RGB_SetColor(RGB_COLOR_R);
+                        OLED_ShowString(1, 1, "LINK LOST STOP  ");
+                    }
+                    g_link_alive = 0;   /* 等待下板心跳/LINK_RESET 重新置位 */
+                }
+            }
 
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
             PID_Control_Update();

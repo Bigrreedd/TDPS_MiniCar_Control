@@ -77,7 +77,8 @@ static void Proto_FeedByte(uint8_t byte)
             /* 发送 ACK（高频板间帧不回 ACK：避免风暴/占用链路） */
             if (s_cmd != PROTO_CMD_PING &&
                 s_cmd != PROTO_CMD_MOTOR_CMD &&
-                s_cmd != PROTO_CMD_ENC_FEEDBACK) {
+                s_cmd != PROTO_CMD_ENC_FEEDBACK &&
+                s_cmd != PROTO_CMD_LINK_RESET) {
                 Proto_SendFrame(PROTO_CMD_ACK, &s_cmd, 1);
             }
         }
@@ -171,4 +172,9 @@ void Proto_SendEncFeedback(int16_t speed_l, int16_t speed_r, int32_t cnt_l, int3
     buf[10] = (uint8_t)(cnt_r >> 8);
     buf[11] = (uint8_t)(cnt_r);
     Proto_SendFrame(PROTO_CMD_ENC_FEEDBACK, buf, PROTO_ENC_FEEDBACK_LEN);
+}
+
+void Proto_SendLinkReset(void)
+{
+    Proto_SendFrame(PROTO_CMD_LINK_RESET, 0, 0);
 }

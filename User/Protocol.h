@@ -30,6 +30,12 @@
  *                       - spd_l/r : int16, 左右轮编码器测速(每控制周期增量)
  *                       - cnt_l/r : int32, 左右轮编码器累计计数(大端)
  *
+ * 二合一板 复位/启动通告(双向) 命令:
+ *   0x22 LINK_RESET   : 无 payload
+ *                       - 上板开机/重烧后发出 -> 下板复位到安全态(停车下电/清里程)
+ *                       - 下板开机/重烧后发出 -> 上板解除运行(racing=0)+复位PID，
+ *                         防止任一板复位后另一板用陈旧/饱和状态突然窜车
+ *
  * STM32 -> ESP32 命令:
  *   0x80 TELEMETRY    : [pos_hi][pos_lo][spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][seg][batt_pct]
  *   0x81 ACK          : [echo_cmd]
@@ -45,6 +51,7 @@
 #define PROTO_CMD_PING         0x10
 #define PROTO_CMD_MOTOR_CMD    0x20
 #define PROTO_CMD_ENC_FEEDBACK 0x21
+#define PROTO_CMD_LINK_RESET   0x22
 #define PROTO_CMD_TELEMETRY    0x80
 #define PROTO_CMD_ACK          0x81
 
@@ -119,5 +126,11 @@ void Proto_SendMotorCmd(int16_t duty_l, int16_t duty_r, uint8_t enable);
  * @param cnt_l/cnt_r: 左右轮编码器累计计数
  */
 void Proto_SendEncFeedback(int16_t speed_l, int16_t speed_r, int32_t cnt_l, int32_t cnt_r);
+
+/**
+ * @brief 发送链路复位/启动通告帧（无 payload）
+ *        上板开机时发给下板令其复位安全态；下板开机时发给上板令其解除运行。
+ */
+void Proto_SendLinkReset(void);
 
 #endif /* __PROTOCOL_H__ */
