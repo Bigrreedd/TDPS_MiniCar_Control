@@ -200,32 +200,26 @@ static float tune_pid_calc(TuneSpeedPID_t *pid, float target, float current)
     return out;
 }
 
-static void tune_apply_motor(uint8_t motor_id, float duty_signed)
+static void tune_apply_motor(uint8_t motor_id, float duty_cmd)
 {
-    uint8_t dir = MOTOR_DIR_FORWARD;
     uint16_t duty;
-    if (duty_signed < 0.0f)
-    {
-        dir = MOTOR_DIR_BACKWARD;
-        duty_signed = -duty_signed;
-    }
-    if (duty_signed > (float)MOTOR_DUTY_MAX) duty_signed = (float)MOTOR_DUTY_MAX;
-    duty = (uint16_t)duty_signed;
-    Motor_SetDirection(motor_id, dir);
+    if (duty_cmd < 0.0f) duty_cmd = 0.0f;
+    if (duty_cmd > (float)MOTOR_DUTY_MAX) duty_cmd = (float)MOTOR_DUTY_MAX;
+    duty = (uint16_t)duty_cmd;
+    Motor_SetDirection(motor_id, MOTOR_DIR_FORWARD);
     Motor_SetSpeed(motor_id, duty);
 }
 
 static float tune_clamp(float v, float cap)
 {
-    if (v >  cap) return  cap;
-    if (v < -cap) return -cap;
+    if (v > cap) return cap;
+    if (v < 0.0f) return 0.0f;
     return v;
 }
 
 static float tune_deadzone(float duty, float dz)
 {
-    if (duty >  TUNE_CMD_EPS) return duty + dz;
-    if (duty < -TUNE_CMD_EPS) return duty - dz;
+    if (duty > TUNE_CMD_EPS) return duty + dz;
     return 0.0f;
 }
 
@@ -442,8 +436,8 @@ int main(void)
     Key_Scan_Init();
     Key_ClearEvent();
 
-    /* 速度环：初值用上板调好的增益，串口可改；输出上限用 HARD_CAP(调节量) */
-    tune_pid_init(&g_tune_pid, 12.0f, 2.5f, 0.0f, TUNE_HARD_CAP, -TUNE_HARD_CAP);
+    /* 速度环：低速调参只允许前进输出，避免过目标后反转抽动 */
+    tune_pid_init(&g_tune_pid, 8.0f, 0.8f, 0.0f, TUNE_HARD_CAP, 0.0f);
 
     Motor_StopAll();
     Motor_Disable();
