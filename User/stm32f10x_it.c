@@ -69,64 +69,35 @@ volatile uint32_t g_millis = 0;
 extern volatile uint16_t uart_rx_timeout;
 extern volatile uint8_t is_racing;
 
-/* 上板经串口下发的角速度（rad/s），供位置环陀螺项使用（默认未开启） */
-volatile float g_link_gz_rads = 0.0f;
-
 uint32_t Millis_Get(void)
 {
 	return g_millis;
 }
 
 /*
- * 下板（电机/脚）SysTick：编码器测速 + 串口看门狗 + 手动驾驶计时 + 通知主循环。
- * 本板无本地 IMU；航向积分用上板经串口下发的 g_link_gz_rads。
+ * 下板（纯执行器）SysTick：编码器测速 + 串口看门狗 + 通知主循环。
+ * 无本地 IMU/航向积分/手动驾驶；一切控制在上板。
  */
 void SysTick_Handler(void)
 {
-	float dt = 0.002f;
 	g_millis += 2u;
 
-	// 1. 串口看门狗：上板停发 SENSOR_DATA 时及时停车（自动循迹运行中也生效，
-	//    因为运行所需的位置数据完全依赖上板串口；链路断开必须停）。
+	// 1. 串口看门狗：上板停发 MOTOR_CMD（链路断/上板复位）超时立即停车下电
 	uart_rx_timeout++;
 	if(uart_rx_timeout > 250)
 	{
 		uart_rx_timeout = 250;
 		is_racing = 0;
-		if(!g_manual_drive_active)
-		{
-			Motor_StopAll();
-			Motor_Disable();
-		}
+		Motor_StopAll();
+		Motor_Disable();
 	}
 
-	// 2. 航向积分（角速度来自上板串口；零偏已在上板 MPU6050 标定）
-	add_angle += g_link_gz_rads * dt;
-	add_angle_deg_360 += g_link_gz_rads * dt * RAD_TO_DEG;
-	if (add_angle_deg_360 >= 360.0f)
-		add_angle_deg_360 -= 360.0f;
-	else if (add_angle_deg_360 < 0.0f)
-		add_angle_deg_360 += 360.0f;
 	add_angle_num++;
 
-	// 3. 手动驾驶计时（开环自检用）
-	if(g_manual_drive_active)
-	{
-		if(g_manual_drive_ticks_remaining > 0)
-			g_manual_drive_ticks_remaining--;
-		if(g_manual_drive_ticks_remaining == 0)
-		{
-			g_manual_drive_active = 0;
-			is_racing = 0;
-			Motor_StopAll();
-			Motor_Disable();
-		}
-	}
-
-	// 4. 编码器测速
+	// 2. 编码器测速
 	ABEncoder_UpdateSpeed();
 
-	// 5. 通知主循环执行 PID 控制
+	// 3. 通知主循环（编码器回传节拍）
 	g_control_tick = 1;
 }
 

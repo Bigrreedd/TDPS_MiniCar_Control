@@ -76,8 +76,8 @@ static void Proto_FeedByte(uint8_t byte)
             }
             /* 发送 ACK（高频板间帧不回 ACK：避免风暴/占用链路） */
             if (s_cmd != PROTO_CMD_PING &&
-                s_cmd != PROTO_CMD_SENSOR_DATA &&
-                s_cmd != PROTO_CMD_MOTOR_STATUS) {
+                s_cmd != PROTO_CMD_MOTOR_CMD &&
+                s_cmd != PROTO_CMD_ENC_FEEDBACK) {
                 Proto_SendFrame(PROTO_CMD_ACK, &s_cmd, 1);
             }
         }
@@ -144,32 +144,31 @@ void Proto_SendTelemetry(int16_t position, int16_t speed_l, int16_t speed_r,
     Proto_SendFrame(PROTO_CMD_TELEMETRY, buf, 8);
 }
 
-void Proto_SendSensorData(int16_t position, uint8_t found, uint8_t racing, float gz_rads)
+void Proto_SendMotorCmd(int16_t duty_l, int16_t duty_r, uint8_t enable)
 {
-    uint8_t buf[PROTO_SENSOR_DATA_LEN];
-    int16_t gz_scaled = (int16_t)(gz_rads * 1000.0f);
-    uint8_t flags = 0u;
-    if (found)  flags |= PROTO_SENSOR_FLAG_FOUND;
-    if (racing) flags |= PROTO_SENSOR_FLAG_RACING;
-    buf[0] = (uint8_t)(position >> 8);
-    buf[1] = (uint8_t)(position);
-    buf[2] = flags;
-    buf[3] = 0u;                       /* seg 预留，下板本地 Path 计算 */
-    buf[4] = (uint8_t)(gz_scaled >> 8);
-    buf[5] = (uint8_t)(gz_scaled);
-    Proto_SendFrame(PROTO_CMD_SENSOR_DATA, buf, PROTO_SENSOR_DATA_LEN);
+    uint8_t buf[PROTO_MOTOR_CMD_LEN];
+    buf[0] = (uint8_t)(duty_l >> 8);
+    buf[1] = (uint8_t)(duty_l);
+    buf[2] = (uint8_t)(duty_r >> 8);
+    buf[3] = (uint8_t)(duty_r);
+    buf[4] = enable ? PROTO_MOTOR_FLAG_ENABLE : 0u;
+    Proto_SendFrame(PROTO_CMD_MOTOR_CMD, buf, PROTO_MOTOR_CMD_LEN);
 }
 
-void Proto_SendMotorStatus(int16_t speed_l, int16_t speed_r, uint8_t pwm_pct,
-                           uint8_t segment, uint8_t racing)
+void Proto_SendEncFeedback(int16_t speed_l, int16_t speed_r, int32_t cnt_l, int32_t cnt_r)
 {
-    uint8_t buf[PROTO_MOTOR_STATUS_LEN];
+    uint8_t buf[PROTO_ENC_FEEDBACK_LEN];
     buf[0] = (uint8_t)(speed_l >> 8);
     buf[1] = (uint8_t)(speed_l);
     buf[2] = (uint8_t)(speed_r >> 8);
     buf[3] = (uint8_t)(speed_r);
-    buf[4] = pwm_pct;
-    buf[5] = segment;
-    buf[6] = racing ? PROTO_MOTOR_FLAG_RACING : 0u;
-    Proto_SendFrame(PROTO_CMD_MOTOR_STATUS, buf, PROTO_MOTOR_STATUS_LEN);
+    buf[4] = (uint8_t)(cnt_l >> 24);
+    buf[5] = (uint8_t)(cnt_l >> 16);
+    buf[6] = (uint8_t)(cnt_l >> 8);
+    buf[7] = (uint8_t)(cnt_l);
+    buf[8]  = (uint8_t)(cnt_r >> 24);
+    buf[9]  = (uint8_t)(cnt_r >> 16);
+    buf[10] = (uint8_t)(cnt_r >> 8);
+    buf[11] = (uint8_t)(cnt_r);
+    Proto_SendFrame(PROTO_CMD_ENC_FEEDBACK, buf, PROTO_ENC_FEEDBACK_LEN);
 }
