@@ -146,7 +146,7 @@ static void OnLinkReset(const ProtoFrame_t *f)
 #define TUNE_CMD_EPS         1.0f
 #define TUNE_FINAL_CAP       (TUNE_HARD_CAP + TUNE_DEADZONE_R)  /* 最终安全上限 1950 */
 #define TUNE_PRINT_MS        50u      /* 遥测打印周期(ms) */
-#define TUNE_DEFAULT_TARGET  60.0f    /* 无串口时，按 K1 默认跑 60 cnt/s */
+#define TUNE_DEFAULT_TARGET  120.0f   /* 无串口时，按 K1 默认跑 120 cnt/s */
 #define TUNE_TARGET_STEP     10.0f    /* K3/K4 每次加减目标速度 */
 
 typedef struct
