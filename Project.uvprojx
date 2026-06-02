@@ -686,16 +686,6 @@
               <FilePath>.\User\stm32f10x_it.h</FilePath>
             </File>
             <File>
-              <FileName>FanMotor_SafetyLock.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\FanMotor_SafetyLock.c</FilePath>
-            </File>
-            <File>
-              <FileName>FanMotor_SafetyLock.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\FanMotor_SafetyLock.h</FilePath>
-            </File>
-            <File>
               <FileName>Motor_ctr.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\Motor_ctr.c</FilePath>
@@ -704,26 +694,6 @@
               <FileName>Motor_ctr.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\Motor_ctr.h</FilePath>
-            </File>
-            <File>
-              <FileName>M3PWM.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\M3PWM.c</FilePath>
-            </File>
-            <File>
-              <FileName>M3PWM.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\M3PWM.h</FilePath>
-            </File>
-            <File>
-              <FileName>OLED.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\OLED.c</FilePath>
-            </File>
-            <File>
-              <FileName>OLED_CN.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\OLED_CN.c</FilePath>
             </File>
             <File>
               <FileName>ABEncoder.c</FileName>
@@ -736,16 +706,6 @@
               <FilePath>.\User\ABEncoder.h</FilePath>
             </File>
             <File>
-              <FileName>LineSensor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\LineSensor.c</FilePath>
-            </File>
-            <File>
-              <FileName>LineSensor.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\LineSensor.h</FilePath>
-            </File>
-            <File>
               <FileName>Uart_Config.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\Uart_Config.c</FilePath>
@@ -756,81 +716,6 @@
               <FilePath>.\User\Uart_Config.h</FilePath>
             </File>
             <File>
-              <FileName>RGB_Led.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\RGB_Led.c</FilePath>
-            </File>
-            <File>
-              <FileName>RGB_Led.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\RGB_Led.h</FilePath>
-            </File>
-            <File>
-              <FileName>MPU6050_Config.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\MPU6050_Config.c</FilePath>
-            </File>
-            <File>
-              <FileName>MPU6050_Config.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\MPU6050_Config.h</FilePath>
-            </File>
-            <File>
-              <FileName>pose.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\pose.c</FilePath>
-            </File>
-            <File>
-              <FileName>pose.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\pose.h</FilePath>
-            </File>
-            <File>
-              <FileName>Key_Scan.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\Key_Scan.c</FilePath>
-            </File>
-            <File>
-              <FileName>Key_Scan.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\Key_Scan.h</FilePath>
-            </File>
-            <File>
-              <FileName>BlackPoint_Finder.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\BlackPoint_Finder.c</FilePath>
-            </File>
-            <File>
-              <FileName>BlackPoint_Finder.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\BlackPoint_Finder.h</FilePath>
-            </File>
-            <File>
-              <FileName>TelemetryScreen.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\TelemetryScreen.c</FilePath>
-            </File>
-            <File>
-              <FileName>PID_Controller.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\PID_Controller.c</FilePath>
-            </File>
-            <File>
-              <FileName>PID_Controller.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\PID_Controller.h</FilePath>
-            </File>
-            <File>
-              <FileName>Path.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\Path.c</FilePath>
-            </File>
-            <File>
-              <FileName>Path.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\Path.h</FilePath>
-            </File>
-            <File>
               <FileName>Protocol.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\Protocol.c</FilePath>
@@ -839,46 +724,6 @@
               <FileName>Protocol.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\Protocol.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>eMPL</GroupName>
-          <Files>
-            <File>
-              <FileName>inv_mpu.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\eMPL\inv_mpu.c</FilePath>
-            </File>
-            <File>
-              <FileName>inv_mpu.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\eMPL\inv_mpu.h</FilePath>
-            </File>
-            <File>
-              <FileName>inv_mpu_dmp_motion_driver.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\User\eMPL\inv_mpu_dmp_motion_driver.c</FilePath>
-            </File>
-            <File>
-              <FileName>inv_mpu_dmp_motion_driver.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\eMPL\inv_mpu_dmp_motion_driver.h</FilePath>
-            </File>
-            <File>
-              <FileName>dmpKey.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\eMPL\dmpKey.h</FilePath>
-            </File>
-            <File>
-              <FileName>dmpmap.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\eMPL\dmpmap.h</FilePath>
-            </File>
-            <File>
-              <FileName>empl_port.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\User\eMPL\empl_port.h</FilePath>
             </File>
           </Files>
         </Group>

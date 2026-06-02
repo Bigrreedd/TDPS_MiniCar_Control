@@ -13,7 +13,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
 #include "ABEncoder.h"
-#include "pose.h"
 #include "Motor_ctr.h"
 
 #define RAD_TO_DEG (57.2957795f)
