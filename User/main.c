@@ -269,16 +269,34 @@ static void OpenLoop_Set(uint8_t active, int16_t duty)
 
 static void OpenLoop_ShowStatus(void)
 {
+    int spd_l = (int)speed_left;
+    int spd_r = (int)speed_right;
+    if (spd_l > 999) spd_l = 999;
+    if (spd_l < -999) spd_l = -999;
+    if (spd_r > 999) spd_r = 999;
+    if (spd_r < -999) spd_r = -999;
+
     OLED_ClearLine(1);
     OLED_ShowString(1, 1, g_openloop_active ? "OPENLOOP RUN    " : "OPENLOOP STOP   ");
+
+    OLED_ClearLine(2);
+    OLED_ShowString(2, 1, "K:");
+    OLED_ShowChar(2, 3, Key_GetState(KEY_K1) ? '1' : '0');
+    OLED_ShowChar(2, 4, Key_GetState(KEY_K2) ? '2' : '0');
+    OLED_ShowChar(2, 5, Key_GetState(KEY_K3) ? '3' : '0');
+    OLED_ShowChar(2, 6, Key_GetState(KEY_K4) ? '4' : '0');
+    OLED_ShowString(2, 8, "D:");
+    OLED_ShowSignedNum(2, 10, g_openloop_duty, 4);
+
+    OLED_ClearLine(3);
+    OLED_ShowString(3, 1, "L:");
+    OLED_ShowSignedNum(3, 3, spd_l, 3);
+    OLED_ShowString(3, 8, "R:");
+    OLED_ShowSignedNum(3, 10, spd_r, 3);
+
     OLED_ClearLine(4);
-    OLED_ShowString(4, 1, "K:");
-    OLED_ShowChar(4, 3, Key_GetState(KEY_K1) ? '1' : '0');
-    OLED_ShowChar(4, 4, Key_GetState(KEY_K2) ? '2' : '0');
-    OLED_ShowChar(4, 5, Key_GetState(KEY_K3) ? '3' : '0');
-    OLED_ShowChar(4, 6, Key_GetState(KEY_K4) ? '4' : '0');
-    OLED_ShowString(4, 8, "D:");
-    OLED_ShowSignedNum(4, 10, g_openloop_duty, 4);
+    OLED_ShowString(4, 1, g_link_alive ? "LINK:OK " : "LINK:-- ");
+    OLED_ShowString(4, 9, g_openloop_active ? "A:1" : "A:0");
 }
 
 static void OpenLoop_HandleKeys(void)
@@ -597,9 +615,10 @@ int main(void)
         if (oled_due)
         {
             oled_due = 0;
-            TelemetryScreen_Update();
 #if OPENLOOP_TEST_ENABLE
             OpenLoop_ShowStatus();
+#else
+            TelemetryScreen_Update();
 #endif
         }
 #endif
