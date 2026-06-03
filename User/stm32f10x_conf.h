@@ -51,9 +51,15 @@
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
-/* Uncomment the line below to expanse the "assert_param" macro in the 
+/* Uncomment the line below to expanse the "assert_param" macro in the
    Standard Peripheral Library drivers code */
 /* #define USE_FULL_ASSERT    1 */
+
+/* ===== TDPS 项目全局编译开关 ===== */
+
+/* USART3 调试串口占用 PB10/PB11：
+ *   下板固件无 USART3，固定为 0（7 路灰度不受影响）。 */
+#define USART3_DEBUG_ON_PB10  0
 
 /* Exported macro ------------------------------------------------------------*/
 #ifdef  USE_FULL_ASSERT
