@@ -640,7 +640,6 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE
             {
-                extern SpeedPID_Controller_t g_speed_pid;
                 char dbg[64];
                 int n = snprintf(dbg, sizeof(dbg),
                     "L=%d R=%d T=%d out=%d dl=%d dr=%d\r\n",
