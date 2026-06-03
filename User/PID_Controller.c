@@ -20,6 +20,17 @@ extern volatile int16_t position_get;
 #ifndef POSITION_LOOP_ENABLE
 #define POSITION_LOOP_ENABLE 0
 #endif
+/* 架空台架速度闭环验证：1=固定速度目标，跳过 Path 状态机。
+ * 原因：架空时 total_dist_cm 由编码器假累计推得飞快，Path 状态机会一路升档
+ *      (SEARCH 90 -> STRAIGHT 140 -> LINE_FOLLOW 115 ...)，
+ *      表现为"目标速度被一直推高"导致单向加速。
+ * 上路前必须置 0，否则没有循迹速度规划。 */
+#ifndef BENCH_FIXED_SPEED_ENABLE
+#define BENCH_FIXED_SPEED_ENABLE 1
+#endif
+#ifndef BENCH_FIXED_TARGET_CPS
+#define BENCH_FIXED_TARGET_CPS 80.0f
+#endif
 
 // ==================== 速度环PID实现 ====================
 
@@ -333,7 +344,12 @@ void PID_Control_Update(void)
     // 3. 计算平均速度
     avg_speed = ((float)speed_left + (float)speed_right) / 2.0f;
 
-		i_speed = Path_GetTargetSpeed();
+#if BENCH_FIXED_SPEED_ENABLE
+			/* 架空台架：目标固定，不让 Path 状态机靠假里程一路升档 */
+			i_speed = (float)BENCH_FIXED_TARGET_CPS;
+#else
+			i_speed = Path_GetTargetSpeed();
+#endif
     // 4. 速度环计算（输出基础速度）
     //    速度反馈≈20Hz刷新，速度环只在有新样本时计算，避免500Hz重复积分陈旧值；
     //    无新样本时沿用上一次 speed_output，位置环仍每 2ms 更新保证循迹响应。
@@ -357,7 +373,7 @@ void PID_Control_Update(void)
         speed_output = g_speed_output;   /* 沿用最近一次速度环输出 */
     }
     // 5. 叠加位置环偏差
-#if WHEEL_BALANCE_ENABLE
+#if WHEEL_BALANCE_ENABLE && !BENCH_FIXED_SPEED_ENABLE
 		wheel_balance = ((float)speed_right - (float)speed_left) * WHEEL_BALANCE_KP;
 		if(wheel_balance > WHEEL_BALANCE_LIMIT)
 		{
@@ -368,6 +384,8 @@ void PID_Control_Update(void)
 			wheel_balance = -WHEEL_BALANCE_LIMIT;
 		}
 #else
+		/* 架空：左右轮速度差是物理特性(死区/摩擦不同)，强行差分补偿会放大成 ±300，
+		 * 表现为持续偏一侧。架空速度闭环阶段直接关掉，留到上路后再开。 */
 		wheel_balance = 0.0f;
 #endif
     left_output = speed_output + position_correction + wheel_balance;   // 左轮加（位置偏右→左轮加速→车头左转修正）
