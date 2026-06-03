@@ -640,13 +640,12 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE
             {
-                extern float Path_GetTargetSpeed(void);
                 extern SpeedPID_Controller_t g_speed_pid;
                 char dbg[64];
                 int n = snprintf(dbg, sizeof(dbg),
                     "L=%d R=%d T=%d out=%d dl=%d dr=%d\r\n",
                     (int)speed_left, (int)speed_right,
-                    (int)Path_GetTargetSpeed(),
+                    (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
                     (int)g_motor_target_l, (int)g_motor_target_r);
                 if (n > 0 && n < (int)sizeof(dbg))

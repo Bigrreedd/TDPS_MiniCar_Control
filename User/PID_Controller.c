@@ -306,6 +306,9 @@ extern volatile uint8_t is_racing;
 extern volatile uint8_t g_speed_sample_ready;
 /* 速度环输出在样本间保持：无新样本时沿用上次输出 */
 static float g_speed_output = 0.0f;
+/* 当前速度环实际使用的目标(cnt/s)——暴露给调试遥测。
+ * 在 BENCH_FIXED_SPEED_ENABLE 下可能与 Path_GetTargetSpeed() 不同。 */
+static float g_current_target_speed = 0.0f;
 void PID_Control_Update(void)
 {
     /* 里程累积已移至 OnEncFeedback(每 10ms 收一帧)，避免 2ms 控制环重复累加同一个 10ms 增量 */
@@ -324,6 +327,7 @@ void PID_Control_Update(void)
 			start_speed = 0;
 			first_set = 0;
 			g_speed_output = 0.0f;
+			g_current_target_speed = 0.0f;
 			g_speed_sample_ready = 0;
 			SpeedPID_Reset(&g_speed_pid);
 			PositionPID_Reset(&g_position_pid);
@@ -350,6 +354,7 @@ void PID_Control_Update(void)
 #else
 			i_speed = Path_GetTargetSpeed();
 #endif
+			g_current_target_speed = i_speed;
     // 4. 速度环计算（输出基础速度）
     //    速度反馈≈20Hz刷新，速度环只在有新样本时计算，避免500Hz重复积分陈旧值；
     //    无新样本时沿用上一次 speed_output，位置环仍每 2ms 更新保证循迹响应。
@@ -394,4 +399,9 @@ void PID_Control_Update(void)
     // 6. 设置电机（直接传 float，避免 int16_t 强转溢出 UB）
     Motor_SetSpeedWithDirection(MOTOR_L, left_output);
     Motor_SetSpeedWithDirection(MOTOR_R, right_output);
+}
+
+float PID_GetCurrentTargetSpeed(void)
+{
+    return g_current_target_speed;
 }

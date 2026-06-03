@@ -169,5 +169,13 @@ void PositionPID_Reset(PositionPID_Controller_t *controller);
 void Motor_SetSpeedWithDirection(uint8_t motor_id, float speed_target);
 void PID_Init(void);
 void PID_Control_Update(void);
+
+/**
+ * @brief 获取当前速度环正在使用的目标速度(cnt/s)
+ *        用于调试遥测——考虑到 BENCH_FIXED_SPEED_ENABLE 会覆盖 Path 目标，
+ *        调用方不应直接查 Path_GetTargetSpeed()。
+ */
+float PID_GetCurrentTargetSpeed(void);
+
 #endif // __PID_CONTROLLER_H__
 
