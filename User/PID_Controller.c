@@ -17,6 +17,9 @@ extern volatile int16_t position_get;
 #ifndef WHEEL_BALANCE_LIMIT
 #define WHEEL_BALANCE_LIMIT 300.0f
 #endif
+#ifndef POSITION_LOOP_ENABLE
+#define POSITION_LOOP_ENABLE 0
+#endif
 
 // ==================== 速度环PID实现 ====================
 
@@ -319,8 +322,13 @@ void PID_Control_Update(void)
     // 1. 获取当前位置（从你的position变量）
     current_position = (float)position_get / 10.0f;
     
+#if POSITION_LOOP_ENABLE
     // 2. 位置环计算（输出偏差值）
     position_correction = PositionPID_Calculate(&g_position_pid, current_position);
+#else
+    position_correction = 0.0f;
+    PositionPID_Reset(&g_position_pid);
+#endif
     
     // 3. 计算平均速度
     avg_speed = ((float)speed_left + (float)speed_right) / 2.0f;

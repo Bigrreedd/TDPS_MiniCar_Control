@@ -87,12 +87,24 @@ static float ClampMotorDuty(float duty)
 #ifndef MOTOR_CMD_EPS
 #define MOTOR_CMD_EPS     1.0f
 #endif
+#ifndef CLOSED_LOOP_REVERSE_ENABLE
+#define CLOSED_LOOP_REVERSE_ENABLE 0
+#endif
 
 static float ApplyDeadzone(float duty, float deadzone)
 {
     if (duty >  MOTOR_CMD_EPS) return duty + deadzone;
     if (duty < -MOTOR_CMD_EPS) return duty - deadzone;
     return 0.0f;   /* 近零命令直接停，不蠕行 */
+}
+
+static float ClampClosedLoopDuty(float duty)
+{
+    duty = ClampMotorDuty(duty);
+#if !CLOSED_LOOP_REVERSE_ENABLE
+    if (duty < MOTOR_CMD_EPS) return 0.0f;
+#endif
+    return duty;
 }
 
 /* 死区前馈后的最终安全上限：= PID 上限 + 最大死区，使 PID 满输出叠加死区后不被砍。
@@ -542,8 +554,8 @@ int main(void)
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
             //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
             {
-                float duty_l = ApplyDeadzone(ClampMotorDuty(g_motor_target_l), MOTOR_DEADZONE_L);
-                float duty_r = ApplyDeadzone(ClampMotorDuty(g_motor_target_r), MOTOR_DEADZONE_R);
+                float duty_l = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_l), MOTOR_DEADZONE_L);
+                float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), MOTOR_DEADZONE_R);
                 Proto_SendMotorCmd((int16_t)ClampMotorDutyFinal(duty_l),
                                    (int16_t)ClampMotorDutyFinal(duty_r),
                                    is_racing);
