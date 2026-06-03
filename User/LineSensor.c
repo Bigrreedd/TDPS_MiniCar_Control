@@ -22,7 +22,11 @@ static uint16_t LineSensor_ReadDigital(uint8_t channel)
 	case 3: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0); break;
 	case 4: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_1); break;
 	case 5: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2); break;
+#if USART3_DEBUG_ON_PB10
+	case 6: return LINE_SENSOR_WHITE_VALUE;  /* PB10 → USART3_TX，ch6 停用 */
+#else
 	case 6: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_10); break;
+#endif
 	default: return LINE_SENSOR_WHITE_VALUE;
 	}
 #if LINE_SENSOR_ACTIVE_LOW
@@ -52,7 +56,12 @@ void LineSensor_Init(void)
 	gpio.GPIO_Speed = GPIO_Speed_50MHz;
 	gpio.GPIO_Pin = GPIO_Pin_1 | GPIO_Pin_4 | GPIO_Pin_5;
 	GPIO_Init(GPIOA, &gpio);
+#if USART3_DEBUG_ON_PB10
+	/* PB10 让给 USART3_TX，ch6 光电管停用 */
+	gpio.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2;
+#else
 	gpio.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_10;
+#endif
 	GPIO_Init(GPIOB, &gpio);
 
 	gpio.GPIO_Mode = GPIO_Mode_AIN;

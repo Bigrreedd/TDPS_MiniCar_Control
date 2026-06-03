@@ -167,7 +167,7 @@ static uint8_t g_openloop_active = 0;   /* 1=开环测试运行中 */
 #ifndef OLED_TELEMETRY_PERIOD_TICKS
 #define OLED_TELEMETRY_PERIOD_TICKS 150u
 #endif
-/* 调试串口遥测：经 0x23 DEBUG_OUT 发到下板 USART3 → PC。
+/* 调试串口遥测：直接经 USART3 (PB10/PB11) 发到 PC。
  * 与 OLED 同一周期（150 ticks ≈ 300ms），可按需关掉。 */
 #ifndef DEBUG_OUT_TELEMETRY_ENABLE
 #define DEBUG_OUT_TELEMETRY_ENABLE 1
@@ -454,6 +454,9 @@ int main(void)
     LineSensor_Init();
     Key_Scan_Init();
     Uart2_Init(115200);
+#if USART3_DEBUG_ON_PB10
+    Uart3_Init(115200);       /* 调试串口 PB10/PB11 → PC */
+#endif
     TelemetryScreen_Init();
     PID_Init();
     Path_Init();
@@ -638,7 +641,7 @@ int main(void)
 #else
             TelemetryScreen_Update();
 #endif
-#if DEBUG_OUT_TELEMETRY_ENABLE
+#if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
                 char dbg[64];
                 int n = snprintf(dbg, sizeof(dbg),
@@ -648,7 +651,7 @@ int main(void)
                     (int)g_speed_pid.last_output,
                     (int)g_motor_target_l, (int)g_motor_target_r);
                 if (n > 0 && n < (int)sizeof(dbg))
-                    Proto_SendDebugOut((const uint8_t *)dbg, (uint8_t)n);
+                    Uart3_SendBuf((const uint8_t *)dbg, (uint8_t)n);
             }
 #endif
         }

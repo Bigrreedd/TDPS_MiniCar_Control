@@ -51,9 +51,17 @@
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
-/* Uncomment the line below to expanse the "assert_param" macro in the 
+/* Uncomment the line below to expanse the "assert_param" macro in the
    Standard Peripheral Library drivers code */
 /* #define USE_FULL_ASSERT    1 */
+
+/* ===== TDPS 项目全局编译开关 ===== */
+
+/* USART3 调试串口占用 PB10/PB11：
+ *   =1 (默认): PB10=USART3_TX, PB11=USART3_RX，LineSensor ch6(光电管)停用
+ *   =0       : PB10 归还 LineSensor ch6，恢复 7 路灰度；USART3 不启用
+ *   切换后重编译即可，无需改其他文件。 */
+#define USART3_DEBUG_ON_PB10  1
 
 /* Exported macro ------------------------------------------------------------*/
 #ifdef  USE_FULL_ASSERT
