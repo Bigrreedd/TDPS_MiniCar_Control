@@ -167,6 +167,11 @@ static uint8_t g_openloop_active = 0;   /* 1=开环测试运行中 */
 #ifndef OLED_TELEMETRY_PERIOD_TICKS
 #define OLED_TELEMETRY_PERIOD_TICKS 150u
 #endif
+/* 调试串口遥测：经 0x23 DEBUG_OUT 发到下板 USART3 → PC。
+ * 与 OLED 同一周期（150 ticks ≈ 300ms），可按需关掉。 */
+#ifndef DEBUG_OUT_TELEMETRY_ENABLE
+#define DEBUG_OUT_TELEMETRY_ENABLE 1
+#endif
 #ifndef SENSOR_DEBUG_MIN_SPAN
 #define SENSOR_DEBUG_MIN_SPAN 80u
 #endif
@@ -632,6 +637,21 @@ int main(void)
             OpenLoop_ShowStatus();
 #else
             TelemetryScreen_Update();
+#endif
+#if DEBUG_OUT_TELEMETRY_ENABLE
+            {
+                extern float Path_GetTargetSpeed(void);
+                extern SpeedPID_Controller_t g_speed_pid;
+                char dbg[64];
+                int n = snprintf(dbg, sizeof(dbg),
+                    "L=%d R=%d T=%d out=%d dl=%d dr=%d\r\n",
+                    (int)speed_left, (int)speed_right,
+                    (int)Path_GetTargetSpeed(),
+                    (int)g_speed_pid.last_output,
+                    (int)g_motor_target_l, (int)g_motor_target_r);
+                if (n > 0 && n < (int)sizeof(dbg))
+                    Proto_SendDebugOut((const uint8_t *)dbg, (uint8_t)n);
+            }
 #endif
         }
 #endif
