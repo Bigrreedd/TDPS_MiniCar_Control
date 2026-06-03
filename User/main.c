@@ -530,12 +530,13 @@ int main(void)
 
 #if OPENLOOP_TEST_ENABLE
             // 开环测试：跳过 PID 输出，直接下发固定占空比，观察编码器原始响应。
-            // 仍接受心跳监视与硬上限保护；enable 取决于是否处于测试运行态。
+            // 开环 duty 是绝对占空比，不走 PID 调节量上限(1000)，否则 1200/1500/1800 会被压成同一个值。
             g_motor_target_l = (float)g_openloop_duty;
             g_motor_target_r = (float)g_openloop_duty;
-            Proto_SendMotorCmd((int16_t)ClampMotorDuty((float)g_openloop_duty),
-                               (int16_t)ClampMotorDuty((float)g_openloop_duty),
-                               g_openloop_active);
+            {
+                int16_t duty = (int16_t)ClampMotorDutyFinal((float)g_openloop_duty);
+                Proto_SendMotorCmd(duty, duty, g_openloop_active);
+            }
 #else
             // 下发电机指令到下板执行器（带符号占空比 + 使能）
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
