@@ -4,49 +4,42 @@
 static int16_t last_count_left = 0, last_count_right = 0;
 volatile int16_t speed_left = 0, speed_right = 0;
 volatile int32_t left_encoder_cnt = 0, right_encoder_cnt = 0;
+
+static void Encoder_GPIO_Init(GPIO_TypeDef *GPIOx)
+{
+    GPIO_InitTypeDef gpio;
+    gpio.GPIO_Pin   = GPIO_Pin_6 | GPIO_Pin_7;
+    gpio.GPIO_Mode  = GPIO_Mode_IN_FLOATING;
+    gpio.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOx, &gpio);
+}
+
+static void Encoder_TIM_Init(TIM_TypeDef *TIMx)
+{
+    TIM_TimeBaseInitTypeDef tim;
+    tim.TIM_Period        = 0xFFFF;
+    tim.TIM_Prescaler     = 0;
+    tim.TIM_ClockDivision = TIM_CKD_DIV1;
+    tim.TIM_CounterMode   = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIMx, &tim);
+
+    TIM_EncoderInterfaceConfig(TIMx, TIM_EncoderMode_TI12,
+                               TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+    TIM_ClearFlag(TIMx, TIM_FLAG_Update);
+    TIM_SetCounter(TIMx, 0);
+    TIM_Cmd(TIMx, ENABLE);
+}
+
 void ABEncoder_Init(void)
 {
-    GPIO_InitTypeDef GPIO_InitStructure;
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO, ENABLE); //PA6 PA7 编码器1，PB6 PB7 编码器2
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM4, ENABLE);
 
-    // PA6/PA7 浮空输入
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-	    // PB6/PB7 浮空输入
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
+    Encoder_GPIO_Init(GPIOA);   // PA6/PA7 → TIM3 右轮编码器
+    Encoder_GPIO_Init(GPIOB);   // PB6/PB7 → TIM4 左轮编码器
 
-
-    // 定时器基本参数
-    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
-    TIM_TimeBaseStructure.TIM_Prescaler = 0;
-    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
-		    // 定时器基本参数
-    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
-    TIM_TimeBaseStructure.TIM_Prescaler = 0;
-    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM4, &TIM_TimeBaseStructure);
-
-    // 编码器接口模式
-    TIM_EncoderInterfaceConfig(TIM3, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
-    TIM_ClearFlag(TIM3, TIM_FLAG_Update);
-    TIM_SetCounter(TIM3, 0);
-    TIM_Cmd(TIM3, ENABLE);
-		    // 编码器接口模式
-    TIM_EncoderInterfaceConfig(TIM4, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
-    TIM_ClearFlag(TIM4, TIM_FLAG_Update);
-    TIM_SetCounter(TIM4, 0);
-    TIM_Cmd(TIM4, ENABLE);
+    Encoder_TIM_Init(TIM3);     // 右轮编码器 (读数取负)
+    Encoder_TIM_Init(TIM4);     // 左轮编码器
 }
 
 void ABEncoder_UpdateSpeed(void) // 计算速度
