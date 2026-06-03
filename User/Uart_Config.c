@@ -245,6 +245,8 @@ int Uart3_BytesAvailable(void)
 
 // printf 重定向 → USART3（调试串口接电脑）
 // USART2 是板间二进制协议链路，printf 不能污染它。
+// 仅当 USART3_DEBUG_ON_PB10=1 时 USART3 外设已初始化且有 clock 才安全。
+#if USART3_DEBUG_ON_PB10
 int fputc(int ch, FILE *f)
 {
 	(void)f;
@@ -252,3 +254,4 @@ int fputc(int ch, FILE *f)
 	USART_SendData(USART3, (uint8_t)ch);
 	return ch;
 }
+#endif

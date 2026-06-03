@@ -4,6 +4,7 @@
 #include "ABEncoder.h"
 #include <math.h>
 extern volatile int16_t position_get;
+extern BlackPointResult_t result_BlackPoint;
 
 #ifndef PID_GYRO_ENABLE
 #define PID_GYRO_ENABLE 0
@@ -12,13 +13,25 @@ extern volatile int16_t position_get;
 #define WHEEL_BALANCE_ENABLE 1
 #endif
 #ifndef WHEEL_BALANCE_KP
-#define WHEEL_BALANCE_KP 2.0f
+#define WHEEL_BALANCE_KP 8.0f
 #endif
 #ifndef WHEEL_BALANCE_LIMIT
 #define WHEEL_BALANCE_LIMIT 300.0f
 #endif
+/* 死区不对称前馈补偿：右电机死区 950，左电机 750，差 200。
+ * 偏置动态缩放：低速时缩小避免单轮负占空比，高速时满偏置。
+ * 公式: dz_bias = clamp(out-20, 0, MOTOR_DZ_BIAS_MAX) */
+#ifndef MOTOR_DZ_BIAS_MAX
+#define MOTOR_DZ_BIAS_MAX 100.0f
+#endif
 #ifndef POSITION_LOOP_ENABLE
-#define POSITION_LOOP_ENABLE 0
+#define POSITION_LOOP_ENABLE 1
+#endif
+#ifndef BENCH_POSITION_TEST_ENABLE
+#define BENCH_POSITION_TEST_ENABLE 1
+#endif
+#ifndef BENCH_POSITION_TEST_CORRECTION_LIMIT
+#define BENCH_POSITION_TEST_CORRECTION_LIMIT 30.0f
 #endif
 /* 架空台架速度闭环验证：1=固定速度目标，跳过 Path 状态机。
  * 原因：架空时 total_dist_cm 由编码器假累计推得飞快，Path 状态机会一路升档
@@ -29,7 +42,7 @@ extern volatile int16_t position_get;
 #define BENCH_FIXED_SPEED_ENABLE 1
 #endif
 #ifndef BENCH_FIXED_TARGET_CPS
-#define BENCH_FIXED_TARGET_CPS 80.0f
+#define BENCH_FIXED_TARGET_CPS 50.0f
 #endif
 
 // ==================== 速度环PID实现 ====================
@@ -81,6 +94,10 @@ float SpeedPID_Calculate(SpeedPID_Controller_t *controller, float target_speed, 
 
 	// 计算增量输出
 	delta_output = p_term + i_term + d_term;
+
+		// 增量限幅：防止误差突变时单步跳变过大
+		if (delta_output > 200.0f) delta_output = 200.0f;
+		else if (delta_output < -200.0f) delta_output = -200.0f;
 
 	// 新的输出 = 上一次输出 + 增量
 	new_output = controller->last_output + delta_output;
@@ -296,16 +313,19 @@ void PID_Init(void)
     // 无可保留的有效整定值。下列为按新量纲推算的保守起点，需上车微调：
     //   反馈≈数十计数/秒，输出经 ClampMotorDuty 限到 ±1500。
     //   起点沿用下板低速架空调稳值，Kd 先置 0 避免放大低速量化噪声。
-    SpeedPID_Init(&g_speed_pid, 6.0f, 0.5f, 0.0f, 8000.0f, -8000.0f);
-    
+    // 基准增益在参考速度 80 cnt/s 下整定，运行时按 i_speed/80 自动缩放
+    SpeedPID_Init(&g_speed_pid, 2.0f, 14.0f, 2.0f, 1000.0f, -1000.0f);
+
     // 位置环：输出偏差值，叠加到速度环（循迹响应，未改量纲，保持原整定）
-    PositionPID_Init(&g_position_pid, 198.0f, 0.0f, 2280.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    PositionPID_Init(&g_position_pid, 60.0f, 0.0f, 80.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
 }
 extern volatile uint8_t is_racing;
 /* 速度样本就绪标志(定义于 main.c)：有新窗口速度时为 1 */
 extern volatile uint8_t g_speed_sample_ready;
 /* 速度环输出在样本间保持：无新样本时沿用上次输出 */
 static float g_speed_output = 0.0f;
+/* 丢线保护：连续丢线超过 3000ms → 强制停车 */
+static uint16_t g_line_lost_ticks = 0;
 /* 当前速度环实际使用的目标(cnt/s)——暴露给调试遥测。
  * 在 BENCH_FIXED_SPEED_ENABLE 下可能与 Path_GetTargetSpeed() 不同。 */
 static float g_current_target_speed = 0.0f;
@@ -320,26 +340,49 @@ void PID_Control_Update(void)
     float wheel_balance;
     float left_output,right_output;
 		float i_speed = 0;
-		static uint8_t first_set = 0; 
-		static float start_speed = 0; 	
 		if(!is_racing)
 		{
-			start_speed = 0;
-			first_set = 0;
 			g_speed_output = 0.0f;
 			g_current_target_speed = 0.0f;
 			g_speed_sample_ready = 0;
 			SpeedPID_Reset(&g_speed_pid);
 			PositionPID_Reset(&g_position_pid);
 			Motor_StopAll();
+			g_motor_target_l = 0.0f;
+			g_motor_target_r = 0.0f;
 			return;
 		}
+	    /* 丢线保护：连续丢线超过 3 秒 → 强制停车 */
+	    if (result_BlackPoint.found) {
+		g_line_lost_ticks = 0;
+	    } else {
+		g_line_lost_ticks++;
+		if (g_line_lost_ticks > 1500) {
+		    is_racing = 0;
+		    g_line_lost_ticks = 0;
+		}
+	    }
     // 1. 获取当前位置（从你的position变量）
-    current_position = (float)position_get / 10.0f;
+	    current_position = (float)position_get / 10.0f;
+	    /* 光滑非线性误差映射：f(e)=e/(1+|e|/k)，全程可导，无分段拐点。
+^I     * k=3.5 控制饱和速率：近中心斜率≈1，远边缘自然渐近。
+^I     * 目标位置从 PID 参数读取，与 SENSOR_COUNT 自动同步。 */
+	    {
+		float center = g_position_pid.param.target_position;
+		float raw_err = current_position - center;
+		current_position = center + raw_err / (1.0f + fabsf(raw_err) / 3.5f);
+	    }
     
-#if POSITION_LOOP_ENABLE
+#if POSITION_LOOP_ENABLE && (!BENCH_FIXED_SPEED_ENABLE || BENCH_POSITION_TEST_ENABLE)
     // 2. 位置环计算（输出偏差值）
     position_correction = PositionPID_Calculate(&g_position_pid, current_position);
+#if BENCH_FIXED_SPEED_ENABLE && BENCH_POSITION_TEST_ENABLE
+    if (position_correction > BENCH_POSITION_TEST_CORRECTION_LIMIT) {
+        position_correction = BENCH_POSITION_TEST_CORRECTION_LIMIT;
+    } else if (position_correction < -BENCH_POSITION_TEST_CORRECTION_LIMIT) {
+        position_correction = -BENCH_POSITION_TEST_CORRECTION_LIMIT;
+    }
+#endif
 #else
     position_correction = 0.0f;
     PositionPID_Reset(&g_position_pid);
@@ -355,22 +398,25 @@ void PID_Control_Update(void)
 			i_speed = Path_GetTargetSpeed();
 #endif
 			g_current_target_speed = i_speed;
+
+	    /* PID 增益按目标速度自动缩放：基准在 80 cnt/s 整定 */
+	    {
+		float s = i_speed / 80.0f;
+		if (s < 0.3f) s = 0.3f;
+		if (s > 1.5f) s = 1.5f;
+		SpeedPID_SetParam(&g_speed_pid, 2.0f*s, 14.0f*s*s*s, 2.0f*s);
+	    }
     // 4. 速度环计算（输出基础速度）
     //    速度反馈≈20Hz刷新，速度环只在有新样本时计算，避免500Hz重复积分陈旧值；
     //    无新样本时沿用上一次 speed_output，位置环仍每 2ms 更新保证循迹响应。
     if (g_speed_sample_ready)
     {
         g_speed_sample_ready = 0;
-			if(start_speed < i_speed && first_set == 0)
-			{
-				start_speed += 2.0f;
+			speed_output = SpeedPID_Calculate(&g_speed_pid, i_speed, avg_speed);
+			if (i_speed > 0.0f && speed_output < 5.0f) {
+				speed_output = 5.0f;
+				g_speed_pid.last_output = 5.0f;
 			}
-			else
-			{
-				start_speed = i_speed;
-				first_set  = 1;
-			}
-			speed_output = SpeedPID_Calculate(&g_speed_pid, start_speed, avg_speed);
 			g_speed_output = speed_output;
     }
     else
@@ -393,8 +439,26 @@ void PID_Control_Update(void)
 		 * 表现为持续偏一侧。架空速度闭环阶段直接关掉，留到上路后再开。 */
 		wheel_balance = 0.0f;
 #endif
-    left_output = speed_output + position_correction + wheel_balance;   // 左轮加（位置偏右→左轮加速→车头左转修正）
-    right_output = speed_output - position_correction - wheel_balance;  // 右轮减（位置偏右→右轮减速→车头左转修正）
+	    /* 速度自适应：曲率 κ ∝ position_correction / V。
+	     * 保持相同曲率 → position_correction ∝ V。
+	     * V0=60 cnt/s 为基准，下限 0.6× 保低速转向，上限 2.5× 防高速过激。 */
+	    {
+	        float speed_scale = i_speed / 60.0f;
+	        if (speed_scale < 0.6f) speed_scale = 0.6f;
+	        if (speed_scale > 2.5f) speed_scale = 2.5f;
+	        position_correction *= speed_scale;
+
+		/* 防单轮反转+防停转：位置修正只允许减速转向，不允许把任一侧压成负占空比。
+		 * speed_output 很小时暂停转向修正，优先让速度环把车轮重新带起来。 */
+		{
+			float pc_max = speed_output - 20.0f;
+			if (pc_max < 0.0f) pc_max = 0.0f;
+			if (position_correction > pc_max)  position_correction = pc_max;
+			if (position_correction < -pc_max) position_correction = -pc_max;
+		}
+	    }
+	    left_output = speed_output + position_correction + wheel_balance;
+	    right_output = speed_output - position_correction - wheel_balance;
     
     // 6. 设置电机（直接传 float，避免 int16_t 强转溢出 UB）
     Motor_SetSpeedWithDirection(MOTOR_L, left_output);

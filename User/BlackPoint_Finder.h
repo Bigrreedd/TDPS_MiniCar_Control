@@ -6,8 +6,12 @@
 #include <float.h>
 #include "stdio.h"
 
-// 传感器数量（可根据实际硬件调整）
+// 传感器数量（根据 USART3 调试模式自动调整）
+#if USART3_DEBUG_ON_PB10
+#define SENSOR_COUNT 6
+#else
 #define SENSOR_COUNT 7
+#endif
 
 // 黑点判断阈值百分比（20%）
 #define BLACK_POINT_THRESHOLD_PERCENT 0.2f

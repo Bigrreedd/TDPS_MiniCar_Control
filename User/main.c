@@ -53,9 +53,8 @@ static uint32_t lose_time = 0;
 volatile uint16_t radar_distance_cm = 0;
 
 /* 起步时给速度环输出的初值(满量程 10000)。
- * 死区前馈已负责克服起步静摩擦，这里只需给速度环一个小的正向初值避免从 0 慢爬，
- * 取 200；过大会和死区前馈叠加导致起步窜车。 */
-#define START_DUTY_15PCT  200.0f
+ * 死区前馈已负责克服起步静摩擦，这里置 0，避免与速度环首拍增量叠加导致起步过冲。 */
+#define START_DUTY_15PCT  0.0f
 
 /* 电机占空比硬上限（满量程 10000）：钳住 PID 速度环的调节量(不含死区前馈)。
  * 1000 = 满量程的 10%。叠加右轮最大死区 950 后最终≈1950，仍 <下板 SAFE_MAX(2000)，
@@ -78,17 +77,26 @@ static float ClampMotorDuty(float duty)
  * 左右分别配置以补偿起步摩擦不对称(右轮更难起步)。
  * 命令绝对值低于 EPS 视为停车(返回 0)，避免 0 附近抖动与静止蠕行。
  * 上车微调：某轮起步偏迟就调高对应 DEADZONE；起步窜得猛就调低。 */
-#ifndef MOTOR_DEADZONE_L
-#define MOTOR_DEADZONE_L  750.0f
+#ifndef MOTOR_START_DEADZONE_L
+#define MOTOR_START_DEADZONE_L  900.0f
 #endif
-#ifndef MOTOR_DEADZONE_R
-#define MOTOR_DEADZONE_R  950.0f
+#ifndef MOTOR_START_DEADZONE_R
+#define MOTOR_START_DEADZONE_R  900.0f
+#endif
+#ifndef MOTOR_HOLD_DEADZONE_L
+#define MOTOR_HOLD_DEADZONE_L   820.0f
+#endif
+#ifndef MOTOR_HOLD_DEADZONE_R
+#define MOTOR_HOLD_DEADZONE_R   820.0f
+#endif
+#ifndef MOTOR_HOLD_SPEED_CPS
+#define MOTOR_HOLD_SPEED_CPS    10
 #endif
 #ifndef MOTOR_CMD_EPS
-#define MOTOR_CMD_EPS     1.0f
+#define MOTOR_CMD_EPS     0.1f
 #endif
 #ifndef CLOSED_LOOP_REVERSE_ENABLE
-#define CLOSED_LOOP_REVERSE_ENABLE 0
+#define CLOSED_LOOP_REVERSE_ENABLE 1
 #endif
 
 static float ApplyDeadzone(float duty, float deadzone)
@@ -110,7 +118,7 @@ static float ClampClosedLoopDuty(float duty)
 /* 死区前馈后的最终安全上限：= PID 上限 + 最大死区，使 PID 满输出叠加死区后不被砍。
  * 仍兜一个绝对天花板防止异常值窜车。 */
 #ifndef MOTOR_DUTY_FINAL_CAP
-#define MOTOR_DUTY_FINAL_CAP  (MOTOR_DUTY_HARD_CAP + MOTOR_DEADZONE_R)
+#define MOTOR_DUTY_FINAL_CAP  (MOTOR_DUTY_HARD_CAP + MOTOR_START_DEADZONE_R)
 #endif
 static float ClampMotorDutyFinal(float duty)
 {
@@ -133,6 +141,8 @@ extern PositionPID_Controller_t g_position_pid;
 /* 位置环/速度环计算出的带符号电机目标（定义于 PID_Controller.c） */
 extern volatile float g_motor_target_l;
 extern volatile float g_motor_target_r;
+static int16_t g_sent_motor_l = 0;
+static int16_t g_sent_motor_r = 0;
 
 /* 下板链路监视：收到 ENC_FEEDBACK 心跳清零；丢失超时则解除运行防窜车 */
 static volatile uint8_t g_link_alive = 0;
@@ -368,7 +378,7 @@ static void OnRadarDist(const ProtoFrame_t *f)
 // 用 SPEED_WIN_MS 的滑动窗口累计计数，再按实测耗时换算成"计数/秒"，
 // 量化噪声降到单帧的 1/(窗口帧数)，同时仍是物理上可解释的速度量纲。
 #ifndef SPEED_WIN_MS
-#define SPEED_WIN_MS 50u
+#define SPEED_WIN_MS 250u
 #endif
 static void OnEncFeedback(const ProtoFrame_t *f)
 {
@@ -415,6 +425,7 @@ static void OnEncFeedback(const ProtoFrame_t *f)
             uint32_t dt  = now - vel_t0;          /* 实测耗时(ms)，毫秒回绕安全 */
             if (dt >= SPEED_WIN_MS)
             {
+                if (dt == 0) dt = 1;  /* 防御：SysTick 未启动时避免除零 */
                 speed_left  = (int16_t)((vel_accum_l * 1000) / (int32_t)dt);
                 speed_right = (int16_t)((vel_accum_r * 1000) / (int32_t)dt);
                 vel_accum_l = 0;
@@ -562,11 +573,13 @@ int main(void)
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
             //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
             {
-                float duty_l = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_l), MOTOR_DEADZONE_L);
-                float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), MOTOR_DEADZONE_R);
-                Proto_SendMotorCmd((int16_t)ClampMotorDutyFinal(duty_l),
-                                   (int16_t)ClampMotorDutyFinal(duty_r),
-                                   is_racing);
+                float deadzone_l = (speed_left > MOTOR_HOLD_SPEED_CPS) ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
+                float deadzone_r = (speed_right > MOTOR_HOLD_SPEED_CPS) ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
+                float duty_l = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_l), deadzone_l);
+                float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), deadzone_r);
+                g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
+                g_sent_motor_r = (int16_t)ClampMotorDutyFinal(duty_r);
+                Proto_SendMotorCmd(g_sent_motor_l, g_sent_motor_r, is_racing);
             }
 #endif
         }
@@ -643,13 +656,17 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
-                char dbg[64];
+                char dbg[160];
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d dl=%d dr=%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d S=%d,%d,%d,%d,%d,%d\r\n",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
-                    (int)g_motor_target_l, (int)g_motor_target_r);
+                    (int)g_motor_target_l, (int)g_motor_target_r,
+                    (int)g_sent_motor_l, (int)g_sent_motor_r,
+                    (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
+                    (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
+                    (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);
                 if (n > 0 && n < (int)sizeof(dbg))
                     Uart3_SendBuf((const uint8_t *)dbg, (uint8_t)n);
             }
