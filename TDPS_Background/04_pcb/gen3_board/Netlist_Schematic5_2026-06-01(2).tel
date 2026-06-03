@@ -1,0 +1,73 @@
+$PACKAGES
+2.54MM4PIN ! 2.54MM4PIN !  ; J1 J2 J3 
+5X20-BLX-A ! 5X20-BLX-A !  ; 保险丝座 
+,
+        CONN-TH_4P-P1.25_1.25MM-4P-ZZ-MS ! CONN-TH_4P-P1.25_1.25MM-4P-ZZ-MS ! '{Value}' ,
+        ; 编码器1 编码器2 
+CONN-TH_9P-P2.50_BX-XH2.54-9PWZ ! CONN-TH_9P-P2.50_BX-XH2.54-9PWZ ! '{Value}' ,
+        ; U5 
+CONN-TH_XT30AW-M.G.Y ! CONN-TH_XT30AW-M.G.Y ! '{Value}' ; 电池接口 电机1电源 电机2电源 ,
+        电机3电源 
+HDR-F-2.54_1X20 ! HDR-F-2.54_1X20 ! '{Value}' ; H1 H2 
+HDR-TH_8P-P2.54-V-M-4 ! HDR-TH_8P-P2.54-V-M-4 ! '{Value}' ; U1 U4 U6 U7 U8 
+LED0603 ! LED0603 !  ; LED3 LED4 
+M3铜柱 ! M3铜柱 ! '{Value}' ; TP1 TP2 TP3 TP4 TP5 TP6 
+PWRM-TH_MP1584EN_MOUDLE ! PWRM-TH_MP1584EN_MOUDLE ! '{Value}' ; U2 U3 
+R0603 ! R0603 ! '10kΩ' ; R4 
+R0603 ! R0603 ! 10k ; 保护/分压/下拉电阻1 保护/分压/下拉电阻2 
+R0603 ! R0603 ! 10K ; R10 
+R0603 ! R0603 ! 30K ; R9 
+R0805 ! R0805 ! '47Ω' ; R1 R2 
+SW-SMD_L6.0-W3.3-LS8.0 ! SW-SMD_L6.0-W3.3-LS8.0 ! '{Value}' ; SW1 SW2 
+SW-TH_SS-12D10L5 ! SW-TH_SS-12D10L5 ! '{Value}' ; SW5 
+$A_PROPERTIES
+$NETS
+'+5V' ; H2.3 J2.4 U2.7 U2.8 U3.1 U3.2 U4.1 U4.2 U4.3 U4.4 U4.5 U4.6 U4.7 U4.8 ,
+        U5.1 U6.8 U7.1 U7.2 U7.3 U7.4 U7.5 U7.6 U7.7 U7.8 
+'$1N269' ; LED3.2 R1.1 
+'$1N270' ; LED4.2 R2.1 
+'$1N529' ; 电池接口.1 SW5.1 
+'$1N72' ; 保护/分压/下拉电阻2.2 SW2.1 
+'$1N73' ; 保护/分压/下拉电阻1.2 SW1.1 
+'11.1V' ; 保险丝座.2 电机1电源.1 电机2电源.1 电机3电源.1 R9.1 U2.1 U2.2 
+'3S_BAT_IN' ; 保险丝座.1 SW5.2 
+'6050_INT' ; H2.17 U6.1 
+'6050_SCL' ; H2.5 U6.6 
+'6050_SDA' ; H2.4 U6.5 
+'ADC_BAT' ; H1.5 R9.2 R10.1 
+'OLED_SCL' ; H2.11 J3.2 
+'OLED_SDA' ; H2.20 J3.1 
+3V3 ; 编码器1.1 编码器2.1 H1.18 H2.1 J3.3 LED3.1 LED4.1 U3.7 U3.8 
+ENC1A ; 编码器1.2 H1.12 
+ENC1B ; 编码器1.3 H1.11 
+ENC2A ; 编码器2.2 H2.6 
+ENC2B ; 编码器2.3 H2.7 
+GND ; 保护/分压/下拉电阻1.1 保护/分压/下拉电阻2.1 编码器1.4 编码器2.4 电池接口.2 电机1电源.2 电机2电源.2 电机3电源.2 ,
+        H1.19 H1.20 H2.2 J2.1 J3.4 R4.2 R10.2 U2.3 U2.4 U2.5 U2.6 U3.3 U3.4 ,
+        U3.5 U3.6 U5.2 U6.7 U8.1 U8.2 U8.3 U8.4 U8.5 U8.6 U8.7 U8.8 
+KEY1 ; H1.2 SW1.2 
+KEY2 ; H1.3 SW2.2 
+LPWM1 ; H2.16 U1.2 
+LPWM2 ; H2.14 U1.4 
+MOTOREN ; H2.12 R4.1 U1.6 U1.7 U1.8 
+NRST ; H1.17 
+PA1 ; H1.6 U5.3 
+PA11 ; H2.13 U1.5 
+PA2 ; H1.7 J2.2 
+PA3 ; H1.8 J2.3 
+PA4 ; H1.9 U5.4 
+PA5 ; H1.10 U5.5 
+PA9 ; H2.15 U1.3 
+PB0 ; H1.13 U5.6 
+PB1 ; H1.14 U5.7 
+PB10 ; H1.15 U5.8 
+PB11 ; H1.16 U5.9 
+PB13 ; H2.19 J1.4 
+PB14 ; H2.18 R2.2 
+PB3 ; H2.10 J1.3 
+PB4 ; H2.9 J1.2 
+PB5 ; H2.8 J1.1 
+PC15 ; H1.4 R1.2 
+VBAT ; H1.1 
+$SCHEDULE
+$END

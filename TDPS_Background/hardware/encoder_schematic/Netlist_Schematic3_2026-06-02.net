@@ -1,0 +1,286 @@
+PROTEL NETLIST 2.0
+[
+DESIGNATOR
+U1
+FOOTPRINT
+SOP-8_L4.9-W3.9-P1.27-LS6.0-BL
+PARTTYPE
+MT6816CT-STD
+DESCRIPTION
+零延迟磁角位置传感器IC
+Component Kind
+Standard
+Add into BOM
+yes
+Convert to PCB
+yes
+Symbol
+MT6816CT-STD
+Designator
+U1
+Name
+MT6816CT-STD
+Device
+MT6816CT-STD
+Reuse Block
+
+Group ID
+
+Channel ID
+
+Unique ID
+gge1
+LCSC Part Name
+磁位置传感器
+Supplier Part
+C2925077
+Manufacturer
+MagnTek(麦歌恩)
+Manufacturer Part
+MT6816CT-STD
+Supplier Footprint
+SOP-8
+JLCPCB Part Class
+扩展库
+Datasheet
+https://item.szlcsc.com/datasheet/MT6816CT-STD/3243427.html
+Supplier
+LCSC
+3D Model Title
+SOP-8_L4.9-W3.9-P1.27-LS6.0-BL-1
+Description
+零延迟磁角位置传感器IC
+
+*
+]
+[
+DESIGNATOR
+C1
+FOOTPRINT
+C0603
+PARTTYPE
+CAP_0603
+DESCRIPTION
+
+Component Kind
+Standard
+Add into BOM
+yes
+Convert to PCB
+yes
+Designator
+C1
+Symbol
+Capacitance
+Name
+100nF
+Device
+CAP_0603
+Reuse Block
+
+Group ID
+
+Channel ID
+
+Unique ID
+gge2
+Supplier Footprint
+0603
+3D Model Title
+C0603_L1.6-W0.8-H0.8
+Value
+100nF
+Description
+
+
+*
+]
+[
+DESIGNATOR
+D1
+FOOTPRINT
+SOD-123_L2.7-W1.6-LS3.7-RD
+PARTTYPE
+BZT52C6V2_C19077403
+DESCRIPTION
+二极管配置:独立式;稳压值(标称值):6.2V;稳压值(范围):5.89V~6.51V;耗散功率(Pd):350mW;
+Component Kind
+Standard
+Add into BOM
+yes
+Convert to PCB
+yes
+Symbol
+BZT52C6V2_C19077403
+Designator
+D1
+Name
+BZT52C6V2
+Device
+BZT52C6V2_C19077403
+Reuse Block
+
+Group ID
+
+Channel ID
+
+Unique ID
+gge3
+LCSC Part Name
+表面贴装齐纳二极管
+Supplier Part
+C19077403
+Manufacturer
+R+O(宏嘉诚)
+Manufacturer Part
+BZT52C6V2
+Supplier Footprint
+SOD-123
+JLCPCB Part Class
+扩展库
+Datasheet
+https://item.szlcsc.com/datasheet/BZT52C6V2/20275488.html
+Supplier
+LCSC
+3D Model Title
+SOD-123_L2.7-W1.6-H1.4-LS3.7
+Diode Configuration
+独立式
+Zener Voltage(Nom)
+6.2V
+Reverse Leakage Current (Ir)
+3uA@4.0V
+Zener Voltage(Range)
+5.89V~6.51V
+Pd - Power Dissipation
+350mW
+Impedance(Zzt)
+10Ω
+Impedance(Zzk)
+150Ω
+Operating Junction Temperature Range
+-55℃~+150℃
+Description
+二极管配置:独立式;稳压值(标称值):6.2V;稳压值(范围):5.89V~6.51V;耗散功率(Pd):350mW;
+
+*
+]
+[
+DESIGNATOR
+U2
+FOOTPRINT
+CONN-TH_4P-P1.25_WAFER-MX1.25-4PZZ
+PARTTYPE
+WAFER-MX1.25-4PZZ
+DESCRIPTION
+插针结构:1x4P;间距:1.25mm;安装方式:直插;参考系列:PicoBlade(MX 1.25);总PIN数:4P;排数:1;每排PIN数:4;行距:-;额定电流:1A;触头材质:黄铜;触头镀层:锡;工作温度:-25℃~+85℃;
+Component Kind
+Standard
+Add into BOM
+yes
+Convert to PCB
+yes
+Symbol
+WAFER-MX1.25-4PZZ
+Designator
+U2
+Name
+WAFER-MX1.25-4PZZ
+Device
+WAFER-MX1.25-4PZZ
+Reuse Block
+
+Group ID
+
+Channel ID
+
+Unique ID
+gge4
+LCSC Part Name
+1x4P 间距:1.25mm 直插 系列:PicoBlade(MX 1.25)
+Supplier Part
+C3029397
+Manufacturer
+XUNPU(讯普)
+Manufacturer Part
+WAFER-MX1.25-4PZZ
+Supplier Footprint
+插件,P=1.25mm
+JLCPCB Part Class
+扩展库
+Datasheet
+https://item.szlcsc.com/datasheet/WAFER-MX1.25-4PZZ/3561409.html
+Supplier
+LCSC
+3D Model Title
+CONN-TH_4P-P1.25_WAFER-MX1.25-4PZZ
+Pins Structure
+1x4P
+Pitch
+1.25mm
+Mounting Type
+直插
+Reference Series
+PicoBlade(MX 1.25)
+Number of Pins
+4P
+Number of Rows
+1
+Number of PINs Per Row
+4
+Row Spacing
+-
+Current Rating
+1A
+Contact Material
+黄铜
+Contact Plating
+锡
+Operating Temperature
+-25℃~+85℃
+Voltage Rating
+125V
+Plastic Material
+LCP
+Flame Retardant Rating
+UL94V-0
+Supplementary Features
+-
+Color
+米色
+Z-Height of the Board
+4.6mm
+X-Length of Bottom Edge on Board (Spacing Line)
+6.9mm
+Y-Width of Bottom Edge on Board
+3.3mm
+Description
+插针结构:1x4P;间距:1.25mm;安装方式:直插;参考系列:PicoBlade(MX 1.25);总PIN数:4P;排数:1;每排PIN数:4;行距:-;额定电流:1A;触头材质:黄铜;触头镀层:锡;工作温度:-25℃~+85℃;
+
+*
+]
+(
+GND 
+U1-2 MT6816CT-STD-HVPP Passive 
+U1-8 MT6816CT-STD-GND Passive 
+C1-2 CAP_0603-2 Input   
+D1-2 BZT52C6V2_C19077403-A Passive 
+U2-1 WAFER-MX1.25-4PZZ-1 Passive 
+)
+(
+VCC 
+U1-4 MT6816CT-STD-VDD Passive 
+C1-1 CAP_0603-1 Input   
+D1-1 BZT52C6V2_C19077403-K Passive 
+U2-4 WAFER-MX1.25-4PZZ-4 Passive 
+)
+(
+B 
+U1-5 MT6816CT-STD-A/U Passive 
+U2-2 WAFER-MX1.25-4PZZ-2 Passive 
+)
+(
+A 
+U1-6 MT6816CT-STD-B/V Passive 
+U2-3 WAFER-MX1.25-4PZZ-3 Passive 
+)
