@@ -78,7 +78,8 @@ static void Proto_FeedByte(uint8_t byte)
             if (s_cmd != PROTO_CMD_PING &&
                 s_cmd != PROTO_CMD_MOTOR_CMD &&
                 s_cmd != PROTO_CMD_ENC_FEEDBACK &&
-                s_cmd != PROTO_CMD_LINK_RESET) {
+                s_cmd != PROTO_CMD_LINK_RESET &&
+                s_cmd != PROTO_CMD_DEBUG_OUT) {
                 Proto_SendFrame(PROTO_CMD_ACK, &s_cmd, 1);
             }
         }

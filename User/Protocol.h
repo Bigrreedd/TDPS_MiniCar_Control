@@ -36,6 +36,12 @@
  *                       - 下板开机/重烧后发出 -> 上板解除运行(racing=0)+复位PID，
  *                         防止任一板复位后另一板用陈旧/饱和状态突然窜车
  *
+ * 二合一板 上板 -> 下板 调试文本转发:
+ *   0x23 DEBUG_OUT    : [text bytes]
+ *                       - 上板把要发给电脑的调试文本打包进 payload
+ *                       - 下板收到后原文转发到 USART3（调试串口接电脑）
+ *                       - 最大64字节/帧，超长文本分多帧发送
+ *
  * STM32 -> ESP32 命令:
  *   0x80 TELEMETRY    : [pos_hi][pos_lo][spd_l_hi][spd_l_lo][spd_r_hi][spd_r_lo][seg][batt_pct]
  *   0x81 ACK          : [echo_cmd]
@@ -52,6 +58,7 @@
 #define PROTO_CMD_MOTOR_CMD    0x20
 #define PROTO_CMD_ENC_FEEDBACK 0x21
 #define PROTO_CMD_LINK_RESET   0x22
+#define PROTO_CMD_DEBUG_OUT    0x23
 #define PROTO_CMD_TELEMETRY    0x80
 #define PROTO_CMD_ACK          0x81
 

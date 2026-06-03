@@ -55,6 +55,12 @@ volatile uint16_t radar_distance_cm = 0;
 #if !LOWER_PID_TUNE
 /* 以下纯执行器回调仅在非调参模式编译，避免 tune 模式下未引用的 static 函数告警 */
 
+/* 上板调试文本转发：收到 0x23 DEBUG_OUT 后原文写到 USART3（接电脑） */
+static void OnDebugOut(const ProtoFrame_t *f)
+{
+    if (f->len > 0) Uart3_SendBuf(f->payload, f->len);
+}
+
 /* 把带符号占空比施加到指定电机（正=前进，负=后退） */
 static void ApplyMotorDuty(uint8_t motor_id, int16_t duty_signed)
 {
@@ -399,9 +405,9 @@ static void tune_poll_uart(float *p_target, uint8_t *p_run)
     static uint32_t last_rx_ms = 0u;
     uint8_t got_byte = 0u;
     uint32_t now;
-    while (Uart2_BytesAvailable() > 0)
+    while (Uart3_BytesAvailable() > 0)
     {
-        uint8_t ch = Uart2_ReadByteBlocking();
+        uint8_t ch = Uart3_ReadByteBlocking();
         got_byte = 1u;
         last_rx_ms = Millis_Get();
         if (ch == '\r' || ch == '\n')
@@ -452,6 +458,7 @@ int main(void)
     Motor_Init();
     ABEncoder_Init();
     Uart2_Init(115200);
+    Uart3_Init(115200);
     Key_Scan_Init();
     Key_ClearEvent();
 
@@ -538,6 +545,7 @@ int main(void)
     Motor_Init();
     ABEncoder_Init();
     Uart2_Init(115200);
+    Uart3_Init(115200);
 
     // 板间/ESP32 协议初始化
     Proto_Init();
@@ -545,6 +553,7 @@ int main(void)
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
     Proto_RegisterHandler(PROTO_CMD_LINK_RESET, OnLinkReset);
+    Proto_RegisterHandler(PROTO_CMD_DEBUG_OUT, OnDebugOut);
 
     Motor_StopAll();
     Motor_Disable();
