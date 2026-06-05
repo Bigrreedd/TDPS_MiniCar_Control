@@ -3,6 +3,7 @@
 #include "PID_Controller.h"
 #include "ABEncoder.h"
 #include "Motor_ctr.h"
+#include <math.h>
 
 #include "stm32f10x_it.h"
 
