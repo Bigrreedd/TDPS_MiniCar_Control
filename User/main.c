@@ -78,16 +78,16 @@ static float ClampMotorDuty(float duty)
  * 命令绝对值低于 EPS 视为停车(返回 0)，避免 0 附近抖动与静止蠕行。
  * 上车微调：某轮起步偏迟就调高对应 DEADZONE；起步窜得猛就调低。 */
 #ifndef MOTOR_START_DEADZONE_L
-#define MOTOR_START_DEADZONE_L  900.0f
+#define MOTOR_START_DEADZONE_L  820.0f
 #endif
 #ifndef MOTOR_START_DEADZONE_R
-#define MOTOR_START_DEADZONE_R  900.0f
+#define MOTOR_START_DEADZONE_R  940.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   820.0f
+#define MOTOR_HOLD_DEADZONE_L   760.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   820.0f
+#define MOTOR_HOLD_DEADZONE_R   880.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
@@ -277,6 +277,10 @@ static void UpdateSensorDebugSnapshot(void)
     g_sensor_low_pos10 = CalculateSensorDebugPos10(g_sensor_low_mask, 1u);
     g_sensor_high_pos10 = CalculateSensorDebugPos10(g_sensor_high_mask, 0u);
 }
+
+#ifndef LINE_LOST_STOP_TICKS
+#define LINE_LOST_STOP_TICKS 500u  /* 1s @ 500Hz control tick */
+#endif
 
 static void StopRun(void)
 {
@@ -517,10 +521,10 @@ int main(void)
             else
             {
                 lose_time++;
-                if (lose_time > 500)
+                if (lose_time > LINE_LOST_STOP_TICKS)
                 {
-                    lose_time = 500;
-                    StopRun();             /* 丢线超时：本地停车 */
+                    lose_time = LINE_LOST_STOP_TICKS;
+                    StopRun();             /* 丢线超过 1s：本地停车 */
                 }
             }
 
@@ -656,14 +660,18 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
-                char dbg[160];
+                char dbg[192];
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d S=%d,%d,%d,%d,%d,%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d S=%d,%d,%d,%d,%d,%d\r\n",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
                     (int)g_motor_target_l, (int)g_motor_target_r,
                     (int)g_sent_motor_l, (int)g_sent_motor_r,
+                    (int)position_get,
+                    (int)PID_GetLineLostTicks(),       /* 丢线计数 */
+                    (int)PID_GetDeepTurnMode(),        /* 深弯模式 */
+                    (int)result_BlackPoint.is_junction,  /* 路口抑制 */
                     (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
                     (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
                     (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);

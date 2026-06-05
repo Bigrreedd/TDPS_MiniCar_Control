@@ -76,6 +76,7 @@ typedef struct
 	PositionPID_Param_t param;  // PID参数
 	float last_error;            // 上一次误差
 	float integral;              // 积分项累积
+	float d_filtered;            // 微分项低通滤波状态（压灰度量化尖峰）
 } PositionPID_Controller_t;
 
 // ==================== 速度环PID函数 ====================
@@ -176,6 +177,18 @@ void PID_Control_Update(void);
  *        调用方不应直接查 Path_GetTargetSpeed()。
  */
 float PID_GetCurrentTargetSpeed(void);
+
+/**
+ * @brief 获取丢线计数（连续丢线帧数）
+ * @return 丢线计数（0=有线，>0=丢线帧数）
+ */
+uint16_t PID_GetLineLostTicks(void);
+
+/**
+ * @brief 获取深弯模式状态
+ * @return 1=深弯模式（内侧轮保留最小速度），0=正常模式
+ */
+uint8_t PID_GetDeepTurnMode(void);
 
 #endif // __PID_CONTROLLER_H__
 

@@ -10,6 +10,66 @@ static uint8_t last_position = SENSOR_COUNT / 2;
 // 上一次找到的精确位置（初始化为中间位置）
 static float last_precise_position = (float)(SENSOR_COUNT / 2);
 
+/* ===== 传感器滤波：简单移动平均（3帧） =====
+ * 弯道时传感器噪声导致 pos 跳变 0↔50，增加滤波平滑读数。
+ * 使用 3 帧平均：既能滤除高频噪声，又不过度延迟（6ms@500Hz）。 */
+#define FILTER_WINDOW_SIZE 3
+static uint16_t adc_history[SENSOR_COUNT][FILTER_WINDOW_SIZE] = {0};
+static uint8_t filter_index = 0;
+
+static void FilterSensorValues(uint16_t *adc_values)
+{
+	uint8_t i, j;
+	// 更新历史缓冲
+	for (i = 0; i < SENSOR_COUNT; i++) {
+		adc_history[i][filter_index] = adc_values[i];
+	}
+	filter_index = (filter_index + 1) % FILTER_WINDOW_SIZE;
+
+	// 计算移动平均
+	for (i = 0; i < SENSOR_COUNT; i++) {
+		uint32_t sum = 0;
+		for (j = 0; j < FILTER_WINDOW_SIZE; j++) {
+			sum += adc_history[i][j];
+		}
+		adc_values[i] = (uint16_t)(sum / FILTER_WINDOW_SIZE);
+	}
+}
+
+/* 路口冻结连续帧计数：宽黑被判为路口时，precise_position 冻结为上次有效值。
+ * 但真正的停止标志/线尾也会触发宽黑，故加超时上限——超过 JUNCTION_FREEZE_MAX_TICKS
+ * 仍持续宽黑则放弃冻结(按全局质心走)，避免线尾被永久冻结在原地。
+ * 控制环 500Hz(2ms/帧)，200 帧≈400ms，够穿过任何一条交叉支线。 */
+#ifndef JUNCTION_FREEZE_MAX_TICKS
+#define JUNCTION_FREEZE_MAX_TICKS 200u
+#endif
+static uint16_t g_junction_ticks = 0;
+
+/* 单通道加权值：边界路(0/末)权重最高增强弯道响应，向中心递减。
+ * 数值与历史实现一致(3.1/2.6/1.7)，仅抽成函数供质心复用且修正了 7 路构建下的边界判断。 */
+static uint8_t SensorWeight(uint8_t i)
+{
+	if (i == 0 || i == (SENSOR_COUNT - 1)) return 31;  /* 边界权重3.1 */
+	if (i == 1 || i == (SENSOR_COUNT - 2)) return 26;  /* 次边界权重2.6 */
+	return 17;                                          /* 内部权重1.7 */
+}
+
+/* 对 [start,end] 闭区间内的黑点求加权质心（仅在已知该段全黑时调用） */
+static float RunCentroid(uint8_t start, uint8_t end)
+{
+	uint32_t idx_sum = 0;
+	uint32_t w_sum   = 0;
+	uint8_t i;
+	for (i = start; i <= end; i++)
+	{
+		uint8_t w = SensorWeight(i);
+		idx_sum += (uint32_t)i * w;
+		w_sum   += w;
+	}
+	if (w_sum == 0) return last_precise_position;  /* 防御：不应发生 */
+	return (float)idx_sum / (float)w_sum;
+}
+
 /**
  * @brief 初始化寻点模块
  * @note 设置默认的最小值和最大值参数
@@ -25,6 +85,7 @@ void BlackPoint_Finder_Init(void)
 	// 初始化上一次位置为中间
 	last_position = SENSOR_COUNT / 2;
 	last_precise_position = (float)(SENSOR_COUNT / 2);
+	g_junction_ticks = 0;
 }
 
 /**
@@ -90,8 +151,6 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 {
 	uint8_t i;
 	uint8_t black_count = 0;
-	uint32_t index_sum = 0;     /* 黑点通道索引之和 */
-	uint8_t first_black = 0;
 	float precise_pos;
 
 	if(adc_values == NULL || result == NULL)
@@ -101,37 +160,126 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 			result->found = 0;
 			result->position = last_position;
 			result->precise_position = last_precise_position;
+			result->is_junction = 0;
+			result->black_count = 0;
+			result->span = 0;
+			result->run_count = 0;
+			result->raw_centroid = last_precise_position;
+			result->junction_ticks = g_junction_ticks;
 		}
 		return last_precise_position;
 	}
 
-	/* 扫描所有判为黑点的通道，统计数量、索引和、首个黑点位置 */
+	/* ===== 传感器滤波：平滑噪声，减少 pos 跳变 ===== */
+	FilterSensorValues(adc_values);
+
+	/* ===== 单遍扫描：收集黑点分布(计数/首末/连续段/全局质心) ===== */
+	uint8_t  first_black = 0, last_black = 0;
+	uint8_t  run_count = 0;       /* 连续黑段数 */
+	uint8_t  prev_black = 0;
+	uint32_t index_sum = 0;       /* 全局: Σ(索引×权重) */
+	uint32_t weight_sum = 0;      /* 全局: Σ权重 */
+	/* 各连续段端点(用于支线场景按连续性选段)；段数上限 = 通道数/2 + 1 */
+	uint8_t  run_start[SENSOR_COUNT];
+	uint8_t  run_end[SENSOR_COUNT];
+
 	for(i = 0; i < SENSOR_COUNT; i++)
 	{
-		if(BlackPoint_Finder_IsBlackPoint(i, adc_values[i]))
+		uint8_t b = BlackPoint_Finder_IsBlackPoint(i, adc_values[i]);
+		if(b)
 		{
-			if(black_count == 0)
-				first_black = i;
+			uint8_t weight = SensorWeight(i);
+			if(black_count == 0) first_black = i;
+			last_black = i;
 			black_count++;
-			index_sum += i;
+			index_sum  += (uint32_t)i * weight;
+			weight_sum += weight;
+			if(!prev_black)            /* 新段起点 */
+			{
+				run_start[run_count] = i;
+				run_count++;
+			}
+			run_end[run_count - 1] = i;  /* 延伸当前段终点 */
 		}
+		prev_black = b;
 	}
 
-	/* 没有黑点：保持上一次位置 */
+	/* 没有黑点：保持上一次位置，清路口标志 */
 	if(black_count == 0)
 	{
+		g_junction_ticks = 0;
 		result->found = 0;
 		result->position = last_position;
 		result->precise_position = last_precise_position;
+		result->is_junction = 0;
+		result->black_count = 0;
+		result->span = 0;
+		result->run_count = 0;
+		result->raw_centroid = last_precise_position;
+		result->junction_ticks = 0;
 		return last_precise_position;
 	}
 
-	/* 质心 = 黑点索引平均值，结果必落在 [0, SENSOR_COUNT-1]，无需再钳位 */
-	precise_pos = (float)index_sum / (float)black_count;
+	uint8_t  span = (uint8_t)(last_black - first_black + 1);
+	float    raw_centroid = (float)index_sum / (float)weight_sum;
+
+	/* ===== 路口/支线判定 =====
+	 * 正常线/弯道: black_count≤4 且 span≤4 且单段。
+	 * 宽黑(count≥5 或 span≥5)= 交叉/T 字路口 → 冻结质心走直，掐断质心被支线拽偏。
+	 * 恢复OR逻辑（昨天配置）+ 阈值5（防止弯道4路误触发）→ 平衡鲁棒性和误触发。
+	 * 排除全黑(count=SENSOR_COUNT)：那是丢线环境光干扰，不是路口。 */
+	uint8_t junction = ((black_count >= 5u) || (span >= 5u)) && (black_count < SENSOR_COUNT);
+
+	if(junction && g_junction_ticks < JUNCTION_FREEZE_MAX_TICKS)
+	{
+		/* 冻结：保持上次有效精确位置(≈走直)，不更新 last_*，置路口标志 */
+		if(g_junction_ticks < 0xFFFFu) g_junction_ticks++;
+		result->found = 1;             /* 仍看得见线，绝不能置 0(会触发丢线逻辑) */
+		result->position = last_position;
+		result->precise_position = last_precise_position;
+		result->is_junction = 1;
+		result->black_count = black_count;
+		result->span = span;
+		result->run_count = run_count;
+		result->raw_centroid = raw_centroid;
+		result->junction_ticks = g_junction_ticks;
+		return last_precise_position;
+	}
+
+	/* 非路口(或冻结超时)：清路口计数 */
+	g_junction_ticks = 0;
+
+	/* 选取精确位置：
+	 * - 多段(支线+主线): 选质心最接近上次位置的连续段(连续性跟踪，忽略内侧支线)。
+	 * - 单段: 即全局质心(与历史行为一致，边界权重照常生效，弯道响应不变)。 */
+	if(run_count >= 2u)
+	{
+		float best_pos = RunCentroid(run_start[0], run_end[0]);
+		float best_err = fabsf(best_pos - last_precise_position);
+		uint8_t k;
+		for(k = 1; k < run_count; k++)
+		{
+			float c = RunCentroid(run_start[k], run_end[k]);
+			float e = fabsf(c - last_precise_position);
+			if(e < best_err) { best_err = e; best_pos = c; }
+		}
+		precise_pos = best_pos;
+		first_black = run_start[0];   /* position 仍报首段起点，保持语义 */
+	}
+	else
+	{
+		precise_pos = raw_centroid;
+	}
 
 	result->found = 1;
 	result->position = first_black;
 	result->precise_position = precise_pos;
+	result->is_junction = 0;
+	result->black_count = black_count;
+	result->span = span;
+	result->run_count = run_count;
+	result->raw_centroid = raw_centroid;
+	result->junction_ticks = 0;
 	last_position = first_black;
 	last_precise_position = precise_pos;
 
@@ -153,5 +301,6 @@ void BlackPoint_Finder_ResetLastPosition(void)
 {
 	last_position = SENSOR_COUNT / 2;
 	last_precise_position = (float)(SENSOR_COUNT / 2);
+	g_junction_ticks = 0;
 }
 

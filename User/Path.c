@@ -14,20 +14,24 @@ extern BlackPointResult_t result_BlackPoint;
 static PathState_t g_path;
 
 /* 里程参数（根据实际编码器标定调整） */
-#define ENCODER_TICKS_PER_CM    6.0f    /* 编码器脉冲/cm（示例值，需实测 */
+#define ENCODER_TICKS_PER_CM    6.0f    /* 编码器脉冲/cm（占位值，需实测 Task#6） */
 
 /* 计数器饱和上限 */
 #define COUNT_SAT               1000
 
-/* 段距离阈值 (cm) */
-#define DIST_START_SEARCH       30.0f   /* 起步寻线距离 */
-#define DIST_START_STRAIGHT     20.0f   /* 起步直行稳定 */
-#define DIST_U_TURN_ZONE        80.0f   /* U弯检测区 */
-#define DIST_S_CURVE_ZONE       150.0f  /* S弯检测区 */
-#define DIST_BOX_ZONE           250.0f  /* 方框区 */
-#define DIST_CIRCLE_ZONE        350.0f  /* 圆圈区 */
-#define DIST_RADAR_APPROACH     600.0f  /* 雷达区 */
-#define DIST_FINISH             750.0f  /* 终点区 */
+/* 段距离阈值 (cm) - 基于 OCR 实测赛道尺寸重算
+ * 赛道布局（累积距离）：
+ *   Start(0) → 1.1入口(165) → 1.1出口(615) → 1.2拱门(660~700)
+ *   → 1.3三方框(730~880) → 1.4雷达箱(980~1170) → Finish(1270)
+ */
+#define DIST_START_SEARCH       30.0f    /* 起步寻线距离（保持） */
+#define DIST_START_STRAIGHT     20.0f    /* 起步直行稳定（保持） */
+#define DIST_U_TURN_ZONE        165.0f   /* 1.1 U弯入口：165cm */
+#define DIST_S_CURVE_ZONE       660.0f   /* 1.2 拱门/S弯：660cm（U弯出口+45cm） */
+#define DIST_BOX_ZONE           730.0f   /* 1.3 三方框入口：730cm */
+#define DIST_CIRCLE_ZONE        880.0f   /* 四圆区（三方框出口，实际位置待确认） */
+#define DIST_RADAR_APPROACH     980.0f   /* 1.4 雷达箱入口：980cm（估算，待实测调整） */
+#define DIST_FINISH            1270.0f   /* 终点区：1270cm */
 
 /* 速度定义（速度环目标值，单位=编码器计数/秒，与 main.c 速度反馈同量纲）
  * 旧版单位是“计数/控制周期”，反馈改为“计数/秒”后这些数才与反馈可比。
@@ -93,8 +97,12 @@ void Path_StopRace(void)
 /* 参数为左右编码器自上一帧以来的原始计数增量(单位=计数)，每个增量恰好累积一次 */
 void Path_UpdateOdometer(int32_t left_pulse_delta, int32_t right_pulse_delta)
 {
-    float avg_ticks = (float)(left_pulse_delta + right_pulse_delta) * 0.5f;
-    g_path.total_dist_cm += avg_ticks / ENCODER_TICKS_PER_CM;
+    /* 路径长度(非位移)累加: 两轮各走的弧长平均。
+     * 原 (L+R)/2 在180° U弯两轮反向→均值≈0,恰在U弯处漏计里程。
+     * 改用 (|L|+|R|)/2,保证U弯时里程正常累积(两轮路径长之和/2)。
+     * 编码器增量可正可负(CLOSED_LOOP_REVERSE_ENABLE=1允许反转),取绝对值。 */
+    float path_length = (fabsf((float)left_pulse_delta) + fabsf((float)right_pulse_delta)) * 0.5f;
+    g_path.total_dist_cm += path_length / ENCODER_TICKS_PER_CM;
 }
 
 /* ========== 弯道检测辅助 ========== */
@@ -124,18 +132,18 @@ static void DetectTrackSide(void)
 {
     if (g_path.track_side == TRACK_UNKNOWN) {
         /* 需要连续多次检测到大幅偏移才判定赛道侧，避免噪声误判
-         * position_get 范围 [0,60]，中心约 80（传感器8）
-         * 偏右半区 (>40, 即 precise>4.0) -> 可能是右赛道
-         * 偏左半区 (<20, 即 precise<2.0) -> 可能是左赛道 */
+         * position_get 范围 [0,50]（6路传感器，索引0-5）
+         * 黑线偏右 (>40, 即 precise>4.0) -> 右赛道（车在左侧，线在右侧）
+         * 黑线偏左 (<10, 即 precise<1.0) -> 左赛道（车在右侧，线在左侧） */
         if (position_get > 40) {
-            side_accum++;
-        } else if (position_get < 20) {
-            side_accum--;
+            side_accum++;  /* 黑线持续偏右 → 判定为右赛道 */
+        } else if (position_get < 10) {
+            side_accum--;  /* 黑线持续偏左 → 判定为左赛道 */
         }
         if (side_accum > 20) {
-            g_path.track_side = TRACK_LEFT;
+            g_path.track_side = TRACK_RIGHT;  /* 修复：side_accum++ 对应右赛道 */
         } else if (side_accum < -20) {
-            g_path.track_side = TRACK_RIGHT;
+            g_path.track_side = TRACK_LEFT;   /* 修复：side_accum-- 对应左赛道 */
         }
     }
 }
@@ -162,7 +170,11 @@ void Path_Update(void)
 
     /* 弯道检测 */
     g_path.curve_strength = CalcCurveStrength();
-    uint8_t in_curve = (g_path.curve_strength > 2000.0f) ? 1 : 0;
+    /* position_get∈[0,60](质心×10), 8样本方差上限≈900(4@0,4@60)。
+     * 旧阈值2000永远不达→SEG_U_TURN/S_CURVE不可达。降到700:
+     * 真弯道(pos在0-10或50-60震荡)方差≈625-900→触发;直线(pos≈25±5)方差≈25→不触发。
+     * 关键:路口冻结 pos=25 无跳变→方差≈0,不会误触发;仅真弯道触发。 */
+    uint8_t in_curve = (g_path.curve_strength > 700.0f) ? 1 : 0;
 
     /* 线跟踪状态 */
     if (result_BlackPoint.found) {

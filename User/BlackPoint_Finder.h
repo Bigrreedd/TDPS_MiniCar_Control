@@ -38,6 +38,13 @@ typedef struct
 	uint8_t found;           // 是否找到黑点
 	uint8_t position;        // 黑点位置（整数）
 	float precise_position;  // 精确位置（浮点数，精度提高10倍）
+	/* ===== 岔路/路口抑制（防止过岔路时质心被支线拽偏） ===== */
+	uint8_t  is_junction;    // 1=本帧判定为宽黑/路口，precise_position 已冻结为上次值
+	uint8_t  black_count;    // 本帧黑点通道数
+	uint8_t  span;           // 黑点跨度 = 末黑索引-首黑索引+1（无黑为0）
+	uint8_t  run_count;      // 连续黑段数（≥2 表示存在支线/断开）
+	float    raw_centroid;   // 未冻结的全局加权质心（遥测/路标用，便于 Path 识别路口）
+	uint16_t junction_ticks; // is_junction 连续置 1 的帧数（冻结超时回退用）
 } BlackPointResult_t;
 
 /**
