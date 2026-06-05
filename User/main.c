@@ -135,7 +135,67 @@ static void OnLinkReset(const ProtoFrame_t *f)
 }
 #endif /* !LOWER_PID_TUNE */
 
-#if LOWER_PID_TUNE
+/* ==================== 风扇点动测试构建（2026-06-05 功率审查授权档） ====================
+ * 用途：风扇硬件首次通电验证（风扇接下板供电口/XT30 总线）。轮子电机全程禁用。
+ * 操作：K1 按一下 → 风扇以 FAN_SPOT_TEST_DUTY(30/1000=3%) 运行 2s 自动停；K2 → 立即强停。
+ *       每次点动后检查 SS54FSH 续流二极管与 NMOS 温升，异常发热立即断电。
+ * 授权依据：02_hardware/motor_pwm_duty_limit_analysis.md 第7章——点动验证 ≤50/1000。
+ * 双层保险：本档 30 < M3PWM_SetDutyCycle 底层 ABS_CAP=50 硬钳；FAN_MOTOR_UNLOCKED
+ * 仍=0（比赛路径保持锁定），本测试走 M3PWM 直接调用，由底层硬钳兜底。 */
+#ifndef FAN_SPOT_TEST_ENABLE
+#define FAN_SPOT_TEST_ENABLE 0
+#endif
+#ifndef FAN_SPOT_TEST_DUTY
+#define FAN_SPOT_TEST_DUTY   30u     /* /1000，≤FAN_DUTY_ABS_CAP(50) */
+#endif
+#ifndef FAN_SPOT_TEST_ON_MS
+#define FAN_SPOT_TEST_ON_MS  2000u
+#endif
+
+#if FAN_SPOT_TEST_ENABLE
+#include "M3PWM.h"
+int main(void)
+{
+    SysTick_Init();
+    Motor_Init();
+    Motor_StopAll();
+    Motor_Disable();        /* 轮子电机全程禁用 */
+    M3PWM_Init();
+    M3PWM_Start();
+    M3PWM_SetDutyCycle(0);
+    Uart2_Init(115200);
+    Key_Scan_Init();
+    Key_ClearEvent();
+    printf("\r\n=== FAN SPOT TEST: duty %u/1000, %ums/shot ===\r\n",
+           (unsigned)FAN_SPOT_TEST_DUTY, (unsigned)FAN_SPOT_TEST_ON_MS);
+    printf("K1=single shot, K2=force off. Watch SS54FSH/NMOS temp!\r\n");
+    while (1)
+    {
+        Key_Event_t *ev;
+        Key_Scan_Update();
+        while (Key_HasEvent())
+        {
+            ev = Key_GetEvent();
+            if (ev == 0) break;
+            if (ev->key_id == KEY_K1)
+            {
+                printf("FAN ON %u/1000\r\n", (unsigned)FAN_SPOT_TEST_DUTY);
+                M3PWM_SetDutyCycle((uint16_t)FAN_SPOT_TEST_DUTY);
+                Delay_ms(FAN_SPOT_TEST_ON_MS);
+                M3PWM_SetDutyCycle(0);
+                printf("FAN OFF\r\n");
+            }
+            else if (ev->key_id == KEY_K2)
+            {
+                M3PWM_SetDutyCycle(0);
+                printf("FORCE OFF\r\n");
+            }
+        }
+        Delay_ms(10);
+    }
+}
+
+#elif LOWER_PID_TUNE
 /* ==================== 速度环脱机调参 harness ==================== */
 
 /* 口径常量：与上板逐一对齐 */
