@@ -47,7 +47,9 @@ extern BlackPointResult_t result_BlackPoint;
 #define BENCH_FIXED_TARGET_CPS 20.0f
 #endif
 #ifndef SPEED_PID_MIN_OUTPUT
-#define SPEED_PID_MIN_OUTPUT 110.0f
+/* 110→70(06-05 第9轮): 110在亏电电池上定，满电时=43cps把速度环钉死在2.2×目标。
+ * 与浅弯decel_cap 90→50对偶下移：失速裕度 70-50=20 不变，深弯内轮硬下限20不变。 */
+#define SPEED_PID_MIN_OUTPUT 70.0f
 #endif
 
 // ==================== 速度环PID实现 ====================
@@ -545,13 +547,13 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 				g_deep_turn_mode = 0;   /* 退出深弯:内侧轮恢复前进 */
 			}
 		}
-		/* decel_cap: 深弯模式内侧减速，否则正常前进(90)。
+		/* decel_cap: 深弯模式内侧减速，否则正常前进(50)。
 		 * 12:00曾回退0(最大差速)，但"20不够过弯"的旧结论被滤波×0.2阈值bug污染
 		 * (12:24已修，阈值0.5)。用户确认深弯内轮不许完全停转 → 回到20重新地面验证。
 		 * 内轮托底由下方硬下限钳位完成(decel_cap仍=speed_output)，差速322→282(-12%)。 */
 		#define MIN_INNER_WHEEL_SPEED 20.0f
-		float decel_cap = g_deep_turn_mode ? speed_output : 90.0f;
-		if (decel_cap < 90.0f) decel_cap = 90.0f;   /* 下限90（浅弯） */
+		float decel_cap = g_deep_turn_mode ? speed_output : 50.0f;
+		if (decel_cap < 50.0f) decel_cap = 50.0f;   /* 下限50（浅弯）：90→50随floor 110→70对偶下移，失速裕度20不变 */
 
 		float inner_decel, outer_accel;
 
