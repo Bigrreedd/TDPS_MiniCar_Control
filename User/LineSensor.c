@@ -21,12 +21,8 @@ static uint16_t LineSensor_ReadDigital(uint8_t channel)
 	case 2: bit = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_5); break;
 	case 3: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0); break;
 	case 4: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_1); break;
-	case 5: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_2); break;
-#if USART3_DEBUG_ON_PB10
-	case 6: return LINE_SENSOR_WHITE_VALUE;  /* PB10 → USART3_TX，ch6 停用 */
-#else
-	case 6: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_10); break;
-#endif
+	case 5: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_10); break; /* PCB2: S6=PB10（原 PB2 不用） */
+	case 6: bit = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_11); break; /* PCB2: S7=PB11（7 路全开,USART3 调试串口在本板不可用） */
 	default: return LINE_SENSOR_WHITE_VALUE;
 	}
 #if LINE_SENSOR_ACTIVE_LOW
@@ -56,12 +52,8 @@ void LineSensor_Init(void)
 	gpio.GPIO_Speed = GPIO_Speed_50MHz;
 	gpio.GPIO_Pin = GPIO_Pin_1 | GPIO_Pin_4 | GPIO_Pin_5;
 	GPIO_Init(GPIOA, &gpio);
-#if USART3_DEBUG_ON_PB10
-	/* PB10 让给 USART3_TX，ch6 光电管停用 */
-	gpio.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2;
-#else
-	gpio.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_10;
-#endif
+	/* PCB2: S4=PB0,S5=PB1,S6=PB10,S7=PB11（PB2 不用；PB10/11 被传感占用故无 USART3 调试） */
+	gpio.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_10 | GPIO_Pin_11;
 	GPIO_Init(GPIOB, &gpio);
 
 	gpio.GPIO_Mode = GPIO_Mode_AIN;

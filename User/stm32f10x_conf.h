@@ -61,7 +61,7 @@
  *   =1 (默认): PB10=USART3_TX, PB11=USART3_RX，LineSensor ch6(光电管)停用
  *   =0       : PB10 归还 LineSensor ch6，恢复 7 路灰度；USART3 不启用
  *   切换后重编译即可，无需改其他文件。 */
-#define USART3_DEBUG_ON_PB10  1
+#define USART3_DEBUG_ON_PB10  0   /* PCB2/gen3: PB10/11=S6/S7 灰度,无调试串口; SENSOR_COUNT 自动=7 */
 
 /* Exported macro ------------------------------------------------------------*/
 #ifdef  USE_FULL_ASSERT

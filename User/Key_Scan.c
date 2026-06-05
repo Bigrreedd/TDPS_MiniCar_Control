@@ -2,22 +2,16 @@
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_gpio.h"
 
-// 按键GPIO定义
-#define KEY_K1_PORT    GPIOB
-#define KEY_K1_PIN     GPIO_Pin_14
-#define KEY_K1_RCC     RCC_APB2Periph_GPIOB
+// 按键GPIO定义（PCB2/gen3 三代板：仅 KEY1/KEY2 两个物理按键）
+#define KEY_K1_PORT    GPIOC      /* PCB2: KEY1 = PC13 */
+#define KEY_K1_PIN     GPIO_Pin_13
+#define KEY_K1_RCC     RCC_APB2Periph_GPIOC
 
-#define KEY_K2_PORT    GPIOB
-#define KEY_K2_PIN     GPIO_Pin_13
-#define KEY_K2_RCC     RCC_APB2Periph_GPIOB
+#define KEY_K2_PORT    GPIOC      /* PCB2: KEY2 = PC14 */
+#define KEY_K2_PIN     GPIO_Pin_14
+#define KEY_K2_RCC     RCC_APB2Periph_GPIOC
 
-#define KEY_K3_PORT    GPIOC
-#define KEY_K3_PIN     GPIO_Pin_14
-#define KEY_K3_RCC     RCC_APB2Periph_GPIOC
-
-#define KEY_K4_PORT    GPIOC
-#define KEY_K4_PIN     GPIO_Pin_13
-#define KEY_K4_RCC     RCC_APB2Periph_GPIOC
+/* PCB2: K3/K4 无物理按键——Key_ReadRaw 恒返回未按下；上层 K3(调试复位)/K4 功能自然失效 */
 
 // 按键内部状态结构
 typedef struct {
@@ -49,10 +43,10 @@ static inline uint8_t Key_ReadRaw(Key_ID_t key_id)
             state = (GPIO_ReadInputDataBit(KEY_K2_PORT, KEY_K2_PIN) == Bit_RESET) ? 1 : 0;
             break;
         case KEY_K3:
-            state = (GPIO_ReadInputDataBit(KEY_K3_PORT, KEY_K3_PIN) == Bit_RESET) ? 1 : 0;
+            state = 0; /* PCB2: 无物理 K3，恒为未按下 */
             break;
         case KEY_K4:
-            state = (GPIO_ReadInputDataBit(KEY_K4_PORT, KEY_K4_PIN) == Bit_RESET) ? 1 : 0;
+            state = 0; /* PCB2: 无物理 K4，恒为未按下 */
             break;
         default:
             break;
@@ -81,20 +75,13 @@ void Key_Scan_Init(void)
     GPIO_InitTypeDef GPIO_InitStructure;
     
     // 使能GPIO时钟
-    RCC_APB2PeriphClockCmd(KEY_K1_RCC | KEY_K2_RCC | KEY_K3_RCC | KEY_K4_RCC | RCC_APB2Periph_AFIO, ENABLE);
-    
-    // 配置K1 (PB14) 和 K2 (PB13) 为上拉输入
+    RCC_APB2PeriphClockCmd(KEY_K1_RCC | KEY_K2_RCC | RCC_APB2Periph_AFIO, ENABLE);
+
+    // 配置K1 (PC13) 和 K2 (PC14) 为上拉输入（PCB2 仅两键；PC13/14 属 RTC 域，未用 LSE 时作普通输入安全）
     GPIO_InitStructure.GPIO_Pin = KEY_K1_PIN | KEY_K2_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;  // 上拉输入
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(KEY_K1_PORT, &GPIO_InitStructure);
-    
-    // 配置K3 (PC14) 和 K4 (PC13) 为上拉输入
-    GPIO_InitStructure.GPIO_Pin = KEY_K3_PIN;
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
-    
-    GPIO_InitStructure.GPIO_Pin = KEY_K4_PIN;
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
     
     // 初始化状态
     for(uint8_t i = 0; i < 4; i++)
