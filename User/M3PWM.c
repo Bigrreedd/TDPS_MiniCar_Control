@@ -67,8 +67,10 @@ void M3PWM_SetDutyCycle(uint16_t duty)
 {
     uint16_t compare_value;
 
-    // 限制占空比范围
-    if(duty > 1000) duty = 1000;
+    /* 2026-06-05 功率审查：底层硬钳位（深度防御）。即使 SafetyLock 被绕过/将来解锁，
+     * 风扇 PWM 物理上限也是 FAN_DUTY_ABS_CAP(50/1000=5%)——SS54FSH 续流二极管约束。
+     * 上调须先满足 M3PWM.h 注释中的三个硬件条件。 */
+    if(duty > FAN_DUTY_ABS_CAP) duty = FAN_DUTY_ABS_CAP;
 
     g_pwm_duty_cycle = duty;
 
