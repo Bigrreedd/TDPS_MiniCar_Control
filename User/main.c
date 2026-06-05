@@ -89,11 +89,15 @@ static float ClampMotorDuty(float duty)
  * HOLD_R 760→700(06-05 第11轮): 不对称120是亏电标定的摩擦补偿，满电低占空比下
  * 过补偿——慢性右偏(pos坐30~35)/锯齿右贴deep/右pivot差速被吃(实测右136 vs 左382)
  * 三症同根。降到60: 右pivot差196(+44%)，左仍322。START不对称120保留。 */
+/* HOLD 640/700→580/640(06-05 第12轮): 弯道真瓶颈=内轮减不下去——MIN_INNER20+640=
+ * sent660 满电仍跑23cps，pivot指令差322实测轮速差仅~15cps。再对称降60: 内轮sent
+ * 600→预计15cps，轮速差→~22cps收紧半径；基线18~25。失速风险线(用户提醒占空比过低
+ * 电机不转): 直线单轮个位数轮速/顿挫 → 回+30(610/670)。不对称60与START不动。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   640.0f
+#define MOTOR_HOLD_DEADZONE_L   580.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   700.0f
+#define MOTOR_HOLD_DEADZONE_R   640.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
