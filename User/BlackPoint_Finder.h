@@ -49,6 +49,7 @@ typedef struct
 	uint8_t  run_count;      // 连续黑段数（≥2 表示存在支线/断开）
 	float    raw_centroid;   // 未冻结的全局加权质心（遥测/路标用，便于 Path 识别路口）
 	uint16_t junction_ticks; // is_junction 连续置 1 的帧数（冻结超时回退用）
+	uint16_t junction_pass_count; // 本次运行累计"穿过路口"次数（去抖上升沿计数，K1发车清零）
 } BlackPointResult_t;
 
 /**

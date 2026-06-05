@@ -668,7 +668,7 @@ int main(void)
             {
                 char dbg[192];
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d S=%d,%d,%d,%d,%d,%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d S=%d,%d,%d,%d,%d,%d\r\n",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -678,6 +678,7 @@ int main(void)
                     (int)PID_GetLineLostTicks(),       /* 丢线计数 */
                     (int)PID_GetDeepTurnMode(),        /* 深弯模式 */
                     (int)result_BlackPoint.is_junction,  /* 路口抑制 */
+                    (int)result_BlackPoint.junction_pass_count,  /* 本次运行累计穿过路口数 */
                     (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
                     (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
                     (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);

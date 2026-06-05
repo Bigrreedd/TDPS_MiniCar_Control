@@ -45,6 +45,45 @@ static void FilterSensorValues(uint16_t *adc_values)
 #endif
 static uint16_t g_junction_ticks = 0;
 
+/* ===== 路口穿越计数（06-05 用户需求：记录走过几个 Y/交叉口并上串口） =====
+ * 去抖上升沿计数：宽黑条件连续 CONFIRM 帧才计 1 次(滤单帧闪烁如全黑中单传感器闪白)，
+ * 之后须连续 REARM 帧非路口才重新武装(路口内部 junc 抖动不会重复计数)。
+ * 已知误报源(会+1，对照日志甄别)：U 弯两腿同时入视野(两端黑 span≥5)。
+ * 用未截断的宽黑原始条件(非 is_junction)：冻结超时(>200帧)的长路口仍只计 1 次。 */
+#ifndef JUNCTION_PASS_CONFIRM_TICKS
+#define JUNCTION_PASS_CONFIRM_TICKS 10u    /* 500Hz 下 20ms */
+#endif
+#ifndef JUNCTION_PASS_REARM_TICKS
+#define JUNCTION_PASS_REARM_TICKS 100u     /* 500Hz 下 200ms */
+#endif
+static uint16_t g_junction_pass_count = 0;
+static uint16_t g_junc_on_streak  = 0;
+static uint16_t g_junc_off_streak = 0;
+static uint8_t  g_junc_counted    = 0;
+
+static void JunctionPassUpdate(uint8_t junction_active)
+{
+	if(junction_active)
+	{
+		g_junc_off_streak = 0;
+		if(g_junc_on_streak < 0xFFFFu) g_junc_on_streak++;
+		if(!g_junc_counted && g_junc_on_streak >= JUNCTION_PASS_CONFIRM_TICKS)
+		{
+			if(g_junction_pass_count < 0xFFFFu) g_junction_pass_count++;
+			g_junc_counted = 1;
+		}
+	}
+	else
+	{
+		g_junc_on_streak = 0;
+		if(g_junc_off_streak < 0xFFFFu) g_junc_off_streak++;
+		if(g_junc_counted && g_junc_off_streak >= JUNCTION_PASS_REARM_TICKS)
+		{
+			g_junc_counted = 0;
+		}
+	}
+}
+
 /* 单通道加权值：2026-06-05 拉平为均匀权重。
  * 旧边重权重(31/26/17)在"三路黑常态"(物理光斑限制)下造成：中心量化读数
  * {1,2,3}=1.85/{2,3,4}=3.15(±0.65且外偏粘滞)，每次18↔31翻转经增益曲线放大
@@ -89,6 +128,10 @@ void BlackPoint_Finder_Init(void)
 	last_position = SENSOR_COUNT / 2;
 	last_precise_position = (float)(SENSOR_COUNT / 2);
 	g_junction_ticks = 0;
+	g_junction_pass_count = 0;
+	g_junc_on_streak = 0;
+	g_junc_off_streak = 0;
+	g_junc_counted = 0;
 }
 
 /**
@@ -169,6 +212,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 			result->run_count = 0;
 			result->raw_centroid = last_precise_position;
 			result->junction_ticks = g_junction_ticks;
+			result->junction_pass_count = g_junction_pass_count;
 		}
 		return last_precise_position;
 	}
@@ -211,6 +255,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	if(black_count == 0)
 	{
 		g_junction_ticks = 0;
+		JunctionPassUpdate(0);
 		result->found = 0;
 		result->position = last_position;
 		result->precise_position = last_precise_position;
@@ -220,6 +265,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 		result->run_count = 0;
 		result->raw_centroid = last_precise_position;
 		result->junction_ticks = 0;
+		result->junction_pass_count = g_junction_pass_count;
 		return last_precise_position;
 	}
 
@@ -232,6 +278,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	 * 恢复OR逻辑（昨天配置）+ 阈值5（防止弯道4路误触发）→ 平衡鲁棒性和误触发。
 	 * 排除全黑(count=SENSOR_COUNT)：那是丢线环境光干扰，不是路口。 */
 	uint8_t junction = ((black_count >= 5u) || (span >= 5u)) && (black_count < SENSOR_COUNT);
+	JunctionPassUpdate(junction);   /* 穿越计数用未截断条件：超时长路口仍只计1次 */
 
 	if(junction && g_junction_ticks < JUNCTION_FREEZE_MAX_TICKS)
 	{
@@ -246,6 +293,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 		result->run_count = run_count;
 		result->raw_centroid = raw_centroid;
 		result->junction_ticks = g_junction_ticks;
+		result->junction_pass_count = g_junction_pass_count;
 		return last_precise_position;
 	}
 
@@ -283,6 +331,7 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	result->run_count = run_count;
 	result->raw_centroid = raw_centroid;
 	result->junction_ticks = 0;
+	result->junction_pass_count = g_junction_pass_count;
 	last_position = first_black;
 	last_precise_position = precise_pos;
 
@@ -305,5 +354,10 @@ void BlackPoint_Finder_ResetLastPosition(void)
 	last_position = SENSOR_COUNT / 2;
 	last_precise_position = (float)(SENSOR_COUNT / 2);
 	g_junction_ticks = 0;
+	/* K1 发车会走到这里：每次运行的路口计数从 0 起 */
+	g_junction_pass_count = 0;
+	g_junc_on_streak = 0;
+	g_junc_off_streak = 0;
+	g_junc_counted = 0;
 }
 
