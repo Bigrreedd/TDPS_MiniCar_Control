@@ -26,6 +26,16 @@
 #define ESP32_TYPE_RADAR          0x12  // ESP32 → STM32: 雷达数据
 #define ESP32_TYPE_STATUS         0x20  // ESP32 → STM32: 状态心跳（预留）
 
+/* ===== 2026-06-05 增补：拱门通知 + 开赛握手（对齐 说明文件.md，gen3 用 USART1 PA9/PA10） ===== */
+#define ESP32_TYPE_RESET          0x05  // STM32 → ESP32: 开赛复位
+#define ESP32_TYPE_OK             0x06  // STM32 → ESP32: 复位流程完毕（OK 到达=t0，ESP 启动拱门静默窗）
+#define ESP32_TYPE_RESET_ACK      0x21  // ESP32 → STM32
+#define ESP32_TYPE_RESET_DONE     0x22  // ESP32 → STM32
+/* 拱门通知：说明文件旧号 0x23 与下板 0xAA 链 DEBUG_OUT 同值（异链本无冲突，为防人读混淆
+ * 已向队友提议改 0x30，见 给队友的问题清单 问题1）。接收侧两个号都认——队友答复前后均兼容。 */
+#define ESP32_TYPE_ARCH_PASSED        0x30  // ESP32 → STM32: 过拱门，payload[0]=拱门号(1/2)
+#define ESP32_TYPE_ARCH_PASSED_LEGACY 0x23
+
 // 通行决策
 typedef enum {
     ESP32_GO_LEFT = 0,    // 从左侧通过（右侧有障碍）
@@ -143,6 +153,19 @@ uint8_t ESP32_GetDecision(ESP32_Decision_t *decision, uint8_t *radar_presence);
  * @note  调用后会清除 "新数据" 标志
  */
 uint8_t ESP32_GetRadarData(ESP32_RadarPayload_t *radar);
+
+/**
+ * @brief 取一次拱门通过事件（事件取走式，同 GetDecision 语义）
+ * @param arch_no: 输出拱门号（1/2）
+ * @return 1=有新事件, 0=无
+ */
+uint8_t ESP32_TakeArchEvent(uint8_t *arch_no);
+
+/**
+ * @brief 拱门累计标志位查询（bit0=拱门1已过, bit1=拱门2已过；K1 发车用 ESP32_ClearArchFlags 清）
+ */
+uint8_t ESP32_GetArchFlags(void);
+void    ESP32_ClearArchFlags(void);
 
 /**
  * @brief 获取链路状态

@@ -23,6 +23,10 @@ static uint8_t g_esp32_radar_ready = 0;
 static uint16_t g_esp32_link_timeout = 0;
 #define ESP32_LINK_TIMEOUT_TICKS  250  // 500ms @ 2ms/tick
 
+// 拱门通过锁存（2026-06-05）：事件取走式 + 累计标志位
+static volatile uint8_t g_esp32_arch_event_no = 0;   /* 0=无新事件，1/2=拱门号 */
+static volatile uint8_t g_esp32_arch_flags = 0;      /* bit0=拱门1已过, bit1=拱门2已过 */
+
 /* ============================================================================
  * 内部辅助函数
  * ============================================================================ */
@@ -265,6 +269,24 @@ void ESP32_OnByteReceived(uint8_t data)
                 g_esp32_link_timeout = 0;
                 break;
 
+            case ESP32_TYPE_ARCH_PASSED:          /* 0x30（提议号） */
+            case ESP32_TYPE_ARCH_PASSED_LEGACY:   /* 0x23（说明文件旧号，双号兼容） */
+                if (frame->payload_len >= 1u) {
+                    uint8_t no = frame->payload[0];
+                    if (no == 1u || no == 2u) {
+                        g_esp32_arch_event_no = no;
+                        g_esp32_arch_flags |= (uint8_t)(1u << (no - 1u));
+                    }
+                }
+                g_esp32_link_timeout = 0;
+                break;
+
+            case ESP32_TYPE_RESET_ACK:
+            case ESP32_TYPE_RESET_DONE:
+                /* 开赛握手回包：当前仅刷新链路活性；完整握手流程在比赛构建实装 */
+                g_esp32_link_timeout = 0;
+                break;
+
             default:
                 // 未知类型，忽略
                 break;
@@ -306,6 +328,29 @@ uint8_t ESP32_GetRadarData(ESP32_RadarPayload_t *radar)
     return 0;
 }
 
+uint8_t ESP32_TakeArchEvent(uint8_t *arch_no)
+{
+    if (g_esp32_arch_event_no != 0u) {
+        if (arch_no != NULL) {
+            *arch_no = g_esp32_arch_event_no;
+        }
+        g_esp32_arch_event_no = 0;
+        return 1;
+    }
+    return 0;
+}
+
+uint8_t ESP32_GetArchFlags(void)
+{
+    return g_esp32_arch_flags;
+}
+
+void ESP32_ClearArchFlags(void)
+{
+    g_esp32_arch_flags = 0;
+    g_esp32_arch_event_no = 0;
+}
+
 uint8_t ESP32_IsLinkAlive(void)
 {
     return (g_esp32_link_timeout < ESP32_LINK_TIMEOUT_TICKS) ? 1 : 0;
@@ -323,21 +368,66 @@ void ESP32_Tick(void)
  * 弱符号默认实现（用户需在自己的代码中重定义）
  * ============================================================================ */
 
-__attribute__((weak)) void ESP32_UART_SendByte(uint8_t data)
+/* ============================================================================
+ * gen3/PCB2 实装传输层（2026-06-05）：USART1 = PA9(TX→ESP RX) / PA10(RX←ESP TX)
+ * 115200 8N1，RXNE 中断逐字节喂 ESP32_OnByteReceived。
+ * 选型依据：gen3 网表/固件核验 USART1 空闲（USART2=下板链，USART3 引脚被 S6/S7 占用）。
+ * 接线（已告知队友）：ESP GPIO17(TX)→PA10，ESP GPIO18(RX)←PA9，共地。
+ * ============================================================================ */
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_gpio.h"
+#include "stm32f10x_usart.h"
+#include "misc.h"
+
+void ESP32_UART_SendByte(uint8_t data)
 {
-    // 默认空实现，用户需根据实际 UART 重写此函数
-    // 示例：
-    // while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
-    // USART_SendData(USART2, data);
-    (void)data;
+    while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+    USART_SendData(USART1, data);
 }
 
-__attribute__((weak)) void ESP32_UART_Init(void)
+void ESP32_UART_Init(void)
 {
-    // 默认空实现，用户需根据实际 UART 重写此函数
-    // 示例：
-    // RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
-    // GPIO + USART 初始化，115200 8N1
-    // USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
-    // 在中断中调用 ESP32_OnByteReceived(USART_ReceiveData(USART2));
+    GPIO_InitTypeDef gpio;
+    USART_InitTypeDef usart;
+    NVIC_InitTypeDef nvic;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_USART1, ENABLE);
+
+    gpio.GPIO_Pin   = GPIO_Pin_9;            /* PA9 TX */
+    gpio.GPIO_Mode  = GPIO_Mode_AF_PP;
+    gpio.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &gpio);
+
+    gpio.GPIO_Pin  = GPIO_Pin_10;            /* PA10 RX */
+    gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOA, &gpio);
+
+    usart.USART_BaudRate            = 115200;
+    usart.USART_WordLength          = USART_WordLength_8b;
+    usart.USART_StopBits            = USART_StopBits_1;
+    usart.USART_Parity              = USART_Parity_No;
+    usart.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    usart.USART_Mode                = USART_Mode_Rx | USART_Mode_Tx;
+    USART_Init(USART1, &usart);
+
+    nvic.NVIC_IRQChannel                   = USART1_IRQn;
+    nvic.NVIC_IRQChannelPreemptionPriority = 2;   /* 低于 SysTick 控制环 */
+    nvic.NVIC_IRQChannelSubPriority        = 0;
+    nvic.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&nvic);
+
+    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+    USART_Cmd(USART1, ENABLE);
+}
+
+void USART1_IRQHandler(void)
+{
+    if (USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)
+    {
+        ESP32_OnByteReceived((uint8_t)USART_ReceiveData(USART1));
+    }
+    if (USART_GetFlagStatus(USART1, USART_FLAG_ORE) != RESET)
+    {
+        (void)USART_ReceiveData(USART1);   /* 清溢出 */
+    }
 }

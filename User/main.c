@@ -13,6 +13,7 @@
 #include "BlackPoint_Finder.h"
 #include "TelemetryScreen.h"
 #include "Protocol.h"
+#include "ESP32_Comm.h"   /* PCB2/gen3: ESP32S3 直连链路（USART1） */
 #include "Battery.h"
 #include "ABEncoder.h"
 #include "PID_Controller.h"
@@ -528,6 +529,12 @@ int main(void)
     Proto_RegisterHandler(PROTO_CMD_ENC_FEEDBACK, OnEncFeedback);
     Proto_RegisterHandler(PROTO_CMD_LINK_RESET, OnLinkReset);
 
+    /* PCB2/gen3: ESP32S3 直连链路（USART1 PA9/PA10, A5 5A 帧）。
+     * 拱门 ARCH_PASSED(0x30/0x23 双号兼容)→ESP32_GetArchFlags/TakeArchEvent，
+     * 雷达 DECISION→ESP32_GetDecision。SegmentNavigator Phase C 的锚点源。 */
+    ESP32_Comm_Init();
+    ESP32_UART_Init();
+
     /* 上板开机/重烧：通告下板复位到安全态（停车下电、清里程），
      * 避免上板重启瞬间下板仍按陈旧指令运行。多发几帧防丢包。 */
     is_racing = 0;
@@ -546,6 +553,8 @@ int main(void)
         if (g_control_tick)
         {
             g_control_tick = 0;
+
+            ESP32_Tick();   /* PCB2: ESP 链路超时计数(2ms) */
 
             // 7路灰度 + PA0电池电压轮询采样
             LineSensor_SampleAll();
@@ -698,6 +707,7 @@ int main(void)
                 g_yaw_zero = add_angle;     /* 航向基准清零：U 弯判定从发车起算 */
                 g_u_turn_passed = 0;
                 g_s_mode = 0;
+                ESP32_ClearArchFlags();     /* PCB2: 拱门锁存随发车清零 */
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
@@ -715,6 +725,7 @@ int main(void)
                 g_yaw_zero = add_angle;
                 g_u_turn_passed = 0;
                 g_s_mode = 0;
+                ESP32_ClearArchFlags();
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
             case KEY_K4:

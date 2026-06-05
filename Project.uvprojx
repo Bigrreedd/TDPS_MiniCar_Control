@@ -791,6 +791,11 @@
               <FilePath>.\User\Key_Scan.c</FilePath>
             </File>
             <File>
+              <FileName>ESP32_Comm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\ESP32_Comm.c</FilePath>
+            </File>
+            <File>
               <FileName>Key_Scan.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\Key_Scan.h</FilePath>
