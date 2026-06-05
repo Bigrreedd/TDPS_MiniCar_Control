@@ -8,7 +8,7 @@
 #define PWM_DUTY_CYCLE_50      50      // 默认占空比50%
 
 /* ===== 风扇占空比硬上限（2026-06-05 功率审查，量纲 0-1000） =====
- * 预算依据(满电12.6V堵转模型,详见 TDPS_Background/hardware/motor_pwm_duty_limit_analysis.md
+ * 预算依据(满电12.6V堵转模型,详见 TDPS_Background/02_hardware/motor_pwm_duty_limit_analysis.md
  * 06-05 增补章节)：系统约束链 SS54FSH续流二极管(~5A)< XT30接插件(15A总线)< 电池75C(63.75A)。
  * 轮子优先：双轮@SAFE_MAX2000 满电堵转 12.36A + 逻辑0.5A = 12.86A，XT30 仅余 2.14A。
  *  - ABS_CAP=50：二极管约束 84·D·(1-D)≤4A → D≤5%。底层无条件钳位，任何调用路径都出不去。

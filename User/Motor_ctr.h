@@ -9,7 +9,7 @@
 /* SAFE_MAX=2000(20%) 经 2026-06-05 功率审查确认为轮子优先上限，禁止上调：
  * 满电12.6V堵转模型 12.6/0.408Ω×0.20=6.18A/轮，双轮同堵12.36A+逻辑0.5A=12.86A，
  * XT30 接插件 15A 仅余 2.14A(留给风扇并发档)。再高则发车/深弯双轮堵转顶穿接插件。
- * 详见 TDPS_Background/hardware/motor_pwm_duty_limit_analysis.md 06-05 增补。 */
+ * 详见 TDPS_Background/02_hardware/motor_pwm_duty_limit_analysis.md 06-05 增补。 */
 #define MOTOR_DUTY_SAFE_MAX      2000
 #define MOTOR_DUTY_MIN           0       // 最小占空比值
 
