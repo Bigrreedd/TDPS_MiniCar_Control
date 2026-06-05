@@ -536,9 +536,10 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			}
 		}
 		/* decel_cap: 深弯模式内侧减速，否则正常前进(90)。
-		 * 实测: 20仍不够，180°弯道差速不足。回退到0（昨天配置）：
-		 * 内轮可完全停转，最大差速能力，转弯半径最小。 */
-		#define MIN_INNER_WHEEL_SPEED 0.0f
+		 * 12:00曾回退0(最大差速)，但"20不够过弯"的旧结论被滤波×0.2阈值bug污染
+		 * (12:24已修，阈值0.5)。用户确认深弯内轮不许完全停转 → 回到20重新地面验证。
+		 * 内轮托底由下方硬下限钳位完成(decel_cap仍=speed_output)，差速322→282(-12%)。 */
+		#define MIN_INNER_WHEEL_SPEED 20.0f
 		float decel_cap = g_deep_turn_mode ? speed_output : 90.0f;
 		if (decel_cap < 90.0f) decel_cap = 90.0f;   /* 下限90（浅弯） */
 
