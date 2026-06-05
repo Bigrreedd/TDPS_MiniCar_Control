@@ -105,6 +105,17 @@ static float ClampMotorDuty(float duty)
 #define CLOSED_LOOP_REVERSE_ENABLE 1
 #endif
 
+/* ===== IMU 航向辅助 U 弯判定（06-05，遥测观察用，不进控制） =====
+ * U 弯 = 累计航向变化 ~180°，是赛道上唯一不可伪造的大角度签名（S 弯两腿
+ * 方向相反峰值 |Δyaw| 仅 ~90~110°）。K1 发车记 add_angle 基准，|Δyaw|≥
+ * 阈值即锁存 u=1。配合 jc= 甄别"U 弯两端黑误报路口"：u 翻转时刻附近的
+ * jc 增量大概率是 U 弯假路口。陀螺零偏已有标定+死区，慢转损耗对 150° 无碍。 */
+#ifndef U_TURN_YAW_LATCH_DEG
+#define U_TURN_YAW_LATCH_DEG 150.0f
+#endif
+static float   g_yaw_zero = 0.0f;       /* K1 发车时的 add_angle 基准(rad) */
+static uint8_t g_u_turn_passed = 0;     /* 1=本次运行已完成一次 ~180° 航向变化 */
+
 static float ApplyDeadzone(float duty, float deadzone)
 {
     if (duty >  MOTOR_CMD_EPS) return duty + deadzone;
@@ -633,6 +644,8 @@ int main(void)
                 is_racing = 1;
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
+                g_yaw_zero = add_angle;     /* 航向基准清零：U 弯判定从发车起算 */
+                g_u_turn_passed = 0;
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
@@ -667,8 +680,14 @@ int main(void)
 #if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
                 char dbg[192];
+                /* Δ航向(°)与 U 弯锁存：纯观察，不进控制 */
+                float dyaw_deg = (add_angle - g_yaw_zero) * 57.2957795f;
+                float dyaw_abs = (dyaw_deg < 0.0f) ? -dyaw_deg : dyaw_deg;
+                if (dyaw_abs >= U_TURN_YAW_LATCH_DEG) g_u_turn_passed = 1;
+                if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
+                else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d S=%d,%d,%d,%d,%d,%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d S=%d,%d,%d,%d,%d,%d\r\n",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -679,6 +698,8 @@ int main(void)
                     (int)PID_GetDeepTurnMode(),        /* 深弯模式 */
                     (int)result_BlackPoint.is_junction,  /* 路口抑制 */
                     (int)result_BlackPoint.junction_pass_count,  /* 本次运行累计穿过路口数 */
+                    (int)dyaw_deg,                     /* 发车以来累计航向变化(°) */
+                    (int)g_u_turn_passed,              /* 1=已完成~180°航向变化(U弯) */
                     (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
                     (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
                     (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);
