@@ -51,6 +51,18 @@ extern BlackPointResult_t result_BlackPoint;
  * 与浅弯decel_cap 90→50对偶下移：失速裕度 70-50=20 不变，深弯内轮硬下限20不变。 */
 #define SPEED_PID_MIN_OUTPUT 70.0f
 #endif
+/* ===== S-mode 分段参数(06-05 用户方案,过Y2锁存,见 main.c g_s_mode) =====
+ * 只降速不动转向：波浪S弯(30~50cm交替弯)每弯时间+43%，226差速角速度余量同比放大。
+ * floor/cap 对偶下移保持失速裕度 50-30=20 不变量。 */
+#ifndef S_MODE_TARGET_CPS
+#define S_MODE_TARGET_CPS 14.0f
+#endif
+#ifndef S_MODE_MIN_OUTPUT
+#define S_MODE_MIN_OUTPUT 50.0f
+#endif
+#ifndef S_MODE_SHALLOW_CAP
+#define S_MODE_SHALLOW_CAP 30.0f
+#endif
 
 // ==================== 速度环PID实现 ====================
 
@@ -337,6 +349,7 @@ void PID_Init(void)
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
+extern volatile uint8_t g_s_mode;   /* S-mode：过第二个Y后锁存的分段降速(main.c) */
 /* 速度样本就绪标志(定义于 main.c)：有新窗口速度时为 1 */
 extern volatile uint8_t g_speed_sample_ready;
 /* 速度环输出在样本间保持：无新样本时沿用上次输出 */
@@ -449,12 +462,13 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
     avg_speed = ((float)speed_left + (float)speed_right) / 2.0f;
 
 #if BENCH_FIXED_SPEED_ENABLE
-			/* 架空台架：目标固定，不让 Path 状态机靠假里程一路升档 */
-			i_speed = (float)BENCH_FIXED_TARGET_CPS;
+			/* 架空台架：目标固定，不让 Path 状态机靠假里程一路升档。
+			 * S-mode(过Y2锁存)：降到 14，波浪S弯每弯时间+43%。 */
+			i_speed = g_s_mode ? S_MODE_TARGET_CPS : (float)BENCH_FIXED_TARGET_CPS;
 
-			// 丢线时降速：给更多时间重新找线
+			// 丢线时降速：给更多时间重新找线（S-mode 下再低一档）
 			if (!result_BlackPoint.found && g_line_lost_ticks > 10u) {
-				i_speed = 18.0f;  // 降速到 18 cnt/s
+				i_speed = g_s_mode ? 12.0f : 18.0f;
 			}
 #else
 			i_speed = Path_GetTargetSpeed();
@@ -471,13 +485,16 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
     // 4. 速度环计算（输出基础速度）
     //    速度反馈≈20Hz刷新，速度环只在有新样本时计算，避免500Hz重复积分陈旧值；
     //    无新样本时沿用上一次 speed_output，位置环仍每 2ms 更新保证循迹响应。
+    /* 速度环下限：S-mode 50(否则 14 的目标被 70 钳死到不了)，正常 70 */
+    {
+        float min_out = g_s_mode ? S_MODE_MIN_OUTPUT : SPEED_PID_MIN_OUTPUT;
     if (g_speed_sample_ready)
     {
         g_speed_sample_ready = 0;
 			speed_output = SpeedPID_Calculate(&g_speed_pid, i_speed, avg_speed);
-			if (i_speed > 0.0f && speed_output < SPEED_PID_MIN_OUTPUT) {
-				speed_output = SPEED_PID_MIN_OUTPUT;
-				g_speed_pid.last_output = SPEED_PID_MIN_OUTPUT;
+			if (i_speed > 0.0f && speed_output < min_out) {
+				speed_output = min_out;
+				g_speed_pid.last_output = min_out;
 			}
 			g_speed_output = speed_output;
     }
@@ -487,9 +504,10 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
         /* 发车后首个速度样本(0~250ms随机相位)未到时 g_speed_output 仍为0：
          * 若不垫底，电机命令=纯position_correction，会被死区前馈放大成原地扭
          * (12:55 Run1 实测 sent=836,-956 右轮倒转甩头)。与有样本分支同语义垫底。 */
-        if (i_speed > 0.0f && speed_output < SPEED_PID_MIN_OUTPUT) {
-            speed_output = SPEED_PID_MIN_OUTPUT;
+        if (i_speed > 0.0f && speed_output < min_out) {
+            speed_output = min_out;
         }
+    }
     }
     // 5. 叠加位置环偏差
 #if WHEEL_BALANCE_ENABLE
@@ -552,8 +570,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * (12:24已修，阈值0.5)。用户确认深弯内轮不许完全停转 → 回到20重新地面验证。
 		 * 内轮托底由下方硬下限钳位完成(decel_cap仍=speed_output)，差速322→282(-12%)。 */
 		#define MIN_INNER_WHEEL_SPEED 20.0f
-		float decel_cap = g_deep_turn_mode ? speed_output : 50.0f;
-		if (decel_cap < 50.0f) decel_cap = 50.0f;   /* 下限50（浅弯）：90→50随floor 110→70对偶下移，失速裕度20不变 */
+		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
+		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
+		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */
 
 		float inner_decel, outer_accel;
 

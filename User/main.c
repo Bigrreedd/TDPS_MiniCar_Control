@@ -121,7 +121,12 @@ static float ClampMotorDuty(float duty)
 #define U_TURN_YAW_LATCH_DEG 150.0f
 #endif
 static float   g_yaw_zero = 0.0f;       /* K1 发车时的 add_angle 基准(rad) */
-static uint8_t g_u_turn_passed = 0;     /* 1=本次运行已完成一次 ~180° 航向变化 */
+volatile uint8_t g_u_turn_passed = 0;   /* 1=本次运行已完成 ~180° 航向变化(PID_Controller 读) */
+/* S-mode(06-05 用户方案)：过第二个 Y 后锁存——jc≥2 且 u=1，路标链 Y1→U→Y2 在本路线唯一，
+ * 触发点距 S 弯 ~1.5m(@20cps 约 5s 直线)。效果只降速不动转向：target 20→14、
+ * floor 70→50、浅弯 cap 50→30(失速裕度 20 不变)。K1 清零 → S 入口直接发车不会触发。
+ * TODO: 拱门 ESP 到达信号(队友约定,两个拱门各发一次)落地后可 OR 进此锁存作第二触发源。 */
+volatile uint8_t g_s_mode = 0;
 
 static float ApplyDeadzone(float duty, float deadzone)
 {
@@ -584,6 +589,13 @@ int main(void)
                 }
             }
 
+            // S-mode 锁存：jc≥2 且 u=1 = 已过第二个 Y，S 弯在前方 ~1.5m
+            if (!g_s_mode && is_racing && g_u_turn_passed &&
+                result_BlackPoint.junction_pass_count >= 2u)
+            {
+                g_s_mode = 1;
+            }
+
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
             PID_Control_Update();
 
@@ -653,6 +665,7 @@ int main(void)
                 BlackPoint_Finder_ResetLastPosition();
                 g_yaw_zero = add_angle;     /* 航向基准清零：U 弯判定从发车起算 */
                 g_u_turn_passed = 0;
+                g_s_mode = 0;
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
@@ -686,7 +699,7 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
-                char dbg[192];
+                char dbg[224];
                 /* Δ航向(°)与 U 弯锁存：纯观察，不进控制 */
                 float dyaw_deg = (add_angle - g_yaw_zero) * 57.2957795f;
                 float dyaw_abs = (dyaw_deg < 0.0f) ? -dyaw_deg : dyaw_deg;
@@ -694,7 +707,7 @@ int main(void)
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
                 else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d S=%d,%d,%d,%d,%d,%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d el=%ld er=%ld S=%d,%d,%d,%d,%d,%d\r\n",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -707,6 +720,8 @@ int main(void)
                     (int)result_BlackPoint.junction_pass_count,  /* 本次运行累计穿过路口数 */
                     (int)dyaw_deg,                     /* 发车以来累计航向变化(°) */
                     (int)g_u_turn_passed,              /* 1=已完成~180°航向变化(U弯) */
+                    (int)g_s_mode,                     /* S-mode 分段降速锁存 */
+                    (long)g_link_cnt_l, (long)g_link_cnt_r,  /* 下板绝对累计计数(编码器CPR标定用) */
                     (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
                     (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
                     (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);
