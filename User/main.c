@@ -83,11 +83,14 @@ static float ClampMotorDuty(float duty)
 #ifndef MOTOR_START_DEADZONE_R
 #define MOTOR_START_DEADZONE_R  940.0f
 #endif
+/* HOLD 760/880→640/760(06-05 第10轮): 旧值标定于亏电电池，满电下该前馈自身
+ * 即推车到~38cps，速度环(floor=70)只能上行无法下调，T=20物理不可达。
+ * 对称降120：不对称120保留、START不动(发车行为不变)；降过头由速度环上行补回。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   760.0f
+#define MOTOR_HOLD_DEADZONE_L   640.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   880.0f
+#define MOTOR_HOLD_DEADZONE_R   760.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
