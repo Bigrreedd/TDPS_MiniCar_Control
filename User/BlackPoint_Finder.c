@@ -283,7 +283,10 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	 * 宽黑(count≥5 或 span≥5)= 交叉/T 字路口 → 冻结质心走直，掐断质心被支线拽偏。
 	 * 恢复OR逻辑（昨天配置）+ 阈值5（防止弯道4路误触发）→ 平衡鲁棒性和误触发。
 	 * 排除全黑(count=SENSOR_COUNT)：那是丢线环境光干扰，不是路口。 */
-	uint8_t junction = ((black_count >= 5u) || (span >= 5u)) && (black_count < SENSOR_COUNT);
+	/* R1(06-05 审查三方确认): span 支路加 run_count==1。U 弯两腿同入视野=跨度大但黑数少且
+	 * 双段(span≥5,count2~4,run_count=2)，旧判据误判路口→强制走直冲出U弯(第10轮实测死因类)；
+	 * 真T字/路口=单段宽黑仍触发；双段宽跨度交给下方连续性选段追最近腿。副效益:U腿jc误+1消失。 */
+	uint8_t junction = ((black_count >= 5u) || ((span >= 5u) && (run_count == 1u))) && (black_count < SENSOR_COUNT);
 	JunctionPassUpdate(junction);   /* 穿越计数用未截断条件：超时长路口仍只计1次 */
 
 	if(junction && g_junction_ticks < JUNCTION_FREEZE_MAX_TICKS)

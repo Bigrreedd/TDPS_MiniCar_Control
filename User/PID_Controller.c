@@ -415,13 +415,23 @@ void PID_Control_Update(void)
 	    }
     
 #if POSITION_LOOP_ENABLE && (!BENCH_FIXED_SPEED_ENABLE || BENCH_POSITION_TEST_ENABLE)
+    {
+    static uint8_t s_prev_junction = 0;
     if (result_BlackPoint.is_junction) {
         /* 路口/岔路：旁路位置环，强制走直(correction=0)。
          * 关键:不调用 PositionPID_Calculate → 环内 last_error/d_filtered 冻结在进路口前的值，
-         * 且不更新 g_last_valid_correction，出路口时 d_raw≈0 无微分踢、无支线污染。
+         * 且不更新 g_last_valid_correction。注意：冻结期质心若移动，退出帧 d_raw=新误差-冻结
+         * 旧误差 ≠0（旧注释"d_raw≈0"过度承诺，06-05 审查 I7）——由下方 R5 软启动消除。
          * 深弯滞回在下方按 !is_junction 冻结(路口宽黑会把 raw_abs_err 顶到~2.5+误触发内侧停转)。 */
         position_correction = 0.0f;
+        s_prev_junction = 1;
     } else {
+        if (s_prev_junction) {
+            /* R5(06-05 审查): 路口退出首帧 D 软启动——对齐 last_error 使本帧 d_raw=0，
+             * 消除冻结期线位移造成的一次性 D 踢(原本有界但无谓,α=0.4 衰 3~4 帧)。 */
+            g_position_pid.last_error = current_position - g_position_pid.param.target_position;
+            s_prev_junction = 0;
+        }
         // 2. 位置环计算（输出偏差值）
         position_correction = PositionPID_Calculate(&g_position_pid, current_position);
 
@@ -436,6 +446,7 @@ void PID_Control_Update(void)
         }
 #endif
     }
+    }   /* R5 s_prev_junction 作用域 */
 #else
     position_correction = 0.0f;
     PositionPID_Reset(&g_position_pid);

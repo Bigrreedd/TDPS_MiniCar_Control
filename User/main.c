@@ -105,6 +105,17 @@ static float ClampMotorDuty(float duty)
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
 #endif
+/* R3(06-05 审查): START/HOLD 选择器滞回。旧单阈值 10cps 无滞回——内轮 pivot 减速穿越时
+ * 死区前馈 580↔820 来回跳变(240 PWM 阶跃,2~4Hz)=顿挫源,深弯内轮 MIN_INNER=20 恰落该区。
+ * >ENTER 进 HOLD,<EXIT 回 START,每轮独立。 */
+#ifndef MOTOR_HOLD_ENTER_CPS
+#define MOTOR_HOLD_ENTER_CPS    12
+#endif
+#ifndef MOTOR_HOLD_EXIT_CPS
+#define MOTOR_HOLD_EXIT_CPS     8
+#endif
+static uint8_t g_dz_hold_l = 0;   /* 1=左轮处于 HOLD 死区档 */
+static uint8_t g_dz_hold_r = 0;
 #ifndef MOTOR_CMD_EPS
 #define MOTOR_CMD_EPS     0.1f
 #endif
@@ -589,6 +600,14 @@ int main(void)
                 }
             }
 
+            // U 弯锁存（R2，06-05 审查三方确认）：原埋在调试遥测 #if 块内且 300ms 节流——
+            // 关调试串口的构建会让 S-mode 静默失效。移到控制 tick 每帧评估，遥测只读。
+            {
+                float dyaw_latch = (add_angle - g_yaw_zero) * 57.2957795f;
+                if (dyaw_latch < 0.0f) dyaw_latch = -dyaw_latch;
+                if (dyaw_latch >= U_TURN_YAW_LATCH_DEG) g_u_turn_passed = 1;
+            }
+
             // S-mode 锁存：jc≥2 且 u=1 = 已过第二个 Y，S 弯在前方 ~1.5m
             if (!g_s_mode && is_racing && g_u_turn_passed &&
                 result_BlackPoint.junction_pass_count >= 2u)
@@ -613,8 +632,13 @@ int main(void)
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
             //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
             {
-                float deadzone_l = (speed_left > MOTOR_HOLD_SPEED_CPS) ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
-                float deadzone_r = (speed_right > MOTOR_HOLD_SPEED_CPS) ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
+                /* R3: 带滞回的死区档选择（替代旧单阈值 10cps 比较） */
+                if (g_dz_hold_l) { if (speed_left  < MOTOR_HOLD_EXIT_CPS)  g_dz_hold_l = 0; }
+                else             { if (speed_left  > MOTOR_HOLD_ENTER_CPS) g_dz_hold_l = 1; }
+                if (g_dz_hold_r) { if (speed_right < MOTOR_HOLD_EXIT_CPS)  g_dz_hold_r = 0; }
+                else             { if (speed_right > MOTOR_HOLD_ENTER_CPS) g_dz_hold_r = 1; }
+                float deadzone_l = g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
+                float deadzone_r = g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
                 float duty_l = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_l), deadzone_l);
                 float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), deadzone_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
@@ -660,6 +684,14 @@ int main(void)
                 break;
             case KEY_K1:
                 // K1: 启动运行
+                /* R7(06-05 审查): 看门狗对"下板从未上电"是盲区(g_link_alive 初始 0 不武装)，
+                 * 今晨 30 分钟误诊根源。无心跳拒发车，当场可见。 */
+                if (!g_link_alive)
+                {
+                    RGB_SetColor(RGB_COLOR_R);
+                    OLED_ShowString(1, 1, "NO LINK! CHK PWR");
+                    break;
+                }
                 is_racing = 1;
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
@@ -679,6 +711,10 @@ int main(void)
                 // K3: 复位丢线/位置（调试用，不启动）
                 StopRun();
                 BlackPoint_Finder_ResetLastPosition();
+                /* R4(06-05 审查): 复位语义补全——旧 K3 清 jc 不清 yaw/u/sm(半清不一致) */
+                g_yaw_zero = add_angle;
+                g_u_turn_passed = 0;
+                g_s_mode = 0;
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
             case KEY_K4:
@@ -699,11 +735,9 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
             {
-                char dbg[224];
-                /* Δ航向(°)与 U 弯锁存：纯观察，不进控制 */
+                char dbg[256];   /* R6: 224→256，远离最坏帧长争论(实测196)，防未来加字段静默丢帧 */
+                /* Δ航向(°)仅显示——u 锁存已移入控制 tick(R2)，此处只读 */
                 float dyaw_deg = (add_angle - g_yaw_zero) * 57.2957795f;
-                float dyaw_abs = (dyaw_deg < 0.0f) ? -dyaw_deg : dyaw_deg;
-                if (dyaw_abs >= U_TURN_YAW_LATCH_DEG) g_u_turn_passed = 1;
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
                 else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
                 int n = snprintf(dbg, sizeof(dbg),
