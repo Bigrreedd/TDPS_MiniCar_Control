@@ -478,6 +478,12 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
     else
     {
         speed_output = g_speed_output;   /* 沿用最近一次速度环输出 */
+        /* 发车后首个速度样本(0~250ms随机相位)未到时 g_speed_output 仍为0：
+         * 若不垫底，电机命令=纯position_correction，会被死区前馈放大成原地扭
+         * (12:55 Run1 实测 sent=836,-956 右轮倒转甩头)。与有样本分支同语义垫底。 */
+        if (i_speed > 0.0f && speed_output < SPEED_PID_MIN_OUTPUT) {
+            speed_output = SPEED_PID_MIN_OUTPUT;
+        }
     }
     // 5. 叠加位置环偏差
 #if WHEEL_BALANCE_ENABLE
