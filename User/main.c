@@ -93,11 +93,14 @@ static float ClampMotorDuty(float duty)
  * sent660 满电仍跑23cps，pivot指令差322实测轮速差仅~15cps。再对称降60: 内轮sent
  * 600→预计15cps，轮速差→~22cps收紧半径；基线18~25。失速风险线(用户提醒占空比过低
  * 电机不转): 直线单轮个位数轮速/顿挫 → 回+30(610/670)。不对称60与START不动。 */
+/* HOLD_R 640→610(06-05 第13轮): S弯=30~50cm波浪交替弯,要求左右pivot对称；
+ * 实测右196/左253——剩余不对称60还在吃右转,第一个右拐贴不住线(U弯左侧253零丢线
+ * 已验证成功线)。不对称60→30: 右226/左223,两侧都到成功线90%。START不动。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
 #define MOTOR_HOLD_DEADZONE_L   580.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   640.0f
+#define MOTOR_HOLD_DEADZONE_R   610.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10

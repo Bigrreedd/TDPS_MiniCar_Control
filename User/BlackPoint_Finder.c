@@ -61,8 +61,14 @@ static uint16_t g_junc_on_streak  = 0;
 static uint16_t g_junc_off_streak = 0;
 static uint8_t  g_junc_counted    = 0;
 
+extern volatile uint8_t is_racing;   /* jc 门控：停车/搬运期间不计数(第13轮 jc=4 搬运误计) */
+
 static void JunctionPassUpdate(uint8_t junction_active)
 {
+	if(!is_racing)
+	{
+		return;   /* 非运行态冻结计数器(K1 发车时整组清零重新起算) */
+	}
 	if(junction_active)
 	{
 		g_junc_off_streak = 0;
