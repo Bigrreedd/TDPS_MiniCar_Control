@@ -200,7 +200,7 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	float i_term = controller->param.ki * controller->integral;
 	
 	// 微分项：低通滤波（压6路灰度阶梯量化产生的微分尖峰，α=0.4）
-	// Kd保持固定550——动态Kd对"直线微偏vs入弯"区分不可靠，改用误差变化率本身
+	// Kd保持固定(值见PID_Init)——动态Kd对"直线微偏vs入弯"区分不可靠，改用误差变化率本身
 	// 微分项天然就是阻尼：慢漂(直线)de/dt小、快变(入弯)de/dt大，滤波后线性Kd已自适应
 	float d_raw = error - controller->last_error;
 	controller->d_filtered = 0.4f * d_raw + 0.6f * controller->d_filtered;
@@ -326,8 +326,11 @@ void PID_Init(void)
     // 基准增益在参考速度 80 cnt/s 下整定，运行时按 i_speed/80 自动缩放
     SpeedPID_Init(&g_speed_pid, 2.0f, 14.0f, 2.0f, 1000.0f, -1000.0f);
 
-    // 位置环：Kp=48, Kd=550（配合平滑梯度权重）
-    PositionPID_Init(&g_position_pid, 48.0f, 0.0f, 550.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    // 位置环：Kp=48, Kd=400。
+    // Kd 550→400(06-05): 550是旧传感几何(低装/2路黑/细分辨率)整定值；传感器调高后
+    // 输入变±0.5粗台阶，550×α0.4在量化幻影上单步踢110~250(13:27实测pid=32,187@pos35
+    // 等错向帧)，是中段摆动升级成深弯pivot极限环的放大器。输入已有3帧滤波+多数表决净化。
+    PositionPID_Init(&g_position_pid, 48.0f, 0.0f, 400.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
