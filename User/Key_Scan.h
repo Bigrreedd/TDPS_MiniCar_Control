@@ -3,13 +3,13 @@
 
 #include "stm32f10x.h"
 
-// 按键定义
+// 按键定义（PCB2/gen3 三代板：仅 K1/K2 两个物理按键）
 typedef enum {
     KEY_NONE = 0,   // 无按键
-    KEY_K1,         // K1 (PB14)
-    KEY_K2,         // K2 (PB13)
-    KEY_K3,         // K3 (PC14)
-    KEY_K4          // K4 (PC13)
+    KEY_K1,         // K1 (PC13, 网表 KEY1=H1.2/SW1)
+    KEY_K2,         // K2 (PC14, 网表 KEY2=H1.3/SW2)
+    KEY_K3,         // K3 无物理按键（Key_ReadRaw 恒未按下，枚举保留兼容上层）
+    KEY_K4          // K4 无物理按键（同上）
 } Key_ID_t;
 
 // 按键事件
