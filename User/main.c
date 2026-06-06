@@ -299,6 +299,11 @@ static uint8_t  g_s2_active = 0;       /* R5: S胶囊②域标志;g_s_mode_done 
 static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(强制锁里程锚) */
 static uint16_t g_u3_deep_run = 0;     /* U3: u后(里程门内)deep 连续 tick 计数 */
 static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250tick=500ms) */
+/* F8(06-07 团队轮): sm 锁存/释放源遥测——三锁存源(jc/U3/T2)与三释放源(0x30/T3/后备)
+ * 在 sm= 上不可分,OLED 字串会被后续转移覆盖,事后无法回答"这轮谁锁的/谁放的"
+ * (03:04 轮释放源至今判不出)。纯遥测,零控制消费者。 */
+static uint8_t  g_sm_latch_src = 0;    /* 0=未锁 1=jc自然 2=U3 deep 3=T2里程 4=R5 re-arm */
+static uint8_t  g_sm_rel_src = 0;      /* 0=未放 1=0x30主锚 2=T3强释 3=P9后备门 */
 
 static float ApplyDeadzone(float duty, float deadzone)
 {
@@ -971,6 +976,7 @@ int main(void)
                 g_s_mode = 1;
                 g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);  /* P9: 里程基准 */
                 g_sm_stable_run = 0;
+                g_sm_latch_src = 1;    /* F8: jc 自然锁 */
             }
 #if NAVSEG_U3_DEEP_LATCH
             else if (!g_s_mode && !g_s_mode_done && is_racing && g_u_turn_passed &&
@@ -979,6 +985,7 @@ int main(void)
                 g_s_mode = 1;
                 g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
                 g_sm_stable_run = 0;
+                g_sm_latch_src = 2;    /* F8: U3 deep 签名锁 */
                 OLED_ShowString(1, 1, "SM DEEP LATCH   ");
             }
 #endif
@@ -993,6 +1000,7 @@ int main(void)
                 g_s_mode = 1;
                 g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
                 g_sm_stable_run = 0;
+                g_sm_latch_src = 3;    /* F8: T2 里程兜底锁 */
                 OLED_ShowString(1, 1, "SM FORCED LATCH ");
             }
 #endif
@@ -1014,6 +1022,7 @@ int main(void)
                         g_s_mode = 0;          /* P9 主锚:拱门2.1(id=1;空 payload 记 0 也认) */
                         g_s_mode_done = 1;
                         g_arch_cool = 1500u;
+                        g_sm_rel_src = 1;      /* F8: 0x30 主锚释放 */
                     }
                     else if (!g_finish_armed &&
                              (arch_id == 2u || (arch_id == 0u && g_s_mode_done)))
@@ -1044,6 +1053,7 @@ int main(void)
                     {
                         g_s_mode = 0;
                         g_s_mode_done = 1;
+                        g_sm_rel_src = 2;      /* F8: T3 强制释放 */
                         OLED_ShowString(1, 1, "SM FORCED EXIT  ");
                     }
                     else
@@ -1068,6 +1078,7 @@ int main(void)
                             {
                                 g_s_mode = 0;
                                 g_s_mode_done = 1;
+                                g_sm_rel_src = 3;  /* F8: P9 后备门(稳线+yaw静默+里程) */
                             }
                         }
                     }
@@ -1203,6 +1214,7 @@ int main(void)
                         g_s2_active = 1;
                         g_sm_cnt_base = rd_avg;
                         g_sm_stable_run = 0;
+                        g_sm_latch_src = 4;    /* F8: R5 re-arm(S②域) */
 #endif
                         OLED_ShowString(1, 1, "RD DONE         ");
                     }
@@ -1472,6 +1484,8 @@ int main(void)
                 g_u_cnt_base = 0;
                 g_u3_deep_run = 0;          /* U3: deep 持续计数同清 */
                 g_launch_grace = 250u;      /* F6a: 发车 500ms 踢腿封顶窗 */
+                g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
+                g_sm_rel_src = 0;
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
@@ -1507,6 +1521,9 @@ int main(void)
                 g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
                 g_s2_active = 0;
                 g_u_cnt_base = 0;
+                g_u3_deep_run = 0;          /* F8(RunArch F2): 与 K1 对称补清 */
+                g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
+                g_sm_rel_src = 0;
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
@@ -1572,7 +1589,9 @@ int main(void)
                      * 150~180B 远不触及;PC 明文模式(开关=0)无此约束。 */
                     /* 06-07 评审: 加 sg=段游标(0~6,NAVSEG_*);leader复核再加 ar/rdir/s2,
                      * 用于区分拱门锚、雷达默认方向、S②域。典型行仍低于单帧上限。 */
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d bv=%d el=%ld er=%ld",
+                    /* F8: 加 lt=锁存源(0未锁/1jc/2U3/3T2/4re-arm) rs=释放源(0未放/1主锚/2T3/3后备)
+                     * ——F6b 验收与释放源之谜(03:04)机读化。最坏 +12B 由 SendLog 拆帧兜底。 */
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d bv=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -1591,6 +1610,8 @@ int main(void)
                     (int)g_last_arch_id,                /* 06-07: 最近0x30拱门id;255=未见 */
                     (int)g_rd_dir,                      /* 06-07: 雷达绕行方向(+1左/-1右) */
                     (int)g_s2_active,                   /* 06-07: S胶囊②域标志 */
+                    (int)g_sm_latch_src,                /* F8: sm 锁存源 */
+                    (int)g_sm_rel_src,                  /* F8: sm 释放源 */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
