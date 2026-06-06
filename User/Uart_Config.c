@@ -78,6 +78,12 @@ void USART2_IRQHandler(void)
 		}
 		// 否则丢弃字节以避免覆盖
 	}
+	/* A2(06-06 审计): ORE 清除——溢出不清会卡死后续 RXNE 接收(PC 热插拔/突发注入场景)。
+	 * 读 SR 后读 DR 即清；与 pcb2 分支 USART1(ESP32) ISR 同款防护。 */
+	if(USART_GetFlagStatus(USART2, USART_FLAG_ORE) != RESET)
+	{
+		(void)USART_ReceiveData(USART2);
+	}
 }
 
 void Uart2_SendByte(uint8_t byte)

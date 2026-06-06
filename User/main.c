@@ -217,10 +217,18 @@ static uint8_t g_openloop_active = 0;   /* 1=开环测试运行中 */
 #ifndef OLED_TELEMETRY_PERIOD_TICKS
 #define OLED_TELEMETRY_PERIOD_TICKS 150u
 #endif
-/* 调试串口遥测：直接经 USART3 (PB10/PB11) 发到 PC。
+/* 调试串口遥测：旧双层板经 USART3 (PB10/PB11) 发到 PC；
+ * 2合1上层板(TELEMETRY_ON_USART2=1)经 USART2 (PA2/PA3→J5"通信"口) 发到 PC。
  * 与 OLED 同一周期（150 ticks ≈ 300ms），可按需关掉。 */
 #ifndef DEBUG_OUT_TELEMETRY_ENABLE
 #define DEBUG_OUT_TELEMETRY_ENABLE 1
+#endif
+/* 遥测出口路由：2合1上层板唯一串口引出=J5(USART2)，与下板协议帧共口；
+ * 旧板走独立 USART3。编译期定死，零运行时开销。 */
+#if TELEMETRY_ON_USART2
+#define Debug_SendBuf(buf, len)  Uart2_SendBuf((buf), (len))
+#else
+#define Debug_SendBuf(buf, len)  Uart3_SendBuf((buf), (len))
 #endif
 #ifndef SENSOR_DEBUG_MIN_SPAN
 #define SENSOR_DEBUG_MIN_SPAN 80u
@@ -625,7 +633,14 @@ int main(void)
             g_motor_target_r = (float)g_openloop_duty;
             {
                 int16_t duty = (int16_t)ClampMotorDutyFinal((float)g_openloop_duty);
+#if TELEMETRY_ON_USART2
+                /* USART2 兼作调试口：无下板心跳(台架裸板)时停发协议帧防二进制刷屏；
+                 * 下板 100Hz 主动心跳，链路接通即自动恢复发送 */
+                if (g_link_alive)
+                    Proto_SendMotorCmd(duty, duty, g_openloop_active);
+#else
                 Proto_SendMotorCmd(duty, duty, g_openloop_active);
+#endif
             }
 #else
             // 下发电机指令到下板执行器（带符号占空比 + 使能）
@@ -643,7 +658,13 @@ int main(void)
                 float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), deadzone_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
                 g_sent_motor_r = (int16_t)ClampMotorDutyFinal(duty_r);
+#if TELEMETRY_ON_USART2
+                /* 同上：无下板心跳不发协议帧（裸板台架 USART2 只走明文遥测） */
+                if (g_link_alive)
+                    Proto_SendMotorCmd(g_sent_motor_l, g_sent_motor_r, is_racing);
+#else
                 Proto_SendMotorCmd(g_sent_motor_l, g_sent_motor_r, is_racing);
+#endif
             }
 #endif
         }
@@ -733,7 +754,7 @@ int main(void)
 #else
             TelemetryScreen_Update();
 #endif
-#if DEBUG_OUT_TELEMETRY_ENABLE && USART3_DEBUG_ON_PB10
+#if DEBUG_OUT_TELEMETRY_ENABLE && (USART3_DEBUG_ON_PB10 || TELEMETRY_ON_USART2)
             {
                 char dbg[256];   /* R6: 224→256，远离最坏帧长争论(实测196)，防未来加字段静默丢帧 */
                 /* Δ航向(°)仅显示——u 锁存已移入控制 tick(R2)，此处只读 */
@@ -741,7 +762,7 @@ int main(void)
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
                 else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d el=%ld er=%ld S=%d,%d,%d,%d,%d,%d\r\n",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -755,12 +776,26 @@ int main(void)
                     (int)dyaw_deg,                     /* 发车以来累计航向变化(°) */
                     (int)g_u_turn_passed,              /* 1=已完成~180°航向变化(U弯) */
                     (int)g_s_mode,                     /* S-mode 分段降速锁存 */
-                    (long)g_link_cnt_l, (long)g_link_cnt_r,  /* 下板绝对累计计数(编码器CPR标定用) */
-                    (int)g_line_sensor_values[0], (int)g_line_sensor_values[1],
-                    (int)g_line_sensor_values[2], (int)g_line_sensor_values[3],
-                    (int)g_line_sensor_values[4], (int)g_line_sensor_values[5]);
+                    (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
+                /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
                 if (n > 0 && n < (int)sizeof(dbg))
-                    Uart3_SendBuf((const uint8_t *)dbg, (uint8_t)n);
+                {
+                    uint8_t si;
+                    for (si = 0u; si < SENSOR_COUNT; si++)
+                    {
+                        int m = snprintf(dbg + n, sizeof(dbg) - (size_t)n,
+                                         (si == 0u) ? " S=%d" : ",%d",
+                                         (int)g_line_sensor_values[si]);
+                        if (m < 0 || m >= (int)(sizeof(dbg) - (size_t)n)) { n = 0; break; }  /* 截断→放弃本帧 */
+                        n += m;
+                    }
+                    if (n > 0 && n <= (int)sizeof(dbg) - 2)
+                    {
+                        dbg[n++] = '\r';
+                        dbg[n++] = '\n';
+                        Debug_SendBuf((const uint8_t *)dbg, (uint16_t)n);
+                    }
+                }
             }
 #endif
         }

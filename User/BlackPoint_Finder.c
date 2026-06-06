@@ -286,7 +286,11 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	/* R1(06-05 审查三方确认): span 支路加 run_count==1。U 弯两腿同入视野=跨度大但黑数少且
 	 * 双段(span≥5,count2~4,run_count=2)，旧判据误判路口→强制走直冲出U弯(第10轮实测死因类)；
 	 * 真T字/路口=单段宽黑仍触发；双段宽跨度交给下方连续性选段追最近腿。副效益:U腿jc误+1消失。 */
-	uint8_t junction = ((black_count >= 5u) || ((span >= 5u) && (run_count == 1u))) && (black_count < SENSOR_COUNT);
+	/* A1(06-06 审计组双员收敛, 7路适配): count 绝对阈值 5 改相对 SENSOR_COUNT-1——
+	 * 6路构建 ≡5(83%,旧行为逐位不变)；7路=6(86%)。动机:7路下 5/7=71%，深弯外侧 5 连管
+	 * 压线即误判路口强制走直(枚举实证 {0..4}/{1..5}/{2..6} 三个连续5掩码)，重蹈U弯冲出死因；
+	 * 真T/十字近满覆盖(6~7管)仍必中。jc 深弯误+1 同步消失。上路第15轮必验项。 */
+	uint8_t junction = ((black_count >= (uint8_t)(SENSOR_COUNT - 1u)) || ((span >= 5u) && (run_count == 1u))) && (black_count < SENSOR_COUNT);
 	JunctionPassUpdate(junction);   /* 穿越计数用未截断条件：超时长路口仍只计1次 */
 
 	if(junction && g_junction_ticks < JUNCTION_FREEZE_MAX_TICKS)

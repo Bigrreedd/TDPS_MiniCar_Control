@@ -58,10 +58,17 @@
 /* ===== TDPS 项目全局编译开关 ===== */
 
 /* USART3 调试串口占用 PB10/PB11：
- *   =1 (默认): PB10=USART3_TX, PB11=USART3_RX，LineSensor ch6(光电管)停用
- *   =0       : PB10 归还 LineSensor ch6，恢复 7 路灰度；USART3 不启用
+ *   =1 (旧双层板默认): PB10=USART3_TX, PB11=USART3_RX，LineSensor ch6(光电管)停用
+ *   =0 (2合1上层板)  : PB10 归还 LineSensor ch6，恢复 7 路灰度；USART3 不启用
  *   切换后重编译即可，无需改其他文件。 */
-#define USART3_DEBUG_ON_PB10  1
+#define USART3_DEBUG_ON_PB10  0
+
+/* 2合1 上层板（Schematic7-U7）调试遥测改走 USART2（PA2/PA3 → J5"通信"口，板物理右上角）：
+ *   该板唯一串口引出 = J5；USART1 PA9/PA10、USART3 PB10/PB11 均无连接器（PB10=S7 灰度）。
+ *   =1 (本分支默认): 调试遥测帧明文经 USART2 发 PC；无下板心跳时停发电机协议帧防二进制刷屏
+ *                    （下板 100Hz 主动心跳，链路接通 g_link_alive 置位后协议帧自动恢复）。
+ *   =0             : 还原旧双层板行为（遥测走 USART3，协议帧无条件发送）。 */
+#define TELEMETRY_ON_USART2   1
 
 /* Exported macro ------------------------------------------------------------*/
 #ifdef  USE_FULL_ASSERT
