@@ -6,6 +6,7 @@
 #include "ABEncoder.h"
 #include "Motor_ctr.h"
 #include "Path.h"
+#include "PID_Controller.h"
 #include <stdio.h>
 
 extern volatile float add_angle_deg_360;
@@ -74,8 +75,10 @@ void TelemetryScreen_Update(void)
 
 	/* 第 4 行：目标速度 + 当前 PWM 占空比  T:xxx D:xxx%
 	 * 与第 3 行实测对比 → 速度环是否把实测拉到目标；D% 看 PID 输出量级 */
+	/* 06-07(Examiner Q6): 改与串口 T= 同源(H3 三段律)。旧 Path_GetTargetSpeed 是
+	 * 已废弃 Path FSM 的速度,BENCH=1 下与实际下发目标不一致,现场看 OLED 调速会误判。 */
 	{
-		int tgt = (int)Path_GetTargetSpeed();
+		int tgt = (int)PID_GetCurrentTargetSpeed();
 		if (tgt > 999) tgt = 999; else if (tgt < -999) tgt = -999;
 		OLED_ClearLine(4);
 		OLED_ShowChar(4, 1, 'T');

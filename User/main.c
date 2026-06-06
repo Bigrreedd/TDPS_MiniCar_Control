@@ -113,11 +113,32 @@ static float ClampMotorDuty(float duty)
  * 实证:关扇轮 U 弯内轮七八帧钉死 sent=660(HOLD_L 640+pid 20),R3/D3b 反复踢出 890/1151
  * 脉冲打乱转弯半径,U 弯只转到 83° 捞错边;开扇轮同占空比速度 23→10cps 衰减后双轮全停。
  * 看护项:深弯内轮地板抬高→拖刹差速变浅,U 弯半径若变宽即回 -20 折中。START 不动。 */
+/* F2(06-07 用户纠偏):不是只补 S 后段,而是粗糙地图+低底盘导致全图移动档卡顿。
+ * HOLD 680/710→710/740(+30 对称),所有闭环移动段基础占空比小幅上移;
+ * START 870/990 与安全上限不动,避免起步/堵转红线扩大。 */
+/* F3(06-07 现场追加):F2 后用户反馈全图仍偏慢/易卡,按既定预案再小步 +20 对称:
+ * HOLD 710/740→730/760。覆盖全部闭环移动段(前段28/u后25/sm14/丢线档/RD盲走);
+ * START 870/990、FINAL_CAP 1990、下板 SAFE_MAX 2000 不动;深弯内轮 cmd=0 仍 coast。
+ * 回退线:U/S 半径变宽、贴不住内线或 S 乒乓 → 回 710/740(F2),再不行 700/730 折中。 */
+/* F4a(06-07 03:00 实测):F3 已确认烧录(sent−pid 差=730/760 反推)。巡航 23~26cps 仍欠
+ * T=28,sent 880~990 底子重;左轮 880PWM 慢磨卡滞(el 冻 233)。按梯再 +20 对称:750/780。
+ * 回退链:750/780→730/760→710/740;U/S 半径变宽或 S 乒乓仍是硬回退线。 */
+/* F5(06-07 03:04 实测+用户指令"还可以变大"):HOLD 域拆分,直线档与 S 配方解耦——
+ * 非 sm 段(直线/U/post-S/方块圆区/RD)770/800 继续上探(F4a 750/780 未上图,直接跨档);
+ * sm 段独立钉 730/760 = 03:04 轮 S① 全程首通实测档(该轮 S 中段曾单发丢线+人工救,
+ * 内轮 coast 下 pivot 扫线角速度随外轮 HOLD 升——sm 档不随直线档漂移)。
+ * 回退:S 再丢线 → 只回 S_MODE_HOLD 710/740→680/710;直线再卡 → 只动主 HOLD。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   680.0f
+#define MOTOR_HOLD_DEADZONE_L   770.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   710.0f
+#define MOTOR_HOLD_DEADZONE_R   800.0f
+#endif
+#ifndef S_MODE_HOLD_DEADZONE_L
+#define S_MODE_HOLD_DEADZONE_L  730.0f
+#endif
+#ifndef S_MODE_HOLD_DEADZONE_R
+#define S_MODE_HOLD_DEADZONE_R  760.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
@@ -135,6 +156,14 @@ static uint8_t g_dz_hold_l = 0;   /* 1=左轮处于 HOLD 死区档 */
 static uint8_t g_dz_hold_r = 0;
 static float g_stall_boost_l = 0.0f;  /* D3(06-06): 皱褶停转踢腿——按轮自适应死区上浮量 */
 static float g_stall_boost_r = 0.0f;
+/* 06-07 01:50 粗糙地图/底盘托底:只放大非 sm/deep/NAV 覆盖段脱困档。
+ * S/U 深弯和雷达盲走仍封 100,防乒乓锤/弹射/盲走过冲。 */
+#ifndef MOTOR_STALL_BOOST_MAX
+#define MOTOR_STALL_BOOST_MAX       800.0f
+#endif
+#ifndef MOTOR_STALL_BOOST_SAFE_CAP
+#define MOTOR_STALL_BOOST_SAFE_CAP  100.0f
+#endif
 #if SINGLE_BOARD_LOCAL_DRIVE && !FAN_KICK_DIAG_ENABLE
 /* C1(06-06 用户批准): 风扇起转阶梯点动——K4 每按推进 20/35/50 档,点动 2s 自动归零;
  * K2 强停同时灭风扇。全程受 M3PWM 底层 FAN_DUTY_ABS_CAP=50 硬钳兜底(C0)。
@@ -222,6 +251,7 @@ static float    g_rd_yaw_base = 0.0f;  /* 停车时航向 = 箱前行进方向 *
 static int32_t  g_rd_cnt_mark = 0;     /* 相起点里程 */
 static uint16_t g_rd_found_run = 0;    /* 重捕连续 found 计数 */
 static uint16_t g_arch_cool = 0;       /* 拱门事件连发去重窗(3s) */
+static uint8_t  g_last_arch_id = 255u; /* 遥测:最近一次已消费0x30 id;255=本轮未见 */
 static uint16_t g_finish_ticks = 0;    /* P1 倒计时(>0 = 进行中) */
 static uint8_t  g_finish_armed = 0;    /* P1 已触发锁存 */
 
@@ -282,7 +312,7 @@ static float ClampClosedLoopDuty(float duty)
 /* 死区前馈后的最终安全上限：= PID 上限 + 最大死区，使 PID 满输出叠加死区后不被砍。
  * 仍兜一个绝对天花板防止异常值窜车。 */
 #ifndef MOTOR_DUTY_FINAL_CAP
-#define MOTOR_DUTY_FINAL_CAP  (MOTOR_DUTY_HARD_CAP + MOTOR_START_DEADZONE_R)
+#define MOTOR_DUTY_FINAL_CAP  1990.0f
 #endif
 static float ClampMotorDutyFinal(float duty)
 {
@@ -462,6 +492,8 @@ static void StopRun(void)
 {
     is_racing = 0;
     lose_time = 0;
+    g_stall_boost_l = 0.0f;
+    g_stall_boost_r = 0.0f;
 }
 
 #if OPENLOOP_TEST_ENABLE
@@ -940,6 +972,7 @@ int main(void)
                 if (g_arch_cool > 0u) { g_arch_cool--; arch_evt = 0; }   /* 冷却期:事件吸收丢弃 */
                 if (arch_evt && is_racing)
                 {
+                    g_last_arch_id = arch_id;
                     /* R5(06-07 评审): S② 域(g_s2_active)对释放支路关闭——此时已过拱门2.1,
                      * 任何拱门事件只可能是拱门2.2,落到下方终点支路(id=2 或空payload+done)。 */
                     if (g_s_mode && arch_id <= 1u && !g_s2_active)
@@ -1180,8 +1213,9 @@ int main(void)
 #if NAVSEG_FINISH_DIST_BACKUP
             /* R2/C-4(06-07 评审,挂科级): 0x30 未部署时 P1 终点门全悬空→跑完不停冲出场地。
              * 里程兜底:已过箱(g_s2_active)且自出箱重捕 Δ≥FINISH_FROM_S2_CNT → arm finish。
-             * 阈值宁大勿小(冲过线再停损失小,提前停=没跑完);0x30 部署后拱门2.2 先到先触发,
-             * 本兜底自然退化为备份。锚=g_sm_cnt_base(re-arm 时已置为重捕点,S② 释放不改它)。 */
+             * 阈值宁小勿大(02:15 Harvey 仲裁统一:110 为防冲出红区——红区仅 ~100cm 深,
+             * 2s 滚动≈120cm,过大=出界;提前停留在场内损失更小);0x30 部署后拱门2.2 先到
+             * 先触发,本兜底自然退化为备份。锚=g_sm_cnt_base(re-arm 置重捕点,S②释放不改)。 */
             if (is_racing && !g_finish_armed && g_s2_active &&
                 ((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= FINISH_FROM_S2_CNT)
             {
@@ -1248,8 +1282,11 @@ int main(void)
                  * 原拖刹轮 0cps 会被 R3 判"重新起步"挂 START 990,叠加 D3b+pid 成 1560/1600
                  * 暴力踢出,把捞线甩成换边乒乓。sm 区轮子从 0 起动只用 HOLD(680/710)+pid
                  * (pivot 外轮 ~1030,19:49 成功量级);非 sm 区行为不变。 */
-                float deadzone_l = (g_dz_hold_l || g_s_mode) ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
-                float deadzone_r = (g_dz_hold_r || g_s_mode) ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
+                /* F5: sm 域独立 HOLD 档——S 配方与直线档解耦;H1 语义保持(sm 永不回 START)。 */
+                float deadzone_l = g_s_mode ? S_MODE_HOLD_DEADZONE_L
+                                 : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L);
+                float deadzone_r = g_s_mode ? S_MODE_HOLD_DEADZONE_R
+                                 : (g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R);
                 float cmd_l = ClampClosedLoopDuty(g_motor_target_l);
                 float cmd_r = ClampClosedLoopDuty(g_motor_target_r);
                 /* D3(06-06 用户报告皱褶停转): 被命令运动(cmd>EPS)却近停(<3cps)的轮,死区前馈
@@ -1258,18 +1295,21 @@ int main(void)
                  * 速度环增量(+5/帧)爬坡太慢(19:03 实测 1.2s)。按轮独立、有界、自清;
                  * sm 深弯内轮 cmd=0 天然不踢;上限受 ClampMotorDutyFinal/下层 SAFE_MAX 双重兜底。 */
                 /* D3b(06-06): 两段爬升——0→250 快(+4/tick,~125ms,应对皱褶瞬滞);
-                 * 250→600 慢(+1/tick,再~350ms)=脱困档(19:38 实测托底搁浅:sent 1561 双轮仍
-                 * 0cps/el·er 冻结,250 封顶不够;600 后叠加 pid 由 FINAL_CAP 1990 钳住=固件极限)。
+                 * 250→MOTOR_STALL_BOOST_MAX 慢(+1/tick)=脱困档(19:38/01:50 托底搁浅证据);
+                 * 叠加 pid 后由 FINAL_CAP 1990 钳住,不突破本地 SAFE_MAX=2000。
                  * 搁浅根因是机械(底盘托底),本档只买"能自己蹭下来"的概率,主修在机械侧。 */
-                if (is_racing && cmd_l > MOTOR_CMD_EPS && speed_left < 3 && speed_left > -3) {
+                /* F4b(06-07 03:00 实测): 触发阈 3→6——左轮 880PWM 慢磨 10→3cps 区间踢腿
+                 * 未及介入即被 K2 停;放宽到 <6 提早咬合慢磨型卡滞。退出滞回 >12、帽
+                 * (普通 800/sm‖deep‖NAV 100)、增长斜率均不变;sm 浅弯内轮典型 ≥8cps 不受扰。 */
+                if (is_racing && cmd_l > MOTOR_CMD_EPS && speed_left < 6 && speed_left > -6) {
                     g_stall_boost_l += (g_stall_boost_l < 250.0f) ? 4.0f : 1.0f;
-                    if (g_stall_boost_l > 600.0f) g_stall_boost_l = 600.0f;
+                    if (g_stall_boost_l > MOTOR_STALL_BOOST_MAX) g_stall_boost_l = MOTOR_STALL_BOOST_MAX;
                 } else if (speed_left > 12 || !is_racing || cmd_l <= MOTOR_CMD_EPS) {
                     g_stall_boost_l -= 8.0f; if (g_stall_boost_l < 0.0f) g_stall_boost_l = 0.0f;
                 }
-                if (is_racing && cmd_r > MOTOR_CMD_EPS && speed_right < 3 && speed_right > -3) {
+                if (is_racing && cmd_r > MOTOR_CMD_EPS && speed_right < 6 && speed_right > -6) {
                     g_stall_boost_r += (g_stall_boost_r < 250.0f) ? 4.0f : 1.0f;
-                    if (g_stall_boost_r > 600.0f) g_stall_boost_r = 600.0f;
+                    if (g_stall_boost_r > MOTOR_STALL_BOOST_MAX) g_stall_boost_r = MOTOR_STALL_BOOST_MAX;
                 } else if (speed_right > 12 || !is_racing || cmd_r <= MOTOR_CMD_EPS) {
                     g_stall_boost_r -= 8.0f; if (g_stall_boost_r < 0.0f) g_stall_boost_r = 0.0f;
                 }
@@ -1278,10 +1318,10 @@ int main(void)
                  * sent≈710+320+100=1130(对照锤峰 1560/1600)。
                  * U2(06-06 23:20 Run1): 深弯同帽——U 弯楔住后双轮泵到 sent=890/1462,
                  * 脱困瞬间弹射(yw 300ms 内 197→-43)出图;U1 内轮停转后 cmd=0 本不触发
-                 * 踢腿,封顶只防楔住工况。600 级脱困档保留给直线段(凸起在直道,deep=0)。 */
-                if (g_s_mode || PID_GetDeepTurnMode()) {
-                    if (g_stall_boost_l > 100.0f) g_stall_boost_l = 100.0f;
-                    if (g_stall_boost_r > 100.0f) g_stall_boost_r = 100.0f;
+                 * 踢腿,封顶只防楔住工况。高脱困档仅留给普通循迹段;NAV 覆盖(雷达盲走)同封 100。 */
+                if (g_s_mode || PID_GetDeepTurnMode() || PID_GetNavOverride() != NAV_OVERRIDE_NONE) {
+                    if (g_stall_boost_l > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_l = MOTOR_STALL_BOOST_SAFE_CAP;
+                    if (g_stall_boost_r > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_r = MOTOR_STALL_BOOST_SAFE_CAP;
                 }
                 float duty_l = ApplyDeadzone(cmd_l, deadzone_l + g_stall_boost_l);
                 float duty_r = ApplyDeadzone(cmd_r, deadzone_r + g_stall_boost_r);
@@ -1377,6 +1417,7 @@ int main(void)
                 g_rd_state = RD_OFF;        /* P2: 雷达段状态机复位 */
                 g_rd_tick = 0; g_rd_settle = 0; g_rd_found_run = 0;
                 g_arch_cool = 0;
+                g_last_arch_id = 255u;
                 g_finish_ticks = 0;         /* P1: 终点状态复位 */
                 g_finish_armed = 0;
                 g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
@@ -1411,6 +1452,7 @@ int main(void)
                 g_rd_state = RD_OFF;        /* P2/P1: 雷达段+终点状态复位 */
                 g_rd_tick = 0; g_rd_settle = 0; g_rd_found_run = 0;
                 g_arch_cool = 0;
+                g_last_arch_id = 255u;
                 g_finish_ticks = 0;
                 g_finish_armed = 0;
                 g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
@@ -1467,7 +1509,7 @@ int main(void)
 #endif
 #if DEBUG_OUT_TELEMETRY_ENABLE && (USART3_DEBUG_ON_PB10 || TELEMETRY_ON_USART2)
             {
-                char dbg[256];   /* R6: 224→256，远离最坏帧长争论(实测196)，防未来加字段静默丢帧 */
+                char dbg[320];   /* 06-07: ar/rdir/s2 后留足遥测缓冲;ESP32_SendLog 负责极端长行拆帧 */
                 /* Δ航向(°)仅显示——u 锁存已移入控制 tick(R2)，此处只读 */
                 float dyaw_deg = (add_angle - g_yaw_zero) * 57.2957795f;
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
@@ -1479,9 +1521,9 @@ int main(void)
                     /* P2(06-06): 加 rd=雷达段状态(0~9,RD_OFF..RD_FAIL)。最坏帧长 243+5=248,
                      * 极端情况(全字段同时满宽)超 247 由 ESP32_SendLog 拆两帧——实际典型行
                      * 150~180B 远不触及;PC 明文模式(开关=0)无此约束。 */
-                    /* 06-07 评审: 加 sg=段游标(0~6,NAVSEG_*)。最坏帧长 248+5=253<256 缓冲安全;
-                     * >247 极端帧由 ESP32_SendLog 拆两帧,典型行 150~185B 不触及。 */
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d bv=%d el=%ld er=%ld",
+                    /* 06-07 评审: 加 sg=段游标(0~6,NAVSEG_*);leader复核再加 ar/rdir/s2,
+                     * 用于区分拱门锚、雷达默认方向、S②域。典型行仍低于单帧上限。 */
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d bv=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -1497,6 +1539,9 @@ int main(void)
                     (int)g_s_mode,                     /* S-mode 分段降速锁存 */
                     (int)g_rd_state,                   /* P2: 雷达段状态机 */
                     (int)g_navseg,                     /* 06-07: 段游标(S②域看 sm=1 且 rd=8) */
+                    (int)g_last_arch_id,                /* 06-07: 最近0x30拱门id;255=未见 */
+                    (int)g_rd_dir,                      /* 06-07: 雷达绕行方向(+1左/-1右) */
+                    (int)g_s2_active,                   /* 06-07: S胶囊②域标志 */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */

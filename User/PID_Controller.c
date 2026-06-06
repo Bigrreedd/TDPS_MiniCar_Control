@@ -55,6 +55,11 @@ extern BlackPointResult_t result_BlackPoint;
 #ifndef BENCH_FIXED_TARGET_CPS
 #define BENCH_FIXED_TARGET_CPS 28.0f
 #endif
+/* F1撤回(06-07 用户纠偏):问题不是只补 S 后段,而是全图基础扭矩偏低。
+ * post-U 保持 H3 的 25cps,整体余量改由 main.c 的 HOLD +30 提供。 */
+#ifndef POST_U_TARGET_CPS
+#define POST_U_TARGET_CPS 25.0f
+#endif
 #ifndef SPEED_PID_MIN_OUTPUT
 /* 110→70(06-05 第9轮): 110在亏电电池上定，满电时=43cps把速度环钉死在2.2×目标。
  * 与浅弯decel_cap 90→50对偶下移：失速裕度 70-50=20 不变，深弯内轮硬下限20不变。 */
@@ -616,7 +621,7 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			 * 恢复 19:49 成功条件(入弯热+U 出口回稳慢 1.8s 均为 28cps 副作用);
 			 * 凸起在 u 前段,保留 E2 的 28 动能;sm 域 14 不动。 */
 			i_speed = g_s_mode ? S_MODE_TARGET_CPS
-			        : (g_u_turn_passed ? 25.0f : (float)BENCH_FIXED_TARGET_CPS);
+			        : (g_u_turn_passed ? POST_U_TARGET_CPS : (float)BENCH_FIXED_TARGET_CPS);
 
 			// 丢线时降速：给更多时间重新找线（S-mode 下再低一档）
 			// E1: 非 sm 丢线档 18→22 随基准等比上调;sm 域 12 不动
