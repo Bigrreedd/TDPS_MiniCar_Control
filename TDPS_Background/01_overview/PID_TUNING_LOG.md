@@ -6446,7 +6446,7 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 
 **新红线(Skeptic S3 量化)**:U 尾 30° Δ≈2~5cnt ≪ 60 → **SM_DEEP_MIN_CNT=60 严禁下调**(防 U 尾误锁唯一闸)。
 
-**未决项落账(全表见 Examiner 交付,按威胁序)**:#1 FINISH=110(唯一几何推导未实测门,首跑雷达段后用 lt=4 起算实测 Δ 回填)/#2 S1c 出口残留(首跑复核)/#3 雷达 never-arm(0x30+缓议兜底)/#4 顶圆缺口(junc=/lost=/Δ vs 380)/#5 sm 早释放污染 RD 锚(rs= 机读)/#6 C4 盲冲 45cm vs 道宽/#7 入弯跑宽(lt= 验 U3 接管)。
+**未决项落账(全表已存档 `archives/2026-06-07_team-round-v2_examiner-qa-18.md`,按威胁序)**:#1 FINISH=110(唯一几何推导未实测门,首跑雷达段后用 lt=4 起算实测 Δ 回填)/#2 S1c 出口残留(首跑复核)/#3 雷达 never-arm(0x30+缓议兜底)/#4 顶圆缺口(junc=/lost=/Δ vs 380)/#5 sm 早释放污染 RD 锚(rs= 机读)/#6 C4 盲冲 45cm vs 道宽/#7 入弯跑宽(lt= 验 U3 接管)。
 **首跑必采(最终版)**:`lt= rs=`(锁存/释放源)/跨 `u=1`/`sm=1`/`lt=4` 沿的 el/er Δ(重建 U尾/S②/FINISH 实测基准)/三方框+顶连线处 `junc= deep= lost=`/`rd=` 是否 arm(没 arm 即 K2)/缺口 `lost=` 峰值。
 
 **团队解散记录**:PostS/RunArch/Examiner 交付完毕关停;LogAnalyst/Skeptic 留任待 F8 实测数据(日志分析+失败裁定)。本轮产出:R7 链(F7 排空 0x11/F8 lt=rs=遥测/K3 补清)+9 条驳回裁决+7 条未决落账+2 条新红线类约束(里程门口径前提/SM_DEEP_MIN_CNT 禁下调)。
