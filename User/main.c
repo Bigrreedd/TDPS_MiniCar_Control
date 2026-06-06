@@ -154,8 +154,11 @@ static float ClampMotorDuty(float duty)
  * 850/880 抗卡滞;S 配方 730/760 不动。选择器优先级 sm > deep > R3(START/HOLD),
  * deep 滞回 1.9/1.5 防档位抖动。边际代价:压弯起步若首帧即 deep,发车死区 770<START
  * 870(-100),由 F6a 发车窗 boost+100 部分补偿,留观。 */
+/* F13(06-07 07:04 U弯实测): 编码器修复后 U 左转 deep 丢线。
+ * pos=0/5 时 sentR-sentL≈327 但实测 R-L≈0cps,左内轮 790 仍拖着跑,半径变宽后翻边。
+ * 只降左内轮 deep 底座 770→730;右侧 800 保持外轮扭矩,不动 PID/主HOLD/S/T。 */
 #ifndef U_DEEP_HOLD_DEADZONE_L
-#define U_DEEP_HOLD_DEADZONE_L  770.0f
+#define U_DEEP_HOLD_DEADZONE_L  730.0f
 #endif
 #ifndef U_DEEP_HOLD_DEADZONE_R
 #define U_DEEP_HOLD_DEADZONE_R  800.0f
