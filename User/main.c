@@ -128,11 +128,18 @@ static float ClampMotorDuty(float duty)
  * sm 段独立钉 730/760 = 03:04 轮 S① 全程首通实测档(该轮 S 中段曾单发丢线+人工救,
  * 内轮 coast 下 pivot 扫线角速度随外轮 HOLD 升——sm 档不随直线档漂移)。
  * 回退:S 再丢线 → 只回 S_MODE_HOLD 710/740→680/710;直线再卡 → 只动主 HOLD。 */
+/* F9(06-07 F8轮口头反馈"还是有点太慢一直卡住",用户授权"已有值再大10%"——明确=现值的10%
+ * 非满刻度10%):主 HOLD 770/800→850/880(+80 对称,≈+10.4%/+10.0%);不对称 30 红线保持;
+ * S_MODE_HOLD 730/760 不动(S 配方冻结,T=14 可达性保命)。850 距 START_L 870 仅 20——
+ * R3 双档在左轮接近合并,无功能性问题(档差只影响起步踢)。
+ * 看护项:①U 弯半径回归(头号,+80 后累计自弯道验证态+170)——U 内轮 sent 应仍出现 0,
+ * 入口外甩/盘旋=硬回退线;②巡航自驱超 T(HOLD+floor=920 PWM 若>28cps,速度环被 floor
+ * 钳住压不下)→征兆=直线蛇摆/弯道跑宽。回退链:850/880→810/840→770/800(F5)。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   770.0f
+#define MOTOR_HOLD_DEADZONE_L   850.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   800.0f
+#define MOTOR_HOLD_DEADZONE_R   880.0f
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_L
 #define S_MODE_HOLD_DEADZONE_L  730.0f
