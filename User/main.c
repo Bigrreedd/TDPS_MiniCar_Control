@@ -1100,6 +1100,10 @@ int main(void)
                     if (g_rd_settle >= RD_BRAKE_SETTLE_TICKS || g_rd_tick >= RD_BRAKE_BUDGET)
                     {
                         g_rd_yaw_base = add_angle;     /* 箱前行进方向 = 盲走基准 */
+                        /* F7(06-07 红队): 进 QUERY 前排空陈旧 0x11——decision_ready 唯一消费点在本态,
+                         * 上轮 500ms 重发的迟到第二答/雷达板杂帧会跨运行锁存,首 tick 误食陈方向;
+                         * 排空后保证"答案晚于本次 0x03 查询"。(0x30 无此问题:1005 每 tick 无条件排空) */
+                        (void)ESP32_GetDecision(NULL, NULL);
                         ESP32_SendAtPosition();
                         g_rd_state = RD_QUERY; g_rd_tick = 0;
                         OLED_ShowString(1, 1, "RD QUERY        ");

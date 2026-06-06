@@ -6386,3 +6386,34 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 
 **代码版本**:fc28970 + 工作区(F6a/F6b)。**F6 轮协议**:烧录后先静置 K1 看起步帧 sent 应 ≤~1160(870/990+100+pid 量级);跑全图重点看:起步不再弹射、sm 锁存时机(OLED 应打 SM DEEP LATCH 或自然 jc 锁,不应再见 SM FORCED LATCH)、S 内行为与 03:30 轮一致;地图修复后再压拱门段。
 ---
+
+### 03:55 团队轮 v2(5 agents 并行)- 红队 5 条"真威胁"裁决:4 条对码验伪、1 条坐实 → F7;顶圆缺口/RD 裕量定量化(留观不预写)
+
+**团队配置(用户点名 4 + leader 加 1)**:LogAnalyst(日志因果表+F6验证清单+调参决策树)/PostS(S后七段逐段策略)/RunArch(状态机trace+裸奔段)/Examiner(细节质询,Q&A待交)/Skeptic(红队攻击)。约定:agent 只读,改码仅 leader;agent 间 SendMessage 互通(PostS↔Examiner 有问答)。
+
+**leader 逐条对码裁决(红队报告不验伪不采纳)**:
+
+| # | Skeptic 主张 | 裁决 | 证据 |
+|---|---|---|---|
+| T1 | 里程门带符号均值在 pivot 段"塌缩",全部门失准,须改 \|L\|+\|R\| 口径 | **驳回** | `PID_Controller.c:757` min_inner=(sm‖deep)?0:20 + :755 注释——负差速被显式钳 0,内轮 coast 不反转 → 带符号≈绝对值口径;且 T2=200/T3=240/FINISH=110 全按**实测 sm_dcnt**(03:04 Δ234/03:30 Δ201)整定,与消费同币种自洽。改口径反而全门重标(Skeptic 自己也承认 T1↔T4 耦合)。**留存前提**:若未来开内轮反转(CLOSED_LOOP_REVERSE 负值路径),全部里程门作废重标 |
+| T2a | 0x30 拱门 ready 跨运行锁存,K1 重发车吃陈帧 | **驳回** | `main.c:1003-1007` 消费块每 tick 无条件跑(含停车态),`ESP32_GetArchPassed` 当 tick 排空,陈帧 2ms 内被丢弃(is_racing=0 不动作) |
+| **T2b** | **0x11 决策 ready 跨运行锁存** | **坐实 → F7** | `g_esp32_decision_ready`(ESP32_Comm.c:16/110/335)唯一消费点=`main.c:1112`(仅 RD_QUERY 态);上轮 500ms 重发的迟到第二答/雷达板杂帧会无限期锁存,下次进 RD_QUERY 首 tick 误食陈方向(雷达板已物理接 J5,实赛可触发) |
+| T3 | F6a 只钳输出不钳累加器,500ms 边沿二段弹射(解锁瞬间 boost 暴露 ~290) | **驳回** | `main.c:1366-1367` 直接对 `g_stall_boost_l/r` 赋值=钳累加器本身(无影子变量);宽限期满后从 ≤100 按 +4/tick 平滑续涨,无台阶 |
+| T4 | U3 被 U 尾 deep 喂满误锁;g_sm_cnt_base 首锁独占后到的 jc 锚改不了 | **部分留观** | base 独占=结构事实(锁存链全有 !g_s_mode 前置),但 U3 锚(S第一弧)与 jc 锚(Y2)相距 ≤~70cnt,T3 释放偏移可容;U尾 Δ<40 实测余量 20cnt。**F6 首跑看 OLED "SM DEEP LATCH" 时机即可分辨**,误锁则 SM_DEEP_MIN_CNT 60→80。jc 重锚提案驳回(jc 不可靠,Y2 漏检+S区通胀,赛前不动语义) |
+| T5 | RD 门 380 vs 四圆出口 371 仅 9cnt 裕量;缺口深丢 415tick 必满足 300ms 门 | **采纳留观(与 PostS 汇流,不预写)** | 见下"定量风险" |
+| dz_hold | g_dz_hold 跨运行残留,新轮发车用 HOLD 非 START | **驳回** | `main.c:1311-1314` R3 滞回每 tick 按实测速度更新,停车后 speed<8 自动回 0,下次 K1 必 START 档 |
+| F2 | 遥测帧加 5 字段后最坏 255B>243B 截断 | **驳回(已防)** | `main.c:1567` 注释明示超长由 ESP32_SendLog 拆两帧,非截断;仅遥测层,极端帧拆行小程序端偶现断行,无控制影响 |
+| F4 | add_angle 30s 漂移撑爆 0.30rad 稳线窗 | **驳回(数量级)** | 静止漂移 ~0.1°/s×30s=3°=0.05rad ≪ 0.30,留振动工况观察 |
+| RunArch点1 | 丢线自停(PID:606)绕过 StopRun 残留 boost | **结构真/后果无害** | 三层防御:`main.c:1341/1347` !is_racing 衰减分支 200ms 排空;main:882 的 1s 路径 250ms 后补 StopRun;F6a 下轮 K1 封 100。**副产物(真发现):StopRun 不管风扇**——g_fan_on 锁存,丢线自停/链路丢失停车风扇照吹 50,K1 也不清残留态;现行风扇强制 OFF 无害,列**风扇补偿轮前置条件** |
+
+**落码 F7**(本条目唯一代码改动):`main.c` RD_BRAKE→RD_QUERY 转移处(ESP32_SendAtPosition 前)加 `(void)ESP32_GetDecision(NULL, NULL)` 排空陈旧 0x11——语义="答案必须晚于本次 0x03 查询"。不动任何参数/控制律,F6 轮观察项(起步/sm锁存/S行为)零影响。
+
+**新增定量风险(PostS+Skeptic 汇流,均留观等首跑数据,R6/R8 不预写红线维持)**:
+- **顶圆缺口 50cm**:纯丢线爬行上限=375tick(750ms)×~48cm/s≈**36cm<50cm 穿不过**;唯一通路=先 junction 冻结(400ms@60cm/s=24cm,lost 不累加)再转丢线(36cm)=60cm 勉强够,**强依赖进缺口前质心居中**。首跑必采:缺口处 `lost` 峰值、`junc` 是否先触发、`pos` 进缺口前值。
+- **RD 误触发**:RD 门=sm_done+Δ≥380+深丢 300ms(`main.c:1085-1087`);四圆出口里程≈371cnt,缺口深丢必超 300ms → 里程一旦过 380,RD_BRAKE 在缺口开火把四圆顶当雷达箱(后果=RD_FAIL 安全停,不乱窜但跑断)。380 要不要抬,等首跑实测里程,盲调反伤真雷达段武装。
+- **终点双依赖悬空(链路推演确认)**:0x30 未部署(ar 恒 255)+ 里程兜底依赖 g_s2_active(仅 RD_DONE 置位)→ **雷达段跑不通则车跑完全程不停**。已升级催队友部署拱门 ESP 的优先级。
+
+**F6 验证清单补充(LogAnalyst)**:U 弯段加看**内轮 sent 是否出现 0(coast)**——HOLD 累计 +90 后 U 半径回归是头号风险,内轮归零=U1 活着;若 OLED 见 SM FORCED LATCH=U3 未接管(查 deep 持续<25tick 或 Δ<60 → 决策树分支2:SM_DEEP_CONFIRM_TICKS 25→15)。
+
+**代码版本**:60117ff + 工作区(F7)。**勘误自录**:本轮 leader 一度误判日志文件被截断(PowerShell Get-Content 行数误报 4577,实际 6389)——以后此文件行数只信 rg/wc,Read 到 limit 停≠EOF。
+---
