@@ -435,6 +435,9 @@ void PID_Control_Update(void)
 			g_reacq_grace = 0;      /* A2c 宽限同清 */
 			g_a2_flips = 0;         /* A2b-limit 同清 */
 			g_a2_episode_cool = 0;  /* H2' 跨段窗口同清 */
+			g_line_lost_ticks = 0;  /* F11(06-07 红队): 原清单漏此项——停车后冻结残留(实测 lost=266
+			                         * 钉屏≥6s),污染遥测判读;且发车即丢线时陈值直撞 375 自停门。
+			                         * 与主环 lose_time(StopRun 清)对齐,两计数器不再分裂。 */
 			g_nav_override = NAV_OVERRIDE_NONE;  /* P2 导航覆盖同清(K2 停车即退覆盖) */
 			Motor_StopAll();
 			g_motor_target_l = 0.0f;

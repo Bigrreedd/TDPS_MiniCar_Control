@@ -7,7 +7,7 @@
 
 ## 先行确认两条
 
-**① Q7(02:15 半清)= 结案**。结论:**无"必须补清"项**。证据:PID 侧 statics(g_reacq_grace/g_deep_turn_mode/g_last_edge_side/g_a2_flips/g_a2_episode_cool/g_line_lost_ticks/g_reacq_run)全在 PID_Control_Update 的 `if(!is_racing)` 块(PID_Controller.c:430-438)每 tick 清零;K2→StopRun 置 is_racing=0→下一 tick 该块先跑→K1 再置 1 前已清。故怀疑的"K1/K3 半清不一致"对 PID 侧 statics 不成立(g_reacq_grace 尤其不是残留)。自答+RunArch 独立同结论=双人交叉验证。K3 早先漏清的 g_u3_deep_run 已 F8 补清。
+**① Q7(02:15 半清)= 结案**。[⚠04:50 订正(Skeptic 二审,leader 验证):原措辞"全部 statics 每 tick 清"过度——清单 12 项**遗漏 g_line_lost_ticks**(:442 return 早于其全部清零点),停车后冻结残留(第3组实测 lost=266 钉屏≥6s);已 F11 补清一行。Q7 主结论(无运行态半清、02:15=运行中真实复位)不变。] 结论:**无"必须补清"项**。证据:PID 侧 statics(g_reacq_grace/g_deep_turn_mode/g_last_edge_side/g_a2_flips/g_a2_episode_cool/g_line_lost_ticks/g_reacq_run)全在 PID_Control_Update 的 `if(!is_racing)` 块(PID_Controller.c:430-438)每 tick 清零;K2→StopRun 置 is_racing=0→下一 tick 该块先跑→K1 再置 1 前已清。故怀疑的"K1/K3 半清不一致"对 PID 侧 statics 不成立(g_reacq_grace 尤其不是残留)。自答+RunArch 独立同结论=双人交叉验证。K3 早先漏清的 g_u3_deep_run 已 F8 补清。
 
 **② g_stall_boost 最终口径**:
 - 结构真实:main.c 全局,只在 StopRun(main.c:507-508)清,不归 PID `!is_racing` 块管。丢线自停走 PID_Controller.c:605-608 `is_racing=0; return` 不调 StopRun;且 PID 阈 375tick(PID:405)<主环 500tick(main.c:500),PID 自停先触发→主环 StopRun(main.c:890)可能被先到的 is_racing=0 抢掉。→ 丢线自停后 boost 是跨轮真残留。

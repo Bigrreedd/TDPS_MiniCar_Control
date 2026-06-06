@@ -6515,3 +6515,12 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 **流程变更(用户指令)**:桌面进度快照 `C:\Users\21828\Desktop\TDPS_工作进度_2026-06-07_0440.md` 建立为对话恢复锚点,**之后重要变动必须立马同步更新**(与本日志双轨:日志=全量,桌面=状态快照)。
 **代码版本**:177694d(无新码,纯落账)。
 ---
+
+### 04:50 F11 - 停车清 g_line_lost_ticks(红队二审坐实"两计数器分裂") + Q7 措辞订正
+
+**Skeptic 裁决(leader 逐行验证通过)**:第3组停车帧 lost=266 冻结 ≥6s 的根因=**清单遗漏,非函数没调**——`PID_Control_Update()` 在 main.c 每 tick 无条件调用;`!is_racing` 块(PID:425-443)清 12 项后 :442 return,**g_line_lost_ticks 不在清单**且其全部清零点(:466 sm再捕获/:470 found/:607 375自停)都在运行态路径。**两个丢线计数器分裂**:主环 `lose_time` 由 StopRun 清(main.c:501),PID 的 `g_line_lost_ticks`(遥测 lost= 的源,main.c 经 PID_GetLineLostTicks 读)停车后无人清。
+**危害**:①遥测污染(停车后 lost= 钉陈值,误导日志判读——本轮差点误判停车源);②真隐患:停车残留(如 266)+ 下次发车瞬间即丢线(found=0)→ 陈值续涨直撞 375 → **刚发车就自停**(概率低:发车通常压线 found=1 首帧自愈,但存在)。
+**落码 F11**:`PID_Controller.c` !is_racing 块补一行 `g_line_lost_ticks = 0`,与 lose_time 对齐。零红线、零控制影响(停车态本不跑控制律)。
+**Q7 措辞订正(归档同步批注)**:原"PID 侧 statics 由 !is_racing 块每 tick 清"过度概括→改为"清单 12 项(速度环/深弯/A2/NAV),曾遗漏 g_line_lost_ticks,F11 已补"。**Q7 主结论不变**(无运行态半清;02:15=运行中真实复位)。
+**代码版本**:177694d + 工作区(F11)。
+---
