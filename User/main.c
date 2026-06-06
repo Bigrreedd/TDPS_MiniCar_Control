@@ -895,6 +895,9 @@ int main(void)
             /* R12(06-07 评审): 链路计时器接线——此前全工程零调用,IsLinkAlive 恒真(假活)。
              * 暂无消费者(评审定:仲裁纯事件抢占,不读链路活性);接线使计时真实,供日后使用。 */
             ESP32_Tick();
+            if (!is_racing) {
+                ESP32_ServiceStartup();
+            }
 #endif
 
             // 黑线识别 -> 循迹位置
@@ -1492,6 +1495,19 @@ int main(void)
                     break;
                 }
 #endif
+#if ESP32_ON_USART2
+                if (!ESP32_HasStarted())
+                {
+                    if (!ESP32_IsReadyToStart())
+                    {
+                        ESP32_ServiceStartup();
+                        RGB_SetColor(RGB_COLOR_R);
+                        OLED_ShowString(1, 1, "WAIT ESP READY  ");
+                        break;
+                    }
+                    ESP32_SendOk();
+                }
+#endif
                 /* 单板:电机本地直驱，无远端心跳概念，K1 直接发车(电机在 PID 输出处使能)。 */
                 is_racing = 1;
                 lose_time = 0;
@@ -1533,6 +1549,9 @@ int main(void)
             case KEY_K3:
                 // K3: 复位丢线/位置（调试用，不启动）
                 StopRun();
+#if ESP32_ON_USART2
+                ESP32_ResetStartupHandshake();
+#endif
                 BlackPoint_Finder_ResetLastPosition();
                 /* R4(06-05 审查): 复位语义补全——旧 K3 清 jc 不清 yaw/u/sm(半清不一致) */
                 g_yaw_zero = add_angle;
@@ -1620,7 +1639,7 @@ int main(void)
                      * 用于区分拱门锚、雷达默认方向、S②域。典型行仍低于单帧上限。 */
                     /* F8: 加 lt=锁存源(0未锁/1jc/2U3/3T2/4re-arm) rs=释放源(0未放/1主锚/2T3/3后备)
                      * ——F6b 验收与释放源之谜(03:04)机读化。最坏 +12B 由 SendLog 拆帧兜底。 */
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d bv=%d el=%ld er=%ld",
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d es=%d bv=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -1641,6 +1660,7 @@ int main(void)
                     (int)g_s2_active,                   /* 06-07: S胶囊②域标志 */
                     (int)g_sm_latch_src,                /* F8: sm 锁存源 */
                     (int)g_sm_rel_src,                  /* F8: sm 释放源 */
+                    (int)ESP32_GetStartupState(),        /* 06-07: ESP启动握手状态(0 ACK/1 DONE/2 OK/3 RUN) */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */

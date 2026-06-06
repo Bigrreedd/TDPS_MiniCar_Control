@@ -21,11 +21,15 @@
 #define ESP32_TYPE_REQ_RADAR      0x02  // STM32 → ESP32: 请求雷达原始数据
 #define ESP32_TYPE_AT_POSITION    0x03  // STM32 → ESP32: 通知到达检测位置 + 请求决策（推荐）
 #define ESP32_TYPE_PING           0x04  // STM32 → ESP32: 心跳检测
+#define ESP32_TYPE_RESET          0x05  // STM32 → ESP32: 比赛开始/重置握手
+#define ESP32_TYPE_OK             0x06  // STM32 → ESP32: STM32 确认可开始
 #define ESP32_TYPE_LOG            0x07  // STM32 → ESP32: 日志/参数透传(ESP32 原样转 BLE A003，无 ACK)
 
 #define ESP32_TYPE_DECISION       0x11  // ESP32 → STM32: 障碍物通行方向
 #define ESP32_TYPE_RADAR          0x12  // ESP32 → STM32: 雷达数据
 #define ESP32_TYPE_STATUS         0x20  // ESP32 → STM32: 状态心跳（预留）
+#define ESP32_TYPE_RESET_ACK      0x21  // ESP32 → STM32: 已收到 RESET
+#define ESP32_TYPE_RESET_DONE     0x22  // ESP32 → STM32: ESP 重置/准备完成
 #define ESP32_TYPE_ARCH_PASSED    0x30  // ESP32 → STM32: 拱门到达通知(06-06 Q1 定版:ESP 侧旧号
                                         //   0x12 RSP_ARCH_STATE 与我方 RADAR 冲突，双方统一 0x30)
 
@@ -76,8 +80,15 @@ typedef enum {
     ESP32_RX_WAIT_CHECKSUM
 } ESP32_RxState_t;
 
-// 接收缓冲区
-#define ESP32_RX_BUF_SIZE 64
+typedef enum {
+    ESP32_START_WAIT_RESET_ACK = 0,
+    ESP32_START_WAIT_RESET_DONE,
+    ESP32_START_READY_TO_OK,
+    ESP32_START_RUNNING
+} ESP32_StartupState_t;
+
+// 接收缓冲区：跟随协议 payload 上限，避免合法长帧被误丢弃
+#define ESP32_RX_BUF_SIZE ESP32_MAX_PAYLOAD
 typedef struct {
     ESP32_RxState_t state;
     uint8_t version;
@@ -125,6 +136,32 @@ uint16_t ESP32_SendReqRadar(void);
  * @return 发送的帧序列号
  */
 uint16_t ESP32_SendPing(void);
+
+/**
+ * @brief 发送 RESET(0x05)
+ * @return 发送的帧序列号
+ */
+uint16_t ESP32_SendReset(void);
+
+/**
+ * @brief 发送 OK(0x06)，并将启动握手状态置为 RUNNING
+ * @return 发送的帧序列号
+ */
+uint16_t ESP32_SendOk(void);
+
+/**
+ * @brief 空闲期启动握手服务；2ms tick 调用，按协议重发 RESET/等待 RESET_DONE
+ */
+void ESP32_ServiceStartup(void);
+
+/**
+ * @brief 本地重新开始 RESET→RESET_DONE→OK 启动握手
+ */
+void ESP32_ResetStartupHandshake(void);
+
+uint8_t ESP32_IsReadyToStart(void);
+uint8_t ESP32_HasStarted(void);
+ESP32_StartupState_t ESP32_GetStartupState(void);
 
 /**
  * @brief 发送日志/参数透传帧 (type=0x07)

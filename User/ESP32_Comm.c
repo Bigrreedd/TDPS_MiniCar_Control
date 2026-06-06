@@ -27,6 +27,13 @@ static uint8_t g_esp32_arch_ready = 0;
 static uint16_t g_esp32_link_timeout = 0;
 #define ESP32_LINK_TIMEOUT_TICKS  250  // 500ms @ 2ms/tick
 
+// 启动握手：STM32 RESET -> ESP RESET_ACK/RESET_DONE -> STM32 OK
+static ESP32_StartupState_t g_esp32_start_state = ESP32_START_WAIT_RESET_ACK;
+static uint16_t g_esp32_reset_retry_ticks = 0;
+static uint16_t g_esp32_done_wait_ticks = 0;
+#define ESP32_RESET_RETRY_TICKS        250u   // 500ms @ 2ms/tick
+#define ESP32_RESET_DONE_TIMEOUT_TICKS 2500u  // 5s @ 2ms/tick
+
 /* ============================================================================
  * 内部辅助函数
  * ============================================================================ */
@@ -160,6 +167,7 @@ void ESP32_Comm_Init(void)
     g_esp32_arch_ready = 0;
     g_esp32_arch_id = 0;
     g_esp32_link_timeout = 0;
+    ESP32_ResetStartupHandshake();
 }
 
 uint16_t ESP32_SendAtPosition(void)
@@ -188,6 +196,63 @@ uint16_t ESP32_SendPing(void)
     uint16_t seq = g_esp32_tx_seq;
     ESP32_SendFrame(ESP32_TYPE_PING);
     return seq;
+}
+
+uint16_t ESP32_SendReset(void)
+{
+    uint16_t seq = g_esp32_tx_seq;
+    ESP32_SendFrame(ESP32_TYPE_RESET);
+    return seq;
+}
+
+uint16_t ESP32_SendOk(void)
+{
+    uint16_t seq = g_esp32_tx_seq;
+    ESP32_SendFrame(ESP32_TYPE_OK);
+    g_esp32_start_state = ESP32_START_RUNNING;
+    return seq;
+}
+
+void ESP32_ServiceStartup(void)
+{
+    if (g_esp32_start_state == ESP32_START_WAIT_RESET_ACK) {
+        if (g_esp32_reset_retry_ticks < ESP32_RESET_RETRY_TICKS) {
+            g_esp32_reset_retry_ticks++;
+        } else {
+            ESP32_SendReset();
+            g_esp32_reset_retry_ticks = 0;
+        }
+    } else if (g_esp32_start_state == ESP32_START_WAIT_RESET_DONE) {
+        if (g_esp32_done_wait_ticks < ESP32_RESET_DONE_TIMEOUT_TICKS) {
+            g_esp32_done_wait_ticks++;
+        } else {
+            g_esp32_start_state = ESP32_START_WAIT_RESET_ACK;
+            g_esp32_reset_retry_ticks = ESP32_RESET_RETRY_TICKS;
+            g_esp32_done_wait_ticks = 0;
+        }
+    }
+}
+
+void ESP32_ResetStartupHandshake(void)
+{
+    g_esp32_start_state = ESP32_START_WAIT_RESET_ACK;
+    g_esp32_reset_retry_ticks = ESP32_RESET_RETRY_TICKS;
+    g_esp32_done_wait_ticks = 0;
+}
+
+uint8_t ESP32_IsReadyToStart(void)
+{
+    return (g_esp32_start_state == ESP32_START_READY_TO_OK) ? 1u : 0u;
+}
+
+uint8_t ESP32_HasStarted(void)
+{
+    return (g_esp32_start_state == ESP32_START_RUNNING) ? 1u : 0u;
+}
+
+ESP32_StartupState_t ESP32_GetStartupState(void)
+{
+    return g_esp32_start_state;
 }
 
 void ESP32_SendLog(const uint8_t *payload, uint16_t len)
@@ -225,6 +290,11 @@ void ESP32_OnByteReceived(uint8_t data)
         break;
 
     case ESP32_RX_WAIT_VERSION:
+        if (data != ESP32_PROTOCOL_VERSION) {
+            frame->state = ESP32_RX_WAIT_HEADER_0;
+            frame->checksum_calc = 0;
+            break;
+        }
         frame->version = data;
         frame->checksum_calc ^= data;
         frame->state = ESP32_RX_WAIT_TYPE;
@@ -297,6 +367,21 @@ void ESP32_OnByteReceived(uint8_t data)
 
             case ESP32_TYPE_STATUS:
                 // 预留：状态心跳处理
+                g_esp32_link_timeout = 0;
+                break;
+
+            case ESP32_TYPE_RESET_ACK:
+                if (g_esp32_start_state != ESP32_START_RUNNING) {
+                    g_esp32_start_state = ESP32_START_WAIT_RESET_DONE;
+                    g_esp32_done_wait_ticks = 0;
+                }
+                g_esp32_link_timeout = 0;
+                break;
+
+            case ESP32_TYPE_RESET_DONE:
+                if (g_esp32_start_state != ESP32_START_RUNNING) {
+                    g_esp32_start_state = ESP32_START_READY_TO_OK;
+                }
                 g_esp32_link_timeout = 0;
                 break;
 

@@ -6746,3 +6746,46 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 3. 若仍 U 左转丢线且 `R-L` 仍接近 0,下一档优先考虑再降左 U_DEEP 到 `710` 或复核 F12 是否应给 U 域单独 coast;仍不动 PID/Kd。
 4. 若出现左内轮卡死且右外轮单转导致原地过猛/扫丢,回退 `U_DEEP_L=750` 或回 F12 的 `770`。
 ---
+
+### 07:18 队友 ESP32 UART 启动握手接入 - F14 K1 等 RESET_DONE 后发 OK
+
+**用户/队友要求**:根据队友 STM32 UART 协议文档调整代码;若不清楚则写 Markdown 放桌面问队友。队友要求 STM32 与 ESP32S3-1 走 115200 8N1、`A5 5A | ver=0x01 | type | seq_le | len_le | payload | xor` 二进制帧;启动前 STM32 周期性发 `RESET(0x05)`,等待 `RESET_ACK(0x21)`/`RESET_DONE(0x22)`,按 K1 启动时先发 `OK(0x06)`,未就绪不得发车。
+
+**输入资料/串口信息**:
+- 队友协议资料:`D:/wechat/Save/xwechat_files/wxid_5447du6znya922_fd5f/msg/file/2026-06/stm32_uart_teammate_prompt.md`。
+- 车辆/设计资料:`D:/wechat/Save/xwechat_files/wxid_5447du6znya922_fd5f/msg/file/2026-06/car_designer_prompt(3).md`。
+- 本轮没有新增跑图串口数据;这是协议/启动门控代码变更,不是 PID 参数调参。上一条可跑图串口仍是 F13 U 弯样本。
+
+**串口对应代码版本**:
+- 输入版本:`426a082 tune: increase U-turn left differential`,即 F13 参数:主 HOLD `850/880`,S_MODE_HOLD `730/760`,U_DEEP_HOLD `730/800`,非 sm deep `MIN_INNER=20`,sm deep `0`,PID `40/0/550`,速度 `28/25/14`。
+- 本条落码后版本定义为 **F14**:不改 PID/速度/HOLD 参数,只接入 ESP32 启动握手与遥测状态字段。
+
+**代码改动**:
+- `User/ESP32_Comm.h`:新增帧类型 `RESET=0x05`,`OK=0x06`,`RESET_ACK=0x21`,`RESET_DONE=0x22`;新增启动状态 `ESP32_START_WAIT_RESET_ACK/WAIT_RESET_DONE/READY_TO_OK/RUNNING`;RX 缓冲改为跟随协议上限 `ESP32_MAX_PAYLOAD=247`。
+- `User/ESP32_Comm.c`:新增启动握手状态机。空闲 2ms tick 中 `WAIT_RESET_ACK` 每 500ms 发一次 `RESET`;收到 `RESET_ACK` 后进入 `WAIT_RESET_DONE`;若 5s 内无 `RESET_DONE` 则回到重新发 `RESET`;收到 `RESET_DONE` 后进入 `READY_TO_OK`;`ESP32_SendOk()` 发 `OK` 并置 `RUNNING`。
+- `User/ESP32_Comm.c`:解析端增加 `ver != 0x01` 丢帧,并处理 `RESET_ACK/RESET_DONE` 时同步清链路超时。
+- `User/main.c`:空闲时调用 `ESP32_ServiceStartup()`;K1 若 ESP 未 `READY_TO_OK/RUNNING` 则拒绝发车并显示 `WAIT ESP READY`;K1 在 `READY_TO_OK` 状态先发 `OK(0x06)` 再进入原启动流程;K3 本地复位时同步重启 ESP 握手。
+- `User/main.c`:遥测新增 `es` 字段,含义 `0=等RESET_ACK,1=等RESET_DONE,2=可发OK,3=已发OK/运行中`。
+
+**预期代码表现**:
+1. 上电/复位后未按 K1 时,STM32 会在空闲控制 tick 周期性向 ESP 发 `RESET(0x05)`。
+2. ESP 回 `RESET_ACK` 后,STM32 不再狂发 RESET,而是等待 `RESET_DONE`;5s 超时才重新 RESET。
+3. 收到 `RESET_DONE` 后,串口/小程序遥测应看到 `es=2`;此时按 K1,STM32 先发 `OK(0x06)`,然后原循迹启动流程执行,遥测变 `es=3`。
+4. 若 ESP 未接好或未回 `RESET_DONE`,按 K1 不会转电机,OLED 显示 `WAIT ESP READY`。这符合队友"必须等 ESP ready 再启动"的协议,但底盘单独调参时可能需要临时关闭 `ESP32_ON_USART2` 或让 ESP 固件正常在线。
+
+**硬件条件与困难**:
+- UART 物理连接按队友要求:STM32 TX 接 ESP GPIO18,STM32 RX 接 ESP GPIO17,双方 GND 共地,3.3V TTL,115200 8N1。
+- 由于当前代码启用 `ESP32_ON_USART2=1`,若 ESP 未供电、线接反、波特率不一致、ESP 未实现 `RESET_DONE`,K1 会被门控拦住,表现为不发车而非电机故障。
+- 车辆底盘/地图问题仍沿用前情:地图褶皱、底盘低、轮胎松/传动打滑会影响跑图,但本轮不是占空比调参。
+
+**给队友确认的问题文档**:
+- 已写入桌面:`C:/Users/21828/Desktop/TDPS_给队友的问题_ESP32_UART_2026-06-07.md`。
+- 需确认点包括:正式场景是否绝对禁止无 `RESET_DONE` 发车、K3 是否应重启 ESP 握手、`ARCH_PASSED(0x30)` payload 是否固定 1B、`DECISION` 左右坐标定义、`RESET_DONE` 前是否允许 `CAR_LOG(0x07)`。
+
+**F14 测试门禁**:
+1. 接好 ESP32 后上电,不要按 K1,观察 ESP 串口/逻辑分析仪是否能看到 STM32 每约 500ms 发 `RESET(0x05)`。
+2. ESP 回 `RESET_ACK` 后确认 STM32 停止 500ms 连续 RESET;ESP 回 `RESET_DONE` 后,小程序/串口遥测应出现 `es=2`。
+3. 按 K1,确认 STM32 立即发 `OK(0x06)` 且遥测 `es=3`,电机才启动。
+4. 拔掉 ESP 或故意不发 `RESET_DONE`,按 K1 应不发车并显示 `WAIT ESP READY`;这项用于排除误启动。
+5. 协议门禁通过后再恢复跑图测试;跑图调参仍沿 F13 起点继续,不要把 ESP 握手失败误判为 PID/电机参数问题。
+---
