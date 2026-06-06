@@ -147,6 +147,19 @@ static float ClampMotorDuty(float duty)
 #ifndef S_MODE_HOLD_DEADZONE_R
 #define S_MODE_HOLD_DEADZONE_R  760.0f
 #endif
+/* F10(06-07 04:29 第三组实测): U 弯回归应验——F9 850/880 把非 sm 深弯外轮一并加热
+ * (pivot 外轮 sent≈880+290=1170,03:30 清洁过 U 档为 800+pid≈1090):U 中段单帧翻边
+ * 乒乓(pos 5→60)+ 后 U 蛇摆丢线 + 边缘重捕连环 deep 自旋(yw +207→-306,净转 513°)。
+ * 加第三死区域:非 sm 的 deep pivot 用回 770/800(03:30 验证档);直线/浅弯保持
+ * 850/880 抗卡滞;S 配方 730/760 不动。选择器优先级 sm > deep > R3(START/HOLD),
+ * deep 滞回 1.9/1.5 防档位抖动。边际代价:压弯起步若首帧即 deep,发车死区 770<START
+ * 870(-100),由 F6a 发车窗 boost+100 部分补偿,留观。 */
+#ifndef U_DEEP_HOLD_DEADZONE_L
+#define U_DEEP_HOLD_DEADZONE_L  770.0f
+#endif
+#ifndef U_DEEP_HOLD_DEADZONE_R
+#define U_DEEP_HOLD_DEADZONE_R  800.0f
+#endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
 #endif
@@ -1340,10 +1353,15 @@ int main(void)
                  * 暴力踢出,把捞线甩成换边乒乓。sm 区轮子从 0 起动只用 HOLD(680/710)+pid
                  * (pivot 外轮 ~1030,19:49 成功量级);非 sm 区行为不变。 */
                 /* F5: sm 域独立 HOLD 档——S 配方与直线档解耦;H1 语义保持(sm 永不回 START)。 */
+                /* F10: 第三域——非 sm 深弯(U 族 pivot)外轮回 770/800(03:30 清洁过 U 档);
+                 * 优先级 sm > deep > R3(START/HOLD);deep 滞回 1.9/1.5 防档位抖动。 */
+                uint8_t f10_deep = (PID_GetDeepTurnMode() != 0) ? 1u : 0u;
                 float deadzone_l = g_s_mode ? S_MODE_HOLD_DEADZONE_L
-                                 : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L);
+                                 : (f10_deep ? U_DEEP_HOLD_DEADZONE_L
+                                 : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L));
                 float deadzone_r = g_s_mode ? S_MODE_HOLD_DEADZONE_R
-                                 : (g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R);
+                                 : (f10_deep ? U_DEEP_HOLD_DEADZONE_R
+                                 : (g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R));
                 float cmd_l = ClampClosedLoopDuty(g_motor_target_l);
                 float cmd_r = ClampClosedLoopDuty(g_motor_target_r);
                 /* D3(06-06 用户报告皱褶停转): 被命令运动(cmd>EPS)却近停(<3cps)的轮,死区前馈
