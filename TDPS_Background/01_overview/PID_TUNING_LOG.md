@@ -6789,3 +6789,46 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 4. 拔掉 ESP 或故意不发 `RESET_DONE`,按 K1 应不发车并显示 `WAIT ESP READY`;这项用于排除误启动。
 5. 协议门禁通过后再恢复跑图测试;跑图调参仍沿 F13 起点继续,不要把 ESP 握手失败误判为 PID/电机参数问题。
 ---
+
+### 07:25 F14 K1 不转电机复盘 - F15 默认取消 ESP READY 硬门控
+
+**用户现场问题**:刚烧 F14 后按 K1 电机完全不转,用户判断"都是你改的代码问题"。本轮按启动门控事故处理,不作为跑图/PID 参数样本。
+
+**串口完整归档**:
+- 原始串口完整 14,707 字节已保存:`TDPS_Background/01_overview/serial_raw_20260607_0718_k1_esp_gate_block_F14.txt`。
+- 可机读解析帧 67 行已保存:`TDPS_Background/01_overview/serial_parsed_20260607_0718_k1_esp_gate_block_F14.csv`,字段含 `time,L,R,T,out,pidL,pidR,sentL,sentR,pos,lost,deep,junc,jc,yw,u,sm,rd,sg,ar,rdir,s2,lt,rs,es,bv,el,er,S`。
+- 解析统计:有效运行帧 `T>0` 共 0/67;`maxT=0,maxOut=0,maxSent=0,0`;`es` 字段 0 行(说明现场烧录/捕获的版本未带最终 `es` 遥测,但已能看到 F14 新增的 `0x05 RESET` 二进制帧)。
+
+**串口对应代码版本**:
+- 测试输入版本:远端同步版本 `8ba334d feat: gate start on ESP reset done`,即 F14。该版本新增 ESP 启动握手,并在 K1 处强制 `ESP32_IsReadyToStart()` 才允许发车。
+- 本条落码后版本定义为 **F15**:不改 PID/速度/HOLD/占空比参数;只把 K1 的 ESP ready 硬门控改为可配置,当前默认不硬拦。
+
+**关键串口证据**:
+- 07:18:17.115 起连续遥测均为 `L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 el=0 er=0`。
+- 67 行解析帧中 `T>0` 为 0,`sentL/sentR` 最大值均为 0,说明主循环从未进入运行态,而不是进入运行后占空比不够。
+- 原始流中可见周期性 `type=0x05 RESET` 帧,说明 F14 的 ESP 启动握手逻辑已运行;但串口中未见对应 `RESET_DONE(0x22)` 进入 ready 的证据。
+- 因 F14 K1 代码为"未 ready 直接 break",所以现场按 K1 会显示/短暂显示 `WAIT ESP READY`,且不会设置 `is_racing=1`;电机自然完全不转。
+
+**当前代码表现/事故判定**:
+1. 这是 F14 的代码策略错误:把队友正式协议的 ESP ready 条件直接做成了当前调参默认硬门控。
+2. 当前底盘调参/PC 串口阶段,ESP 未接好或未回 `RESET_DONE` 都会把 K1 完全锁死;该锁死不应作为默认行为。
+3. 本轮不是 PID、Kd、HOLD、U_DEEP 或电机占空比问题;所有运行输出都保持 0。
+
+**落码 F15**:
+- `User/stm32f10x_conf.h`:新增 `ESP32_REQUIRE_READY_BEFORE_K1`。
+  - 默认 `0`:ESP 握手照常跑;若 ESP 已 `READY_TO_OK`,K1 先发 `OK`;若 ESP 未 ready,仍允许底盘启动。
+  - 置 `1`:恢复 F14 正式强门控,未收到 `RESET_DONE` 时 K1 拒绝发车。
+- `User/main.c`:K1 逻辑改为 `ESP32_IsReadyToStart()` 时发 `OK`;只有 `ESP32_REQUIRE_READY_BEFORE_K1=1` 且未 ready 时才 `WAIT ESP READY` 并 `break`。
+- 未改任何运动参数:F13/F14 的 `U_DEEP_HOLD 730/800`,主 HOLD `850/880`,S_MODE `730/760`,PID `40/0/550`,速度 `28/25/14` 全保持。
+
+**硬件条件与困难**:
+- 测试时 USART2/J5 正在输出 ESP 二进制帧,PC 端看到乱码是正常现象;但 ESP 侧未形成完整 `RESET_ACK/RESET_DONE/OK` 闭环。
+- 本轮车未进入运行态,不能评价轮胎松、地图褶皱、底盘低、U 弯差速或卡顿问题。
+- `bv` 在部分静止帧中出现 `66~110` 波动,可能夹杂上电/传感器全黑状态或采样条件变化;因 `T=0` 全程不作为动力证据。
+
+**F15 测试门禁**:
+1. 烧 F15 后不接 ESP 也应能按 K1 启动电机;遥测必须出现 `T=28` 与非零 `sent`。
+2. 若仍 `T=0 sent=0,0`,再查按键扫描/OLED 提示/是否烧到最新 commit,不再查 PID。
+3. 若 K1 后电机能转,回到 F13 U 弯测试链:先看 `pos=0/5,deep=1` 下 `R-L` 是否有 10~15cps 差速。
+4. 正式要和 ESP 联调时再把 `ESP32_REQUIRE_READY_BEFORE_K1` 改为 `1`,并要求 ESP 确实回 `RESET_DONE`。
+---

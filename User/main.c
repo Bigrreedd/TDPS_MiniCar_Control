@@ -1498,14 +1498,19 @@ int main(void)
 #if ESP32_ON_USART2
                 if (!ESP32_HasStarted())
                 {
-                    if (!ESP32_IsReadyToStart())
+                    if (ESP32_IsReadyToStart())
+                    {
+                        ESP32_SendOk();
+                    }
+#if ESP32_REQUIRE_READY_BEFORE_K1
+                    else
                     {
                         ESP32_ServiceStartup();
                         RGB_SetColor(RGB_COLOR_R);
                         OLED_ShowString(1, 1, "WAIT ESP READY  ");
                         break;
                     }
-                    ESP32_SendOk();
+#endif
                 }
 #endif
                 /* 单板:电机本地直驱，无远端心跳概念，K1 直接发车(电机在 PID 输出处使能)。 */

@@ -80,6 +80,12 @@
  *   注意：0x07 帧的内容源自遥测构建，置 1 时须保持 TELEMETRY_ON_USART2=1 不动。 */
 #define ESP32_ON_USART2   1
 
+/* K1 启动是否强制等待 ESP32 RESET_DONE:
+ *   =0 (当前调参默认): ESP 握手照常跑；若 ESP 已 READY，K1 先发 OK；若 ESP 未 READY，
+ *                      仍允许底盘启动，避免串口/ESP 未联调好时把电机完全锁死。
+ *   =1 (正式 ESP 联调/比赛门控): 未收到 RESET_DONE 时 K1 拒绝发车并提示 WAIT ESP READY。 */
+#define ESP32_REQUIRE_READY_BEFORE_K1  0
+
 /* 单板架构（2合1 单板 = 一颗 MCU 干完控制+电机驱动+编码器+风扇）：
  *   =1 (本分支 2in1-single): 电机本地 TIM1 直驱(Motor_ctr)、编码器本地 TIM3/TIM4 读(ABEncoder)、
  *                            风扇本地 TIM2_CH4(M3PWM)；删串口电机指令转发与远端编码器回传。
