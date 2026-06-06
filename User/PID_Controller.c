@@ -743,9 +743,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		}
 		}
 		/* decel_cap: 深弯模式内侧减速，否则正常前进(50)。
-		 * 12:00曾回退0(最大差速)，但"20不够过弯"的旧结论被滤波×0.2阈值bug污染
-		 * (12:24已修，阈值0.5)。用户确认深弯内轮不许完全停转 → 回到20重新地面验证。
-		 * 内轮托底由下方硬下限钳位完成(decel_cap仍=speed_output)，差速322→282(-12%)。 */
+		 * 06-07 F12: 悬空扫到最左/最右边路时,非 sm deep 直接 sent=0 再次被用户判定不可接受;
+		 * 仅 S-mode 保留内轮 coast 几何解,非 sm deep 恢复 20 爬行下限。 */
 		#define MIN_INNER_WHEEL_SPEED 20.0f
 		/* A1(06-06 用户拍板): sm 区深弯内轮允许干净停转——r15 几何唯一解:
 		 * 爬行档(20→sent600≈实测17cps)配外轮33cps → R≈(W/2)(vo+vi)/(vo−vi)≈26cm>15,
@@ -753,11 +752,12 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * U1(06-06 23:2X 双实测): D4 后爬行档=20+680=700 PWM≈实测26cps,配外轮40cps
 		 * → R≈37cm,U 弯(r≈20)几何不可达——两连跑均 U 弯入口(el≈158)外甩:
 		 * Run2 锁差速盘旋 197° 不复线 375 自停,Run1 楔住后弹射出图。
-		 * 死区仿射映射下内轮仅两档(任意 cmd>0 ≈≥24cps / cmd=0 coast),中间档不存在,
-		 * 停转授权从 sm 扩展到全部深弯(用户判"差速不够";06-05"内轮不许停转"裁定就此让位)。
+		 * 死区仿射映射下内轮仅两档(任意 cmd>0 ≈≥24cps / cmd=0 coast),中间档不存在。
+		 * F12 将 coast 授权收回到 sm 域:U/普通深弯不再直接停内轮,防悬空边路测试和浅弯边缘
+		 * 被 deep 触发后单轮 0;若 U 弯半径变宽,按 D5 只退 U_DEEP 或复核 F12,不动 PID。
 		 * 安全:CLOSED_LOOP_REVERSE_ENABLE=1 下负值会经 ApplyDeadzone 放大成反向脉冲
-		 * (12:55 Run1 同族)——min_inner=0 同时把 wheel_balance 负摄动钳到 0,不得绕过本钳。 */
-		float min_inner = (g_s_mode || g_deep_turn_mode) ? 0.0f : MIN_INNER_WHEEL_SPEED;
+		 * (12:55 Run1 同族)——min_inner 仅做非负托底,不得绕过本钳。 */
+		float min_inner = g_s_mode ? 0.0f : MIN_INNER_WHEEL_SPEED;
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
 		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
 		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */

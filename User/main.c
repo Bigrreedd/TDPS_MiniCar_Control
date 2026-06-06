@@ -1235,6 +1235,7 @@ int main(void)
                         g_sm_cnt_base = rd_avg;
                         g_sm_stable_run = 0;
                         g_sm_latch_src = 4;    /* F8: R5 re-arm(S②域) */
+                        g_sm_rel_src = 0;      /* 05:13: S②重新锁存后释放源重置,防复盘误读S① rs */
 #endif
                         OLED_ShowString(1, 1, "RD DONE         ");
                     }
