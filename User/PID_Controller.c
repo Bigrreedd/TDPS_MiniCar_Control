@@ -43,8 +43,10 @@ extern BlackPointResult_t result_BlackPoint;
 #ifndef BENCH_FIXED_SPEED_ENABLE
 #define BENCH_FIXED_SPEED_ENABLE 1
 #endif
+/* E1(06-06 用户拍板): 20→25——赛道凹凸托底处用惯性冲过(用户选择,替代机械整改)。
+ * 动能 +56%;S 弯域(S_MODE 14/丢线 12)不动;U 弯差速比随外轮同升反而略紧,安全。 */
 #ifndef BENCH_FIXED_TARGET_CPS
-#define BENCH_FIXED_TARGET_CPS 20.0f
+#define BENCH_FIXED_TARGET_CPS 25.0f
 #endif
 #ifndef SPEED_PID_MIN_OUTPUT
 /* 110→70(06-05 第9轮): 110在亏电电池上定，满电时=43cps把速度环钉死在2.2×目标。
@@ -358,11 +360,23 @@ static float g_speed_output = 0.0f;
 static uint16_t g_line_lost_ticks = 0;
 /* 丢线寻线：保存上次有效修正值 */
 static float g_last_valid_correction = 0.0f;
+/* A2(06-06): sm区丢线再捕获去抖——连续 found 确认计数 */
+static uint16_t g_reacq_run = 0;
+/* A2b(06-06): 最近一次"线在边缘"的方向记忆(+1=右缘/-1=左缘/0=无)——sm 丢线找回用。
+ * 19:21 实测:S 拐换边瞬间丢线时修正恰好过零,A2 锁 last_valid≈14 形同直行白丢。 */
+static int8_t g_last_edge_side = 0;
+/* A2c(06-06): 再捕获宽限计数——sm 丢线锁向后刚找回线的 ~100ms 内限幅修正+禁深弯,
+ * 让车"滚上线"。19:30 实测乒乓极限环:catch→边缘大误差立即反向全幅 pivot→冲过线再丢,
+ * 四拐过了三个半全靠运气性收敛。 */
+static uint16_t g_reacq_grace = 0;
 /* 深弯模式滞回状态：1=内侧轮停转模式。误差≥进入阈值置1，≤退出阈值清0，
  * 掐断弯道边缘质心量化噪声(4.19↔4.54)导致的内侧轮768↔0颤振。 */
 static uint8_t g_deep_turn_mode = 0;
 #ifndef PID_LINE_LOST_STOP_TICKS
 #define PID_LINE_LOST_STOP_TICKS 375u  /* 750ms @ 500Hz control tick */
+#endif
+#ifndef REACQ_CONFIRM_TICKS
+#define REACQ_CONFIRM_TICKS 25u  /* A2(06-06): 再捕获连续确认帧数(50ms@500Hz),滤甩头单帧扫过相邻S线段的假捕获 */
 #endif
 /* 当前速度环实际使用的目标(cnt/s)——暴露给调试遥测。
  * 在 BENCH_FIXED_SPEED_ENABLE 下可能与 Path_GetTargetSpeed() 不同。 */
@@ -387,15 +401,31 @@ void PID_Control_Update(void)
 			SpeedPID_Reset(&g_speed_pid);
 			PositionPID_Reset(&g_position_pid);
 			g_deep_turn_mode = 0;   /* 停车清深弯模式,避免重启残留 */
+			g_reacq_run = 0;        /* A2 去抖状态同清 */
+			g_last_edge_side = 0;   /* A2b 边缘记忆同清 */
+			g_reacq_grace = 0;      /* A2c 宽限同清 */
 			Motor_StopAll();
 			g_motor_target_l = 0.0f;
 			g_motor_target_r = 0.0f;
 			return;
 		}
-	    /* 丢线计数更新（寻线策略延后到位置环计算后） */
+	    /* 丢线计数更新（寻线策略延后到位置环计算后）
+	     * A2(06-06 用户批准): sm区深丢线(>250ms)后,甩头单帧扫过S弯相邻线段会瞬间翻转
+	     * 修正方向(17:07 波浪换边实测)——再捕获需连续 REACQ_CONFIRM_TICKS 帧 found 才
+	     * 解除丢线;确认期内 g_line_lost_ticks 冻结在 >125,下方 A2 锁向分支继续生效。 */
 	    if (result_BlackPoint.found) {
-		g_line_lost_ticks = 0;
+		if (g_s_mode && g_line_lost_ticks > 125u) {
+		    g_reacq_run++;
+		    if (g_reacq_run >= REACQ_CONFIRM_TICKS) {
+			g_line_lost_ticks = 0;   /* 去抖通过,正式解除丢线 */
+			g_reacq_run = 0;
+		    }
+		} else {
+		    g_line_lost_ticks = 0;
+		    g_reacq_run = 0;
+		}
 	    } else {
+		g_reacq_run = 0;
 		g_line_lost_ticks++;
 		// 清零积分，防止丢线期间错误累积
 		g_position_pid.integral = 0.0f;
@@ -410,6 +440,11 @@ void PID_Control_Update(void)
 		float raw_err = current_position - center;
 		float ae = fabsf(raw_err);
 		g_raw_abs_err = ae;   /* 存原始误差幅度,供内侧轮自适应减速用(非放大后) */
+		/* A2b: found 且线到边缘(|raw_err|≥1.5)时记忆方向,供 sm 丢线找回 */
+		if (result_BlackPoint.found) {
+			if (raw_err >= 1.5f)       g_last_edge_side = 1;
+			else if (raw_err <= -1.5f) g_last_edge_side = -1;
+		}
 		float gain = 1.232f - 0.686f * ae + 0.564f * ae * ae;
 		current_position = center + raw_err * gain;
 	    }
@@ -417,6 +452,7 @@ void PID_Control_Update(void)
 #if POSITION_LOOP_ENABLE && (!BENCH_FIXED_SPEED_ENABLE || BENCH_POSITION_TEST_ENABLE)
     {
     static uint8_t s_prev_junction = 0;
+    static uint8_t s_prev_a2hold = 0;
     if (result_BlackPoint.is_junction) {
         /* 路口/岔路：旁路位置环，强制走直(correction=0)。
          * 关键:不调用 PositionPID_Calculate → 环内 last_error/d_filtered 冻结在进路口前的值，
@@ -425,18 +461,39 @@ void PID_Control_Update(void)
          * 深弯滞回在下方按 !is_junction 冻结(路口宽黑会把 raw_abs_err 顶到~2.5+误触发内侧停转)。 */
         position_correction = 0.0f;
         s_prev_junction = 1;
+    } else if (g_s_mode && g_line_lost_ticks > 125u) {
+        /* A2(06-06 用户批准): sm 区深丢线/再捕获确认期——锁向:按最后所见侧持续修正
+         * 直至再捕获,替代旧"冻结质心上的全增益PID"(甩头扫过相邻S线段单帧翻向=波浪换边源)。
+         * A2b 升级(19:21 实测): 优先朝"最后所见边缘"方向满幅找线——S 拐换边瞬间丢线时
+         * 修正恰好过零,锁 last_valid≈0 形同直行;边缘记忆指向线的真实退出侧。
+         * 位置环状态冻结,last_valid 不被陈旧质心覆写;解除时走下方 D 软启动。 */
+        if (g_last_edge_side != 0)
+            position_correction = (float)g_last_edge_side * 320.0f;
+        else
+            position_correction = g_last_valid_correction;
+        s_prev_a2hold = 1;
     } else {
-        if (s_prev_junction) {
-            /* R5(06-05 审查): 路口退出首帧 D 软启动——对齐 last_error 使本帧 d_raw=0，
+        if (s_prev_junction || s_prev_a2hold) {
+            /* R5(06-05 审查): 路口/A2锁向退出首帧 D 软启动——对齐 last_error 使本帧 d_raw=0，
              * 消除冻结期线位移造成的一次性 D 踢(原本有界但无谓,α=0.4 衰 3~4 帧)。 */
             g_position_pid.last_error = current_position - g_position_pid.param.target_position;
             s_prev_junction = 0;
+            if (s_prev_a2hold) g_reacq_grace = 50u;   /* A2c: 锁向找回后给 100ms 滚上线宽限 */
+            s_prev_a2hold = 0;
         }
         // 2. 位置环计算（输出偏差值）
         position_correction = PositionPID_Calculate(&g_position_pid, current_position);
 
         // 保存有效修正值（供丢线寻线使用）
         g_last_valid_correction = position_correction;
+
+        /* A2c: 宽限期内修正限幅 ±150——刚从锁向找回线,边缘大误差不许立即反向全幅,
+         * 先以缓和差速滚上线;last_valid 保存未限幅值(再丢线时锁向仍走边缘记忆)。 */
+        if (g_s_mode && g_reacq_grace > 0u) {
+            g_reacq_grace--;
+            if (position_correction > 150.0f) position_correction = 150.0f;
+            else if (position_correction < -150.0f) position_correction = -150.0f;
+        }
 
 #if BENCH_FIXED_SPEED_ENABLE && BENCH_POSITION_TEST_ENABLE
         if (position_correction > BENCH_POSITION_TEST_CORRECTION_LIMIT) {
@@ -478,8 +535,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			i_speed = g_s_mode ? S_MODE_TARGET_CPS : (float)BENCH_FIXED_TARGET_CPS;
 
 			// 丢线时降速：给更多时间重新找线（S-mode 下再低一档）
+			// E1: 非 sm 丢线档 18→22 随基准等比上调;sm 域 12 不动
 			if (!result_BlackPoint.found && g_line_lost_ticks > 10u) {
-				i_speed = g_s_mode ? 12.0f : 18.0f;
+				i_speed = g_s_mode ? 12.0f : 22.0f;
 			}
 #else
 			i_speed = Path_GetTargetSpeed();
@@ -569,18 +627,33 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 退到1.5才恢复,中间抖动不切换,内侧稳定停转→稳定绕转而非甩头。
 		 * 路口冻结:is_junction 时不评估进/退阈值,保持进路口前的模式。
 		 * 否则交叉/T字宽黑会把 g_raw_abs_err 顶到~2.5+(过1.9)误触发内侧停转→车头窜向支线。 */
-		if (!result_BlackPoint.is_junction) {
-			if (g_raw_abs_err >= 1.9f) {
+		/* 阶梯②(06-06): sm 区深弯滞回提前 1.9/1.5→1.7/1.2(06-05 既定阶梯第②级)——
+		 * 交替 S 拐反应更早,减少过渡处线滑出视场;sm 限定,U 弯/常规弯滞回不变。 */
+		{
+		float deep_enter = g_s_mode ? 1.7f : 1.9f;
+		float deep_exit  = g_s_mode ? 1.2f : 1.5f;
+		if (g_s_mode && g_reacq_grace > 0u) {
+			g_deep_turn_mode = 0;   /* A2c 宽限:禁深弯 pivot,缓差速滚上线 */
+		} else if (!result_BlackPoint.is_junction) {
+			if (g_raw_abs_err >= deep_enter) {
 				g_deep_turn_mode = 1;   /* 进入深弯:内侧轮停转 */
-			} else if (g_raw_abs_err <= 1.5f) {
+			} else if (g_raw_abs_err <= deep_exit) {
 				g_deep_turn_mode = 0;   /* 退出深弯:内侧轮恢复前进 */
 			}
+		}
 		}
 		/* decel_cap: 深弯模式内侧减速，否则正常前进(50)。
 		 * 12:00曾回退0(最大差速)，但"20不够过弯"的旧结论被滤波×0.2阈值bug污染
 		 * (12:24已修，阈值0.5)。用户确认深弯内轮不许完全停转 → 回到20重新地面验证。
 		 * 内轮托底由下方硬下限钳位完成(decel_cap仍=speed_output)，差速322→282(-12%)。 */
 		#define MIN_INNER_WHEEL_SPEED 20.0f
+		/* A1(06-06 用户拍板): sm 区深弯内轮允许干净停转——r15 几何唯一解:
+		 * 爬行档(20→sent600≈实测17cps)配外轮33cps → R≈(W/2)(vo+vi)/(vo−vi)≈26cm>15,
+		 * 必丢线(17:06/17:07 双实测,降速到 T=14 仍丢);停转 → 绕内轮 R≈6.5cm,裕度≥33%。
+		 * 非 sm 区维持 20(06-05"内轮不许停转"裁定对 U 弯/常规弯不变)。
+		 * 安全:CLOSED_LOOP_REVERSE_ENABLE=1 下负值会经 ApplyDeadzone 放大成反向脉冲
+		 * (12:55 Run1 同族)——min_inner=0 同时把 wheel_balance 负摄动钳到 0,不得绕过本钳。 */
+		float min_inner = g_s_mode ? 0.0f : MIN_INNER_WHEEL_SPEED;
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
 		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
 		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */
@@ -593,9 +666,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			outer_accel = position_correction;  /* 外侧全额加速 */
 			left_output  = speed_output + outer_accel + wheel_balance;
 			right_output = speed_output - inner_decel - wheel_balance;
-			/* 深弯双保险：内侧轮硬下限，防止低速时 decel_cap 下限90仍让内轮过低 */
-			if (g_deep_turn_mode && right_output < MIN_INNER_WHEEL_SPEED) {
-				right_output = MIN_INNER_WHEEL_SPEED;
+			/* 深弯双保险：内侧轮硬下限(A1: sm区=0 干净停转,非sm=20 爬行) */
+			if (g_deep_turn_mode && right_output < min_inner) {
+				right_output = min_inner;
 			}
 		} else {
 			/* correction<0：左轮内侧(减速)，右轮外侧(加速)，车头左转 */
@@ -603,9 +676,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			outer_accel = -position_correction;
 			left_output  = speed_output - inner_decel + wheel_balance;
 			right_output = speed_output + outer_accel - wheel_balance;
-			/* 深弯双保险：内侧轮硬下限 */
-			if (g_deep_turn_mode && left_output < MIN_INNER_WHEEL_SPEED) {
-				left_output = MIN_INNER_WHEEL_SPEED;
+			/* 深弯双保险：内侧轮硬下限(A1: sm区=0 干净停转,非sm=20 爬行) */
+			if (g_deep_turn_mode && left_output < min_inner) {
+				left_output = min_inner;
 			}
 		}
 	    }

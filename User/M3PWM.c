@@ -42,7 +42,7 @@ void M3PWM_Init(void)
     TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;    // PWM模式1
     TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;  // 输出使能
     TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Disable;  // 互补输出禁用
-    TIM_OCInitStructure.TIM_Pulse = 2117;                // CCR值，决定PWM占空比 (50% = 4234/2)
+    TIM_OCInitStructure.TIM_Pulse = 0;                   // CCR初始0(原2117=50%——消除TIM使能后到SetDutyCycle(0)间的50%输出窗口)
     TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;  // 输出极性为高
     TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_High;  // 互补输出极性
     TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Reset;  // 空闲状态输出
@@ -67,8 +67,8 @@ void M3PWM_SetDutyCycle(uint16_t duty)
 {
     uint16_t compare_value;
 
-    // 限制占空比范围
-    if(duty > 1000) duty = 1000;
+    // 限制占空比范围: C0(06-06) 底层无条件硬钳(原裸钳1000=100%,缺口见 M3PWM.h 注释)
+    if(duty > FAN_DUTY_ABS_CAP) duty = FAN_DUTY_ABS_CAP;
 
     g_pwm_duty_cycle = duty;
 
@@ -78,6 +78,20 @@ void M3PWM_SetDutyCycle(uint16_t duty)
     // 设置比较值
     TIM_SetCompare4(TIM2, compare_value);
 }
+
+#if FAN_KICK_DIAG_ENABLE
+/**
+ * @brief  起转诊断专用占空比入口(C3-kick 06-06)
+ * @note   独立钳 150(15%),绕过常规 50 硬钳——仅允许 main.c K4 kick 路径调用,
+ *         且调用方保证 150 暴露 ≤200ms(控制tick 在 200ms 处经常规入口回落 50)。
+ */
+void M3PWM_SetDutyCycleKickDiag(uint16_t duty)
+{
+    if(duty > 150) duty = 150;
+    g_pwm_duty_cycle = duty;
+    TIM_SetCompare4(TIM2, (uint16_t)((uint32_t)(TIM2->ARR + 1) * duty / 1000));
+}
+#endif
 
 /**
  * @brief  启动PWM输出

@@ -80,11 +80,15 @@ static float ClampMotorDuty(float duty)
  * 左右分别配置以补偿起步摩擦不对称(右轮更难起步)。
  * 命令绝对值低于 EPS 视为停车(返回 0)，避免 0 附近抖动与静止蠕行。
  * 上车微调：某轮起步偏迟就调高对应 DEADZONE；起步窜得猛就调低。 */
+/* D1(06-06 用户授权): START 820/940 → 870/990 对称+50。旧红线"START 不动"标定于旧机械；
+ * 今日车体结构改动(摩擦+自重双增)后 19:03 实测中途双轮停转 1.2s——sent 941/1096(START档)
+ * 仍拉不动,直到差速尖峰 1284 才破粘。+50 是缓解;若再现 >1s 双轮停转,下一级=停转踢腿逻辑(待批)。
+ * 不对称 120 保持。 */
 #ifndef MOTOR_START_DEADZONE_L
-#define MOTOR_START_DEADZONE_L  820.0f
+#define MOTOR_START_DEADZONE_L  870.0f
 #endif
 #ifndef MOTOR_START_DEADZONE_R
-#define MOTOR_START_DEADZONE_R  940.0f
+#define MOTOR_START_DEADZONE_R  990.0f
 #endif
 /* HOLD 760/880→640/760(06-05 第10轮): 旧值标定于亏电电池，满电下该前馈自身
  * 即推车到~38cps，速度环(floor=70)只能上行无法下调，T=20物理不可达。
@@ -99,11 +103,16 @@ static float ClampMotorDuty(float duty)
 /* HOLD_R 640→610(06-05 第13轮): S弯=30~50cm波浪交替弯,要求左右pivot对称；
  * 实测右196/左253——剩余不对称60还在吃右转,第一个右拐贴不住线(U弯左侧253零丢线
  * 已验证成功线)。不对称60→30: 右226/左223,两侧都到成功线90%。START不动。 */
+/* B(06-06): 车体结构改动→底板蹭地摩擦增大,巡航低位已见瞬时停转帧(17:07:51 L=0@sent840
+ * 靠 R3 滞回踢回)。用户授权"+3%"防停转,技术落点=HOLD 对称+30 → 610/640(全局加成会被
+ * 速度闭环回吐,无效)。START 820/940 不动(两组上图发车实测正常)。不够再+30 迭代。 */
+/* D2(06-06 用户授权,继 B +30 后再 +30): 610/640 → 640/670——19:03 实测巡航低位 L/R 间歇
+ * 掉到 10~13cps,自重增大后保持档余量仍紧。不对称 30 保持。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   580.0f
+#define MOTOR_HOLD_DEADZONE_L   640.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   610.0f
+#define MOTOR_HOLD_DEADZONE_R   670.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
@@ -119,6 +128,18 @@ static float ClampMotorDuty(float duty)
 #endif
 static uint8_t g_dz_hold_l = 0;   /* 1=左轮处于 HOLD 死区档 */
 static uint8_t g_dz_hold_r = 0;
+static float g_stall_boost_l = 0.0f;  /* D3(06-06): 皱褶停转踢腿——按轮自适应死区上浮量 */
+static float g_stall_boost_r = 0.0f;
+#if SINGLE_BOARD_LOCAL_DRIVE && !FAN_KICK_DIAG_ENABLE
+/* C1(06-06 用户批准): 风扇起转阶梯点动——K4 每按推进 20/35/50 档,点动 2s 自动归零;
+ * K2 强停同时灭风扇。全程受 M3PWM 底层 FAN_DUTY_ABS_CAP=50 硬钳兜底(C0)。
+ * 目的:实测最低起转占空比(5%≈0.6V 对 130 类有刷电机临界,只能实验定)。 */
+static const uint16_t g_fan_ladder[3] = {20u, 35u, 50u};
+static uint8_t  g_fan_step = 0u;
+#endif
+#if SINGLE_BOARD_LOCAL_DRIVE
+static uint16_t g_fan_spot_ticks = 0u;   /* >0=点动进行中,2ms tick 递减 */
+#endif
 #ifndef MOTOR_CMD_EPS
 #define MOTOR_CMD_EPS     0.1f
 #endif
@@ -136,6 +157,7 @@ static uint8_t g_dz_hold_r = 0;
 #endif
 static float   g_yaw_zero = 0.0f;       /* K1 发车时的 add_angle 基准(rad) */
 volatile uint8_t g_u_turn_passed = 0;   /* 1=本次运行已完成 ~180° 航向变化(PID_Controller 读) */
+static uint8_t g_jc_at_u = 0;           /* S1(06-06): u 锁存时刻的 jc 基线——sm 触发加固用 */
 /* S-mode(06-05 用户方案)：过第二个 Y 后锁存——jc≥2 且 u=1，路标链 Y1→U→Y2 在本路线唯一，
  * 触发点距 S 弯 ~1.5m(@20cps 约 5s 直线)。效果只降速不动转向：target 20→14、
  * floor 70→50、浅弯 cap 50→30(失速裕度 20 不变)。K1 清零 → S 入口直接发车不会触发。
@@ -625,6 +647,9 @@ int main(void)
     Motor_Disable();           /* 开机电机禁用，K1 发车再使能 */
     ABEncoder_Init();          /* TIM3 PA6/7 右轮 + TIM4 PB6/7 左轮 */
     M3PWM_Init();
+    /* C2(06-06): 17kHz@2/3.5/5% 三档实测不起转(有声/无温升)。降频 2kHz——电流纹波
+     * 峰值更高破粘滑,平均占空比不变(仍受 ABS_CAP=50 硬钳);点动期间可闻啸叫=正常。 */
+    M3PWM_SetFrequency(2000);
     M3PWM_Start();
     M3PWM_SetDutyCycle(0);     /* 风扇开机 0%，底层 ABS_CAP 兜底 */
 #endif
@@ -677,6 +702,19 @@ int main(void)
         if (g_control_tick)
         {
             g_control_tick = 0;
+
+#if SINGLE_BOARD_LOCAL_DRIVE
+            /* C1: 风扇点动倒计时,到时自动归零(底层硬钳兜底) */
+            if (g_fan_spot_ticks > 0u)
+            {
+                g_fan_spot_ticks--;
+#if FAN_KICK_DIAG_ENABLE
+                /* C3-kick: 150 仅打 200ms(前 100 tick),之后经常规入口回落 50 保持 */
+                if (g_fan_spot_ticks == 900u) M3PWM_SetDutyCycle(50);
+#endif
+                if (g_fan_spot_ticks == 0u) M3PWM_SetDutyCycle(0);
+            }
+#endif
 
 #if SINGLE_BOARD_LOCAL_DRIVE
             /* 单板:本地编码器采样+换算(替代远端 OnEncFeedback 心跳)。每 tick 先更新，
@@ -744,12 +782,21 @@ int main(void)
             {
                 float dyaw_latch = (add_angle - g_yaw_zero) * 57.2957795f;
                 if (dyaw_latch < 0.0f) dyaw_latch = -dyaw_latch;
-                if (dyaw_latch >= U_TURN_YAW_LATCH_DEG) g_u_turn_passed = 1;
+                if (dyaw_latch >= U_TURN_YAW_LATCH_DEG && !g_u_turn_passed)
+                {
+                    g_u_turn_passed = 1;
+                    /* S1: 记录 u 锁存时刻的 jc 基线，供"U 后新增路口"判据 */
+                    g_jc_at_u = result_BlackPoint.junction_pass_count;
+                }
             }
 
             // S-mode 锁存：jc≥2 且 u=1 = 已过第二个 Y，S 弯在前方 ~1.5m
+            // S1(06-06): 触发加固——19:03 实测发车没压起跑线时 jc 只到 1(Y2 给的)，
+            // 旧判据 jc≥2 凑不满 → sm 不触发 → A1/A2 全程未上场。加 OR 支路:
+            // "u 锁存后 jc 有新增"(U 后第一个路口=Y2，对摆位鲁棒)。两判据任一命中即锁存。
             if (!g_s_mode && is_racing && g_u_turn_passed &&
-                result_BlackPoint.junction_pass_count >= 2u)
+                (result_BlackPoint.junction_pass_count >= 2u ||
+                 result_BlackPoint.junction_pass_count > g_jc_at_u))
             {
                 g_s_mode = 1;
             }
@@ -797,8 +844,31 @@ int main(void)
                 else             { if (speed_right > MOTOR_HOLD_ENTER_CPS) g_dz_hold_r = 1; }
                 float deadzone_l = g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
                 float deadzone_r = g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
-                float duty_l = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_l), deadzone_l);
-                float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), deadzone_r);
+                float cmd_l = ClampClosedLoopDuty(g_motor_target_l);
+                float cmd_r = ClampClosedLoopDuty(g_motor_target_r);
+                /* D3(06-06 用户报告皱褶停转): 被命令运动(cmd>EPS)却近停(<3cps)的轮,死区前馈
+                 * 自适应上浮(+4/tick,~125ms 到顶,封顶 +250);恢复(>12cps)或命令归零后快退(-8/tick)。
+                 * 动机:赛道皱褶处 START 档(870/990)仍拉不动,R3 选择器只在两档间切换无更高档,
+                 * 速度环增量(+5/帧)爬坡太慢(19:03 实测 1.2s)。按轮独立、有界、自清;
+                 * sm 深弯内轮 cmd=0 天然不踢;上限受 ClampMotorDutyFinal/下层 SAFE_MAX 双重兜底。 */
+                /* D3b(06-06): 两段爬升——0→250 快(+4/tick,~125ms,应对皱褶瞬滞);
+                 * 250→600 慢(+1/tick,再~350ms)=脱困档(19:38 实测托底搁浅:sent 1561 双轮仍
+                 * 0cps/el·er 冻结,250 封顶不够;600 后叠加 pid 由 FINAL_CAP 1990 钳住=固件极限)。
+                 * 搁浅根因是机械(底盘托底),本档只买"能自己蹭下来"的概率,主修在机械侧。 */
+                if (is_racing && cmd_l > MOTOR_CMD_EPS && speed_left < 3 && speed_left > -3) {
+                    g_stall_boost_l += (g_stall_boost_l < 250.0f) ? 4.0f : 1.0f;
+                    if (g_stall_boost_l > 600.0f) g_stall_boost_l = 600.0f;
+                } else if (speed_left > 12 || !is_racing || cmd_l <= MOTOR_CMD_EPS) {
+                    g_stall_boost_l -= 8.0f; if (g_stall_boost_l < 0.0f) g_stall_boost_l = 0.0f;
+                }
+                if (is_racing && cmd_r > MOTOR_CMD_EPS && speed_right < 3 && speed_right > -3) {
+                    g_stall_boost_r += (g_stall_boost_r < 250.0f) ? 4.0f : 1.0f;
+                    if (g_stall_boost_r > 600.0f) g_stall_boost_r = 600.0f;
+                } else if (speed_right > 12 || !is_racing || cmd_r <= MOTOR_CMD_EPS) {
+                    g_stall_boost_r -= 8.0f; if (g_stall_boost_r < 0.0f) g_stall_boost_r = 0.0f;
+                }
+                float duty_l = ApplyDeadzone(cmd_l, deadzone_l + g_stall_boost_l);
+                float duty_r = ApplyDeadzone(cmd_r, deadzone_r + g_stall_boost_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
                 g_sent_motor_r = (int16_t)ClampMotorDutyFinal(duty_r);
 #if SINGLE_BOARD_LOCAL_DRIVE
@@ -877,6 +947,7 @@ int main(void)
                 BlackPoint_Finder_ResetLastPosition();
                 g_yaw_zero = add_angle;     /* 航向基准清零：U 弯判定从发车起算 */
                 g_u_turn_passed = 0;
+                g_jc_at_u = 0;              /* S1 基线同清 */
                 g_s_mode = 0;
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
@@ -884,6 +955,10 @@ int main(void)
             case KEY_K2:
                 // K2: 停止运行
                 StopRun();
+#if SINGLE_BOARD_LOCAL_DRIVE
+                g_fan_spot_ticks = 0u;       /* C1: K2 一键全停含风扇 */
+                M3PWM_SetDutyCycle(0);
+#endif
                 RGB_SetColor(RGB_COLOR_R);
                 OLED_ShowString(1, 1, "STOP K2         ");
                 break;
@@ -894,11 +969,35 @@ int main(void)
                 /* R4(06-05 审查): 复位语义补全——旧 K3 清 jc 不清 yaw/u/sm(半清不一致) */
                 g_yaw_zero = add_angle;
                 g_u_turn_passed = 0;
+                g_jc_at_u = 0;              /* S1 基线同清 */
                 g_s_mode = 0;
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
             case KEY_K4:
+#if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE
+                /* C3-kick(06-06 诊断构建): 17kHz/2kHz 全梯 ≤5% 均不起转(有声/声随占空比
+                 * 增大/无温升=驱动链活,纯起转力矩不足)。单次有界 kick: 150(15%) 仅 200ms
+                 * → 控制tick 自动回落 50 保持到 2s。进行中忽略重按,150 暴露严格 ≤200ms。 */
+                if (g_fan_spot_ticks == 0u)
+                {
+                    M3PWM_SetDutyCycleKickDiag(150);
+                    g_fan_spot_ticks = 1000u;    /* 2s 总窗:150×200ms + 50×1800ms */
+                    OLED_ShowString(1, 1, "FAN KICK150+50  ");
+                }
+#elif SINGLE_BOARD_LOCAL_DRIVE
+                /* C1: 风扇起转阶梯点动 20→35→50 循环,每按 2s 自动归零 */
+                {
+                    uint16_t fan_duty = g_fan_ladder[g_fan_step];
+                    g_fan_step = (uint8_t)((g_fan_step + 1u) % 3u);
+                    g_fan_spot_ticks = 1000u;    /* 2s @ 2ms tick */
+                    M3PWM_SetDutyCycle(fan_duty);
+                    if (fan_duty == 20u)      OLED_ShowString(1, 1, "FAN SPOT 20 2s  ");
+                    else if (fan_duty == 35u) OLED_ShowString(1, 1, "FAN SPOT 35 2s  ");
+                    else                      OLED_ShowString(1, 1, "FAN SPOT 50 2s  ");
+                }
+#else
                 OLED_ShowString(1, 1, "KEY=K4          ");
+#endif
                 break;
             }
 #endif
