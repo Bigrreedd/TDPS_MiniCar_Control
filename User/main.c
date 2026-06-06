@@ -264,6 +264,9 @@ static uint8_t  g_finish_armed = 0;    /* P1 已触发锁存 */
 #ifndef NAVSEG_T2_FORCE_LATCH
 #define NAVSEG_T2_FORCE_LATCH     1   /* T2 兜底:u后里程过上界仍未锁sm→强制锁(治Y2骑岔漏检断粮) */
 #endif
+#ifndef NAVSEG_U3_DEEP_LATCH
+#define NAVSEG_U3_DEEP_LATCH      1   /* U3(06-07 03:30 实测):Y2漏检时用S弧deep结构签名锁sm,早于T2接管 */
+#endif
 #ifndef NAVSEG_T3_FORCE_RELEASE
 #define NAVSEG_T3_FORCE_RELEASE   1   /* T3/P9 兜底:sm里程强制释放(稳线窗死锁/早释放双模通吃) */
 #endif
@@ -276,7 +279,9 @@ static uint8_t  g_finish_armed = 0;    /* P1 已触发锁存 */
 #endif
 #define RD_DEFAULT_DIR            1   /* 雷达 UNKNOWN/2s超时默认过侧:+1=左过(06-06 拍板)。
                                        * map-route 镜像敏感表:全固件唯一硬编码方向——赛道若镜像只翻此处。 */
-#define DOWN_FORCE_LATCH_CNT    200   /* T2 上界: u锁存后 ~494cm(下行345cm+余量),P0a 回填 */
+#define DOWN_FORCE_LATCH_CNT    200   /* T2 上界: u锁存后 ~480cm 轮程(03:24 刻度2.4),最终兜底保持 */
+#define SM_DEEP_MIN_CNT          60   /* U3 里程下界: 排除U尾deep(实测Δ<40);S入口实测Δ87~134 */
+#define SM_DEEP_CONFIRM_TICKS    25   /* U3 持续门: deep 连续50ms,滤褶皱单帧踢 */
 #define SM_EXIT_FORCE_CNT       240   /* T3 上界: sm锁存后 ~593cm(=3.2×S①几何76cnt,<RD下界380不挡T4),P0a 回填 */
 #define FINISH_FROM_S2_CNT      110   /* R2 兜底(06-07 skeptic 验收修正): 出箱重捕(≈1929cm)→终点(≈2178cm)
                                        * =下行75+S②124+终段50≈249cm≈101cnt@2.47,取110留9cnt余量。
@@ -292,6 +297,8 @@ enum { NAVSEG_START = 0, NAVSEG_U, NAVSEG_SERP1, NAVSEG_AFTER_ARCH1,
 static uint8_t  g_navseg = NAVSEG_START;
 static uint8_t  g_s2_active = 0;       /* R5: S胶囊②域标志;g_s_mode_done 语义自此="S①已完成" */
 static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(强制锁里程锚) */
+static uint16_t g_u3_deep_run = 0;     /* U3: u后(里程门内)deep 连续 tick 计数 */
+static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250tick=500ms) */
 
 static float ApplyDeadzone(float duty, float deadzone)
 {
@@ -936,6 +943,23 @@ int main(void)
                 }
             }
 
+#if NAVSEG_U3_DEEP_LATCH
+            /* U3(06-07 03:30 实测): Y2 骑岔漏检(jc 全程=1)致 sm 迟到 T2(Δ201)才锁,
+             * S① 前两弧以 25cps+主 HOLD 裸跑。S 弧必触 deep——用结构签名提前接管:
+             * u 后 Δ≥60cnt(排除 U 尾 deep,实测 Δ<40;S 入口实测 Δ87~134)且 deep 持续
+             * 50ms → 锁 sm。优先级: jc 自然判据 > U3 结构签名 > T2 里程上界(签名>里程)。 */
+            if (is_racing && g_u_turn_passed && !g_s_mode && !g_s_mode_done &&
+                PID_GetDeepTurnMode() &&
+                ((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_u_cnt_base) >= SM_DEEP_MIN_CNT)
+            {
+                if (g_u3_deep_run < 0xFFFFu) g_u3_deep_run++;
+            }
+            else
+            {
+                g_u3_deep_run = 0;
+            }
+#endif
+
             // S-mode 锁存：jc≥2 且 u=1 = 已过第二个 Y，S 弯在前方 ~1.5m
             // S1(06-06): 触发加固——19:03 实测发车没压起跑线时 jc 只到 1(Y2 给的)，
             // 旧判据 jc≥2 凑不满 → sm 不触发 → A1/A2 全程未上场。加 OR 支路:
@@ -948,6 +972,16 @@ int main(void)
                 g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);  /* P9: 里程基准 */
                 g_sm_stable_run = 0;
             }
+#if NAVSEG_U3_DEEP_LATCH
+            else if (!g_s_mode && !g_s_mode_done && is_racing && g_u_turn_passed &&
+                     g_u3_deep_run >= SM_DEEP_CONFIRM_TICKS)
+            {
+                g_s_mode = 1;
+                g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
+                g_sm_stable_run = 0;
+                OLED_ShowString(1, 1, "SM DEEP LATCH   ");
+            }
+#endif
 #if NAVSEG_T2_FORCE_LATCH
             /* T2 兜底(06-07 评审): Y2 骑岔漏检(D1 双段图样,19:03/06-06晚两度实证)→jc 不增
              * →sm 断粮→S① 以 25cps 裸跑必丢。u 锁存后里程过上界仍未锁 → 强制锁,
@@ -1323,6 +1357,15 @@ int main(void)
                     if (g_stall_boost_l > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_l = MOTOR_STALL_BOOST_SAFE_CAP;
                     if (g_stall_boost_r > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_r = MOTOR_STALL_BOOST_SAFE_CAP;
                 }
+                /* F6a(06-07 03:28 实测): 发车踢腿封顶——首个速度窗样本(≤250ms)到来前读数恒 0,
+                 * boost 无脑涨到 255~340(窗口相位彩票)→ START+boost≈1200/1300 弹射起步即丢线。
+                 * K1 后 500ms 内同封 SAFE_CAP=100:保留 D1 级起步助推,杀掉彩票尖峰;
+                 * 真起步堵转(>500ms 仍 0cps)宽限期满后 800 档照常解锁。 */
+                if (g_launch_grace > 0u) {
+                    g_launch_grace--;
+                    if (g_stall_boost_l > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_l = MOTOR_STALL_BOOST_SAFE_CAP;
+                    if (g_stall_boost_r > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_r = MOTOR_STALL_BOOST_SAFE_CAP;
+                }
                 float duty_l = ApplyDeadzone(cmd_l, deadzone_l + g_stall_boost_l);
                 float duty_r = ApplyDeadzone(cmd_r, deadzone_r + g_stall_boost_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
@@ -1423,6 +1466,8 @@ int main(void)
                 g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
                 g_s2_active = 0;
                 g_u_cnt_base = 0;
+                g_u3_deep_run = 0;          /* U3: deep 持续计数同清 */
+                g_launch_grace = 250u;      /* F6a: 发车 500ms 踢腿封顶窗 */
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
