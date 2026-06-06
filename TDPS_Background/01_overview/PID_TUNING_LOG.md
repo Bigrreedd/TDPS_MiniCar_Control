@@ -6435,3 +6435,21 @@ PID(Kp40/Ki0/Kd550/floor70/cap50/死区/MIN_INNER20/深弯1.9/1.5)、SAFE_MAX200
 
 **代码版本**:a871d76 + 工作区(F8)。
 ---
+
+### 04:15 团队轮 v2 收官 - Examiner Q&A 总表(18/18)落账;Q7 结案;S1c 改码提案驳回;两条新增改码缓议;团队解散(留 LogAnalyst/Skeptic 待 F8 数据)
+
+**Q7(02:15 中途状态半清)结案**(Examiner+RunArch 双人交叉验证):PID 侧全部 statics(g_reacq_grace/g_deep_turn_mode/g_a2_*/g_line_lost_ticks 等)由 `PID_Controller.c:430-438` 的 `if(!is_racing)` 块每 tick 清——**"K1/K3 半清"假说排除,无必须补清项**(唯一例外 g_stall_boost 属 main 域,三层防御已裁无害)。02:15 事件根因收窄为"运行中 is_racing 真实 0→1 过一遍"(按键抖动/野写 A-u 同族),降级为监测项。
+
+**Examiner 改码提案二条,leader 裁决**:
+1. **"junction 上升沿强制 deep=0"(治 S1c)→ 驳回**。对码:冻结期 `position_correction=0.0f`(PID:518)强制走直,deep 旗虽冻结(PID:723/734)但 corr=0 下差速块两轮同速、min_inner 钳位(只抬不压)不咬合——**"冻结期绕内轮冲支线"不成立**(PostS 描述正确,Examiner 推演有误)。真残留=出口侧带 deep 旗对中等误差给满差速,已有 R5 软启动+滞回退出(≤1.2/1.5)覆盖;反方向风险更大:S 区 jc 通胀(2→4 实测)意味着 S 弧内会闪 junction,上升沿清 deep=已验证 S 配方中途掉 pivot。**首跑三方框采 junc=/deep= 同帧复核,数据驳我再议**。
+2. **"不依赖 g_s2_active 的纯总程终点兜底"(治 S4b 雷达 never-arm→冲场)→ 设计采纳,落码缓议**。阈值需全程轮程实测(现在拍=重蹈"几何凑数"覆辙);过渡期协议:**雷达段没 arm(rd 钉 0)必须 K2 手停**,已进首跑必采清单。根治=队友部署 0x30(再升一级)。
+
+**新红线(Skeptic S3 量化)**:U 尾 30° Δ≈2~5cnt ≪ 60 → **SM_DEEP_MIN_CNT=60 严禁下调**(防 U 尾误锁唯一闸)。
+
+**未决项落账(全表见 Examiner 交付,按威胁序)**:#1 FINISH=110(唯一几何推导未实测门,首跑雷达段后用 lt=4 起算实测 Δ 回填)/#2 S1c 出口残留(首跑复核)/#3 雷达 never-arm(0x30+缓议兜底)/#4 顶圆缺口(junc=/lost=/Δ vs 380)/#5 sm 早释放污染 RD 锚(rs= 机读)/#6 C4 盲冲 45cm vs 道宽/#7 入弯跑宽(lt= 验 U3 接管)。
+**首跑必采(最终版)**:`lt= rs=`(锁存/释放源)/跨 `u=1`/`sm=1`/`lt=4` 沿的 el/er Δ(重建 U尾/S②/FINISH 实测基准)/三方框+顶连线处 `junc= deep= lost=`/`rd=` 是否 arm(没 arm 即 K2)/缺口 `lost=` 峰值。
+
+**团队解散记录**:PostS/RunArch/Examiner 交付完毕关停;LogAnalyst/Skeptic 留任待 F8 实测数据(日志分析+失败裁定)。本轮产出:R7 链(F7 排空 0x11/F8 lt=rs=遥测/K3 补清)+9 条驳回裁决+7 条未决落账+2 条新红线类约束(里程门口径前提/SM_DEEP_MIN_CNT 禁下调)。
+
+**代码版本**:7d68f00(F8,无新改动,本条目纯落账)。
+---
