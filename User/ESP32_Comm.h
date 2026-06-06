@@ -21,10 +21,16 @@
 #define ESP32_TYPE_REQ_RADAR      0x02  // STM32 → ESP32: 请求雷达原始数据
 #define ESP32_TYPE_AT_POSITION    0x03  // STM32 → ESP32: 通知到达检测位置 + 请求决策（推荐）
 #define ESP32_TYPE_PING           0x04  // STM32 → ESP32: 心跳检测
+#define ESP32_TYPE_LOG            0x07  // STM32 → ESP32: 日志/参数透传(ESP32 原样转 BLE A003，无 ACK)
 
 #define ESP32_TYPE_DECISION       0x11  // ESP32 → STM32: 障碍物通行方向
 #define ESP32_TYPE_RADAR          0x12  // ESP32 → STM32: 雷达数据
 #define ESP32_TYPE_STATUS         0x20  // ESP32 → STM32: 状态心跳（预留）
+#define ESP32_TYPE_ARCH_PASSED    0x30  // ESP32 → STM32: 拱门到达通知(06-06 Q1 定版:ESP 侧旧号
+                                        //   0x12 RSP_ARCH_STATE 与我方 RADAR 冲突，双方统一 0x30)
+
+// 单帧 payload 上限（队友协议规定 247；TX 超长自动拆帧，RX 受 ESP32_RX_BUF_SIZE 约束）
+#define ESP32_MAX_PAYLOAD         247
 
 // 通行决策
 typedef enum {
@@ -119,6 +125,22 @@ uint16_t ESP32_SendReqRadar(void);
  * @return 发送的帧序列号
  */
 uint16_t ESP32_SendPing(void);
+
+/**
+ * @brief 发送日志/参数透传帧 (type=0x07)
+ * @param payload: 日志字节（建议 ASCII/UTF-8 文本，一行一帧）
+ * @param len: 字节数；> ESP32_MAX_PAYLOAD 时自动拆成多帧
+ * @note  ESP32 不回 ACK，发完即走；ESP32 把 payload 原样转发 BLE A003 → 小程序面板
+ */
+void ESP32_SendLog(const uint8_t *payload, uint16_t len);
+
+/**
+ * @brief 获取拱门到达通知 (type=0x30，ESP32 主动下发)
+ * @param arch_id: 输出拱门编号（payload[0]；ESP 发空 payload 时为 0）
+ * @return 1=收到过新通知, 0=无
+ * @note  调用后清除 "新数据" 标志；语义=车正穿过拱门(S-mode 第二触发源/段标定锚点)
+ */
+uint8_t ESP32_GetArchPassed(uint8_t *arch_id);
 
 /**
  * @brief UART 接收中断回调（在 USART_IRQHandler 中调用）

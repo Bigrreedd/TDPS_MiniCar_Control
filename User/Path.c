@@ -14,8 +14,15 @@ extern BlackPointResult_t result_BlackPoint;
 /* ========== 内部状态 ========== */
 static PathState_t g_path;
 
-/* 里程参数（根据实际编码器标定调整） */
-#define ENCODER_TICKS_PER_CM    6.0f    /* 编码器脉冲/cm（占位值，需实测 Task#6） */
+/* 里程参数（根据实际编码器标定调整）
+ * 【06-07 评审隔离声明·勿信本文件数据(skeptic R3)】本文件=已被实践废弃的全量段FSM:
+ *  ① 刻度 6.0 ticks/cm 与实测 ≈0.405 ticks/cm(2.47cm/cnt,06-06 场推算)错 ~15×;
+ *  ② 下方 DIST_* 段表基于被坐标级转录(00_course/赛道地图_右侧精确版)推翻的旧布局;
+ *  ③ BENCH_FIXED_SPEED_ENABLE=1(现役)下本文件速度输出不被消费,仅
+ *     curve_strength/total_dist_cm 副作用存活。
+ *  禁在未完成"改刻度+重填DIST表+台架复验深弯"前置 BENCH=0 激活本FSM——
+ *  这正是"全量状态机被里程漂移打崩"的本仓库实物教训(post-s-review 评审定论)。 */
+#define ENCODER_TICKS_PER_CM    6.0f    /* 占位值,错15×,见上方隔离声明,勿用于任何新判据 */
 
 /* 计数器饱和上限 */
 #define COUNT_SAT               1000

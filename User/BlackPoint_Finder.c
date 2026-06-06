@@ -275,6 +275,28 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 		return last_precise_position;
 	}
 
+	/* C4-blind(06-06 21:18 Run1 实证): 全黑 = 丢线,不是"线在中心"。
+	 * 冲出赛道后的深色地面 7 路全黑,旧逻辑落到正常线分支(found=1/质心=中心/corr=0/lost=0)
+	 * → 以 33cps 直行盲驶 30cm+,375 丢线自停被绕过。改判丢线:瞬时全黑(起跑线/拱门阴影,
+	 * ~16tick)丢线计数照常直行无感,持续全黑(出界)由 375 自停兜底。
+	 * jc 不受影响——全黑本就被路口判据的 count<SENSOR_COUNT 排除。 */
+	if(black_count >= SENSOR_COUNT)
+	{
+		g_junction_ticks = 0;
+		JunctionPassUpdate(0);
+		result->found = 0;
+		result->position = last_position;
+		result->precise_position = last_precise_position;
+		result->is_junction = 0;
+		result->black_count = black_count;
+		result->span = (uint8_t)(last_black - first_black + 1);
+		result->run_count = run_count;
+		result->raw_centroid = last_precise_position;
+		result->junction_ticks = 0;
+		result->junction_pass_count = g_junction_pass_count;
+		return last_precise_position;
+	}
+
 	uint8_t  span = (uint8_t)(last_black - first_black + 1);
 	float    raw_centroid = (float)index_sum / (float)weight_sum;
 

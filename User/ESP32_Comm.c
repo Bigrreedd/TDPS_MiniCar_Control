@@ -19,6 +19,10 @@ static uint8_t g_esp32_decision_ready = 0;
 static ESP32_RadarPayload_t g_esp32_radar;
 static uint8_t g_esp32_radar_ready = 0;
 
+// 拱门到达通知 (0x30，ESP32 主动下发)
+static uint8_t g_esp32_arch_id = 0;
+static uint8_t g_esp32_arch_ready = 0;
+
 // 链路超时检测（单位：2ms tick）
 static uint16_t g_esp32_link_timeout = 0;
 #define ESP32_LINK_TIMEOUT_TICKS  250  // 500ms @ 2ms/tick
@@ -47,11 +51,14 @@ static uint8_t ESP32_CalcChecksum(uint8_t version, uint8_t type, uint16_t seq,
 }
 
 /**
- * @brief 发送完整帧（无 payload）
+ * @brief 发送完整帧（带任意 payload；len=0/NULL 即无 payload 帧）
  */
-static void ESP32_SendFrame(uint8_t type)
+static void ESP32_SendFrameEx(uint8_t type, const uint8_t *payload, uint16_t len)
 {
     uint8_t checksum;
+    uint16_t i;
+
+    if (payload == NULL) len = 0;
 
     // 帧头
     ESP32_UART_SendByte(ESP32_FRAME_HEADER_0);
@@ -67,16 +74,29 @@ static void ESP32_SendFrame(uint8_t type)
     ESP32_UART_SendByte(g_esp32_tx_seq & 0xFF);
     ESP32_UART_SendByte(g_esp32_tx_seq >> 8);
 
-    // Payload 长度（LE，0 表示无 payload）
-    ESP32_UART_SendByte(0x00);
-    ESP32_UART_SendByte(0x00);
+    // Payload 长度（LE）
+    ESP32_UART_SendByte(len & 0xFF);
+    ESP32_UART_SendByte(len >> 8);
 
-    // 校验和
-    checksum = ESP32_CalcChecksum(ESP32_PROTOCOL_VERSION, type, g_esp32_tx_seq, 0, NULL);
+    // Payload
+    for (i = 0; i < len; i++) {
+        ESP32_UART_SendByte(payload[i]);
+    }
+
+    // 校验和（XOR ver→payload 末尾，不含 A5 5A 与自身）
+    checksum = ESP32_CalcChecksum(ESP32_PROTOCOL_VERSION, type, g_esp32_tx_seq, len, payload);
     ESP32_UART_SendByte(checksum);
 
-    // 序列号自增
+    // 序列号自增（uint16 自然回绕）
     g_esp32_tx_seq++;
+}
+
+/**
+ * @brief 发送完整帧（无 payload）
+ */
+static void ESP32_SendFrame(uint8_t type)
+{
+    ESP32_SendFrameEx(type, NULL, 0);
 }
 
 /**
@@ -137,6 +157,8 @@ void ESP32_Comm_Init(void)
 
     g_esp32_decision_ready = 0;
     g_esp32_radar_ready = 0;
+    g_esp32_arch_ready = 0;
+    g_esp32_arch_id = 0;
     g_esp32_link_timeout = 0;
 }
 
@@ -166,6 +188,19 @@ uint16_t ESP32_SendPing(void)
     uint16_t seq = g_esp32_tx_seq;
     ESP32_SendFrame(ESP32_TYPE_PING);
     return seq;
+}
+
+void ESP32_SendLog(const uint8_t *payload, uint16_t len)
+{
+    // type=0x07 日志透传：超长自动拆帧（≤247B/帧），无 ACK 不等待。
+    // 遥测一行 ≤243B(含\r\n)，正常恰好一行一帧，小程序面板按行显示不破碎。
+    if (payload == NULL || len == 0) return;
+    while (len > ESP32_MAX_PAYLOAD) {
+        ESP32_SendFrameEx(ESP32_TYPE_LOG, payload, ESP32_MAX_PAYLOAD);
+        payload += ESP32_MAX_PAYLOAD;
+        len = (uint16_t)(len - ESP32_MAX_PAYLOAD);
+    }
+    ESP32_SendFrameEx(ESP32_TYPE_LOG, payload, len);
 }
 
 void ESP32_OnByteReceived(uint8_t data)
@@ -265,6 +300,13 @@ void ESP32_OnByteReceived(uint8_t data)
                 g_esp32_link_timeout = 0;
                 break;
 
+            case ESP32_TYPE_ARCH_PASSED:
+                // 拱门到达通知(0x30)：payload[0]=拱门编号(可选，空 payload 记 0)
+                g_esp32_arch_id = (frame->payload_len >= 1) ? frame->payload[0] : 0;
+                g_esp32_arch_ready = 1;
+                g_esp32_link_timeout = 0;
+                break;
+
             default:
                 // 未知类型，忽略
                 break;
@@ -301,6 +343,18 @@ uint8_t ESP32_GetRadarData(ESP32_RadarPayload_t *radar)
     if (g_esp32_radar_ready && radar != NULL) {
         memcpy(radar, &g_esp32_radar, sizeof(ESP32_RadarPayload_t));
         g_esp32_radar_ready = 0;  // 清除标志
+        return 1;
+    }
+    return 0;
+}
+
+uint8_t ESP32_GetArchPassed(uint8_t *arch_id)
+{
+    if (g_esp32_arch_ready) {
+        if (arch_id != NULL) {
+            *arch_id = g_esp32_arch_id;
+        }
+        g_esp32_arch_ready = 0;  // 清除标志
         return 1;
     }
     return 0;

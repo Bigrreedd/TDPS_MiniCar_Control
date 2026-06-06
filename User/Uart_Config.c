@@ -1,4 +1,5 @@
 #include "Uart_Config.h"
+#include "ESP32_Comm.h"
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_usart.h"
@@ -247,6 +248,23 @@ int Uart3_BytesAvailable(void)
 		return (int)(s_usart3_rx_head - s_usart3_rx_tail);
 	else
 		return (int)(USART3_RX_BUFFER_SIZE - (s_usart3_rx_tail - s_usart3_rx_head));
+}
+
+/* ========== ESP32_Comm UART 适配层（强符号，覆盖 ESP32_Comm.c 的 weak 空实现） ==========
+ * ESP32S3-1 物理接 USART2/J5(PA2/PA3, 115200 8N1)，与 PC 调试线同一口、二选一。
+ * - TX：逐字节 TXE 阻塞发送（同 Uart2_PutChar；不等 TC，帧间无方向切换需求）。
+ * - Init：空——Uart2_Init(115200) 已在 main 初始化序列调用，这里不重复初始化外设。
+ * - RX：不走独立中断。复用 USART2 RXNE 环形缓冲，main 主循环按 ESP32_ON_USART2
+ *       分流：=1 喂 ESP32_OnByteReceived（A5 5A 帧），=0 喂旧 Proto（0xAA 帧）。 */
+void ESP32_UART_SendByte(uint8_t data)
+{
+	while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+	USART_SendData(USART2, data);
+}
+
+void ESP32_UART_Init(void)
+{
+	/* USART2 外设由 Uart2_Init() 统一初始化，适配层无事可做 */
 }
 
 // printf 重定向 → USART3（调试串口接电脑）

@@ -13,6 +13,7 @@
 #include "BlackPoint_Finder.h"
 #include "TelemetryScreen.h"
 #include "Protocol.h"
+#include "ESP32_Comm.h"
 #include "Battery.h"
 #include "ABEncoder.h"
 #include "PID_Controller.h"
@@ -108,11 +109,15 @@ static float ClampMotorDuty(float duty)
  * 速度闭环回吐,无效)。START 820/940 不动(两组上图发车实测正常)。不够再+30 迭代。 */
 /* D2(06-06 用户授权,继 B +30 后再 +30): 610/640 → 640/670——19:03 实测巡航低位 L/R 间歇
  * 掉到 10~13cps,自重增大后保持档余量仍紧。不对称 30 保持。 */
+/* D4(06-06 20:46/20:49 两轮上图,用户指示"占空比给大"): 640/670 → 680/710(+40 对称)。
+ * 实证:关扇轮 U 弯内轮七八帧钉死 sent=660(HOLD_L 640+pid 20),R3/D3b 反复踢出 890/1151
+ * 脉冲打乱转弯半径,U 弯只转到 83° 捞错边;开扇轮同占空比速度 23→10cps 衰减后双轮全停。
+ * 看护项:深弯内轮地板抬高→拖刹差速变浅,U 弯半径若变宽即回 -20 折中。START 不动。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   640.0f
+#define MOTOR_HOLD_DEADZONE_L   680.0f
 #endif
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   670.0f
+#define MOTOR_HOLD_DEADZONE_R   710.0f
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
@@ -138,7 +143,8 @@ static const uint16_t g_fan_ladder[3] = {20u, 35u, 50u};
 static uint8_t  g_fan_step = 0u;
 #endif
 #if SINGLE_BOARD_LOCAL_DRIVE
-static uint16_t g_fan_spot_ticks = 0u;   /* >0=点动进行中,2ms tick 递减 */
+static uint16_t g_fan_spot_ticks = 0u;   /* >0=kick/点动进行中,2ms tick 递减 */
+static uint8_t  g_fan_on = 0u;           /* G1(06-06): 风扇锁存运行态(kick→50保持直至再按K4/K2) */
 #endif
 #ifndef MOTOR_CMD_EPS
 #define MOTOR_CMD_EPS     0.1f
@@ -163,6 +169,99 @@ static uint8_t g_jc_at_u = 0;           /* S1(06-06): u 锁存时刻的 jc 基�
  * floor 70→50、浅弯 cap 50→30(失速裕度 20 不变)。K1 清零 → S 入口直接发车不会触发。
  * TODO: 拱门 ESP 到达信号(队友约定,两个拱门各发一次)落地后可 OR 进此锁存作第二触发源。 */
 volatile uint8_t g_s_mode = 0;
+/* P9 sm 出口门(06-06 三 agent 合议落码)——sm 此前永不释放,S 过后整圈被钉 14cps。
+ * 主锚=拱门2.1 的 ESP 0x30 通知(S 出口后 ~30cm;队友部署确认前天然不触发);
+ * 后备=三重与门:里程 Δ≥SM_EXIT_MIN_CNT + 连续 500ms 稳线居中 + 窗内航向静默。
+ * 里程刻度按 06-06 实测场推算:870cm(START→Y2) ≈ 352cnt → ~2.47cm/cnt;
+ * S 段几何 ~188cm ≈ 76cnt;floor 取 120cnt(~296cm)=1.6×S 长,乱甩通胀也不会在 S 内放行。
+ * jc 禁用作锚(乱甩通胀 2→5 实测);yw 只用 500ms 短窗相对值(长程漂移未标定)。 */
+#ifndef SM_EXIT_MIN_CNT
+#define SM_EXIT_MIN_CNT  120
+#endif
+static uint8_t  g_s_mode_done = 0;       /* 本次运行 sm 已完整走完(防出门后 jc>基线 立即回锁) */
+static int32_t  g_sm_cnt_base = 0;       /* sm 锁存帧的平均编码器绝对计数 */
+static uint16_t g_sm_stable_run = 0;     /* 出口后备:连续"found 且居中"tick 计数 */
+static float    g_sm_stable_yaw0 = 0.0f; /* 稳线窗起点 yaw(rad) */
+
+/* ===== P1 终点 + P2 雷达避障段(06-06 落码 v1,设计:POST_S_STRATEGY_20260606.md) =====
+ * P1: 0x30 id=2(拱门2.2)→ 2s 倒计时 → StopRun(队友沟通记录"ARCH(2)后2s停车";
+ *     拱门2.2 距终点仅 ~25cm,滚动距离待实测,必要时加降速档)。
+ * P2 触发: sm 走完 + 自 sm 锁存里程 Δ≥RD_ZONE_MIN_CNT + 深丢线 300ms(箱前线尽头)。
+ *     误触自愈:弯中丢线达不到三门齐满;真误触也只是停车问雷达→盲走→重捕失败→安全停。
+ * P2 流程: BRAKE 清洁停 → QUERY 0x03(500ms 重发,2s 超时) → 0x11(0=左过/1=右过/
+ *     2=UNKNOWN→默认左,06-06 拍板) → 盲走四相 OUT(转出30°)/DIAG(斜移)/BACK(回正)/
+ *     THRU(直穿+扫线) → REJOIN(重捕余量) → 回循迹。每相 tick 预算,超时=RD_FAIL 停车。
+ * 几何(2.47cm/cnt 粗标,P0a 标定后回填): DIAG 24cnt≈60cm(横移≈30cm,对准空闲侧走廊
+ *     中心≈箱中线偏 35cm),THRU 28cnt≈70cm(板深),REJOIN 40cnt≈100cm 余量。
+ * 合规:决策与重捕全传感器驱动,盲走仅短段(禁预编程约束)。 */
+#ifndef RADAR_SEGMENT_ENABLE
+#define RADAR_SEGMENT_ENABLE   1
+#endif
+#define FINISH_STOP_TICKS      1000u   /* 2s @2ms */
+#define RD_ZONE_MIN_CNT        380     /* sm锁存→箱前 ~989cm/2.47≈400;四圆出口≈371,裕量薄,P0a 后必校 */
+#define RD_LOST_CONFIRM_TICKS  150u    /* 300ms 深丢确认(375 自停前先接管) */
+#define RD_BRAKE_SETTLE_TICKS  50u     /* 双轮 |v|<2cps 持续 100ms = 停稳 */
+#define RD_BRAKE_BUDGET        1000u   /* 2s 停不稳也发问(防滑行卡相) */
+#define RD_QUERY_RESEND        250u    /* 500ms 重发 0x03 */
+#define RD_QUERY_BUDGET        1000u   /* 2s 无应答 → 默认左过 */
+#define RD_TURN_RAD            0.52f   /* 转出 30° */
+#define RD_TURN_TOL            0.10f   /* 航向到位容差 ~5.7° */
+#define RD_TURN_SETTLE         25u     /* 到位保持 50ms */
+#define RD_PHASE_BUDGET        2500u   /* 每相 5s 预算 */
+#define RD_DIAG_CNT            24      /* 斜移段里程 */
+#define RD_THRU_CNT            28      /* 直穿段里程 */
+#define RD_REJOIN_CNT          40      /* 重捕余量里程 */
+#define RD_BLIND_CPS           14.0f   /* 盲走目标(实际受 floor 70 托底≈20cps) */
+#define RD_REACQ_TICKS         15u     /* 连续 found 30ms = 重捕成功 */
+enum { RD_OFF = 0, RD_BRAKE, RD_QUERY, RD_OUT, RD_DIAG, RD_BACK, RD_THRU, RD_REJOIN, RD_DONE, RD_FAIL };
+static uint8_t  g_rd_state = RD_OFF;
+static uint16_t g_rd_tick = 0;         /* 当前相计时 */
+static uint16_t g_rd_settle = 0;       /* 停稳/航向到位连续计数 */
+static int8_t   g_rd_dir = 1;          /* +1=左过(左转出,yaw+), -1=右过 */
+static float    g_rd_yaw_base = 0.0f;  /* 停车时航向 = 箱前行进方向 */
+static int32_t  g_rd_cnt_mark = 0;     /* 相起点里程 */
+static uint16_t g_rd_found_run = 0;    /* 重捕连续 found 计数 */
+static uint16_t g_arch_cool = 0;       /* 拱门事件连发去重窗(3s) */
+static uint16_t g_finish_ticks = 0;    /* P1 倒计时(>0 = 进行中) */
+static uint8_t  g_finish_armed = 0;    /* P1 已触发锁存 */
+
+/* ===== 06-07 post-s-review 团队评审落码(SegmentNavigator v2 增量取向) =====
+ * 终裁(skeptic《残余风险裁决》):"需重大改后方可上车"——本块落地其放行检查单。
+ * 取向依据: Path.c 即"全量段FSM已试过且废弃"的实物(刻度错15×+旧布局),故走增量:
+ * g_navseg=只读诊断游标(由既有锚点推进,不夺转向权);里程只做窗不做锚;
+ * ESP 事件=到了就抢占、没到当不存在(ESP32_Tick 此前零调用,IsLinkAlive 恒真=假活,禁读)。
+ * 行为改动各带编译开关,置 0 即回退现状。 */
+#ifndef NAVSEG_T2_FORCE_LATCH
+#define NAVSEG_T2_FORCE_LATCH     1   /* T2 兜底:u后里程过上界仍未锁sm→强制锁(治Y2骑岔漏检断粮) */
+#endif
+#ifndef NAVSEG_T3_FORCE_RELEASE
+#define NAVSEG_T3_FORCE_RELEASE   1   /* T3/P9 兜底:sm里程强制释放(稳线窗死锁/早释放双模通吃) */
+#endif
+#ifndef NAVSEG_S2_REARM
+#define NAVSEG_S2_REARM           1   /* R5:RD_DONE 边沿 re-arm sm 保护 S胶囊②(2×r15) */
+#endif
+#ifndef NAVSEG_FINISH_DIST_BACKUP
+#define NAVSEG_FINISH_DIST_BACKUP 1   /* R2/C-4 挂科级:0x30 未部署时终点里程兜底(防跑完不停冲场);
+                                       * 依赖 NAVSEG_S2_REARM(用 g_s2_active 作已过箱锚) */
+#endif
+#define RD_DEFAULT_DIR            1   /* 雷达 UNKNOWN/2s超时默认过侧:+1=左过(06-06 拍板)。
+                                       * map-route 镜像敏感表:全固件唯一硬编码方向——赛道若镜像只翻此处。 */
+#define DOWN_FORCE_LATCH_CNT    200   /* T2 上界: u锁存后 ~494cm(下行345cm+余量),P0a 回填 */
+#define SM_EXIT_FORCE_CNT       240   /* T3 上界: sm锁存后 ~593cm(=3.2×S①几何76cnt,<RD下界380不挡T4),P0a 回填 */
+#define FINISH_FROM_S2_CNT      110   /* R2 兜底(06-07 skeptic 验收修正): 出箱重捕(≈1929cm)→终点(≈2178cm)
+                                       * =下行75+S②124+终段50≈249cm≈101cnt@2.47,取110留9cnt余量。
+                                       * 宁小勿大:红区仅100cm深,冲过=出界=Task1循迹分没。
+                                       * 旧值200=494cm会在终点后245cm才arm→冲出赛道尽头,形同虚设。P0a 精标后回填。 */
+#if NAVSEG_FINISH_DIST_BACKUP && !NAVSEG_S2_REARM
+#error "NAVSEG_FINISH_DIST_BACKUP depends on NAVSEG_S2_REARM (g_s2_active is only set by S2_REARM). Fix: enable NAVSEG_S2_REARM, or disable NAVSEG_FINISH_DIST_BACKUP."
+#endif
+/* g_navseg 只读段游标:遥测 sg= 字段;不参与任何转向/速度裁决(单一裁决者原则,P4)。
+ * 命名 NAVSEG_* 避开 Path.h 的 PathSegment_t(SEG_*) 符号域。 */
+enum { NAVSEG_START = 0, NAVSEG_U, NAVSEG_SERP1, NAVSEG_AFTER_ARCH1,
+       NAVSEG_RADAR, NAVSEG_SERP2, NAVSEG_FINISH };
+static uint8_t  g_navseg = NAVSEG_START;
+static uint8_t  g_s2_active = 0;       /* R5: S胶囊②域标志;g_s_mode_done 语义自此="S①已完成" */
+static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(强制锁里程锚) */
 
 static float ApplyDeadzone(float duty, float deadzone)
 {
@@ -674,6 +773,9 @@ int main(void)
     Proto_Init();
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
     Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
+#if ESP32_ON_USART2
+    ESP32_Comm_Init();    /* A5 5A 帧解析状态复位；物理 UART 即上面的 Uart2_Init(115200) */
+#endif
     is_racing = 0;
 #else
     // 板间/ESP32 协议初始化
@@ -704,15 +806,12 @@ int main(void)
             g_control_tick = 0;
 
 #if SINGLE_BOARD_LOCAL_DRIVE
-            /* C1: 风扇点动倒计时,到时自动归零(底层硬钳兜底) */
+            /* C1/G1: 风扇相位倒计时——kick(150×200ms)结束:锁存态→回落 50 持续运行(G1 跑圈
+             * 构型,直至 K4 再按/K2);非锁存(点动/诊断)→归零。底层 ABS_CAP=50 硬钳兜底。 */
             if (g_fan_spot_ticks > 0u)
             {
                 g_fan_spot_ticks--;
-#if FAN_KICK_DIAG_ENABLE
-                /* C3-kick: 150 仅打 200ms(前 100 tick),之后经常规入口回落 50 保持 */
-                if (g_fan_spot_ticks == 900u) M3PWM_SetDutyCycle(50);
-#endif
-                if (g_fan_spot_ticks == 0u) M3PWM_SetDutyCycle(0);
+                if (g_fan_spot_ticks == 0u) M3PWM_SetDutyCycle(g_fan_on ? 50 : 0);
             }
 #endif
 
@@ -725,6 +824,11 @@ int main(void)
             // 7路灰度 + PA0电池电压轮询采样
             LineSensor_SampleAll();
             UpdateSensorDebugSnapshot();
+#if ESP32_ON_USART2
+            /* R12(06-07 评审): 链路计时器接线——此前全工程零调用,IsLinkAlive 恒真(假活)。
+             * 暂无消费者(评审定:仲裁纯事件抢占,不读链路活性);接线使计时真实,供日后使用。 */
+            ESP32_Tick();
+#endif
 
             // 黑线识别 -> 循迹位置
             BlackPoint_Finder_Search(g_line_sensor_values, &result_BlackPoint);
@@ -733,7 +837,7 @@ int main(void)
                 position_get = (int16_t)(result_BlackPoint.precise_position * 10.0f);
                 if (lose_time > 0) lose_time--;
             }
-            else
+            else if (PID_GetNavOverride() == NAV_OVERRIDE_NONE)
             {
                 lose_time++;
                 if (lose_time > LINE_LOST_STOP_TICKS)
@@ -741,6 +845,14 @@ int main(void)
                     lose_time = LINE_LOST_STOP_TICKS;
                     StopRun();             /* 丢线超过 1s：本地停车 */
                 }
+            }
+            else
+            {
+                /* R1/C-8(06-07 评审,挂科级): NAV 覆盖期(雷达盲走过箱无线 ≥3.5s)冻结
+                 * 主环丢线杀手——否则 RD 段 1s 必自杀,雷达段结构上跑不完。
+                 * PID 内部 375 自停已有覆盖旁路(PID:589),这里是独立第二杀手,同样要让位。
+                 * 覆盖解除(RD_DONE/RD_FAIL)后从 0 恢复计数,语义与重捕一致。 */
+                lose_time = 0;
             }
 
             // racing 上升沿：复位 Path/PID 并给速度环 15% 前馈起步
@@ -787,6 +899,8 @@ int main(void)
                     g_u_turn_passed = 1;
                     /* S1: 记录 u 锁存时刻的 jc 基线，供"U 后新增路口"判据 */
                     g_jc_at_u = result_BlackPoint.junction_pass_count;
+                    /* T2(06-07 评审): 同帧记里程锚,供强制锁 sm 的上界判据 */
+                    g_u_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
                 }
             }
 
@@ -794,11 +908,299 @@ int main(void)
             // S1(06-06): 触发加固——19:03 实测发车没压起跑线时 jc 只到 1(Y2 给的)，
             // 旧判据 jc≥2 凑不满 → sm 不触发 → A1/A2 全程未上场。加 OR 支路:
             // "u 锁存后 jc 有新增"(U 后第一个路口=Y2，对摆位鲁棒)。两判据任一命中即锁存。
-            if (!g_s_mode && is_racing && g_u_turn_passed &&
+            if (!g_s_mode && !g_s_mode_done && is_racing && g_u_turn_passed &&
                 (result_BlackPoint.junction_pass_count >= 2u ||
                  result_BlackPoint.junction_pass_count > g_jc_at_u))
             {
                 g_s_mode = 1;
+                g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);  /* P9: 里程基准 */
+                g_sm_stable_run = 0;
+            }
+#if NAVSEG_T2_FORCE_LATCH
+            /* T2 兜底(06-07 评审): Y2 骑岔漏检(D1 双段图样,19:03/06-06晚两度实证)→jc 不增
+             * →sm 断粮→S① 以 25cps 裸跑必丢。u 锁存后里程过上界仍未锁 → 强制锁,
+             * 保证 S① 配方(14cps/A1拖刹/A2锁向)必上场。锁早=下行段提前降速(无害);
+             * 依赖 u 前置,U 弯乱甩不误触(u 未锁不计里程)。 */
+            else if (!g_s_mode && !g_s_mode_done && is_racing && g_u_turn_passed &&
+                     ((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_u_cnt_base) >= DOWN_FORCE_LATCH_CNT)
+            {
+                g_s_mode = 1;
+                g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
+                g_sm_stable_run = 0;
+                OLED_ShowString(1, 1, "SM FORCED LATCH ");
+            }
+#endif
+
+            /* ===== 0x30 拱门事件统一消费(P9 主锚 / P1 终点) =====
+             * 每 tick 至多取一次;冷却窗(3s)吸收队友同事件连发(2~3帧,≥50ms 间隔)——
+             * 防 sm 释放后的残帧被终点逻辑误食(空 payload 时 id 无法区分两拱门)。 */
+            {
+                uint8_t arch_id = 0;
+                uint8_t arch_evt = ESP32_GetArchPassed(&arch_id);
+                if (g_arch_cool > 0u) { g_arch_cool--; arch_evt = 0; }   /* 冷却期:事件吸收丢弃 */
+                if (arch_evt && is_racing)
+                {
+                    /* R5(06-07 评审): S② 域(g_s2_active)对释放支路关闭——此时已过拱门2.1,
+                     * 任何拱门事件只可能是拱门2.2,落到下方终点支路(id=2 或空payload+done)。 */
+                    if (g_s_mode && arch_id <= 1u && !g_s2_active)
+                    {
+                        g_s_mode = 0;          /* P9 主锚:拱门2.1(id=1;空 payload 记 0 也认) */
+                        g_s_mode_done = 1;
+                        g_arch_cool = 1500u;
+                    }
+                    else if (!g_finish_armed &&
+                             (arch_id == 2u || (arch_id == 0u && g_s_mode_done)))
+                    {
+                        /* P1 终点:拱门2.2——显式 id=2;或空 payload 但 sm 已走完(=第二次拱门事件)。
+                         * 2s 倒计时后 StopRun(队友记录;终点线距拱门 ~25cm,滚动距离待实测)。 */
+                        g_finish_armed = 1;
+                        g_finish_ticks = FINISH_STOP_TICKS;
+                        g_arch_cool = 1500u;
+                        OLED_ShowString(1, 1, "FINISH IN 2S    ");
+                    }
+                }
+            }
+
+            /* P9 sm 出口门(后备三重与门;主锚已并入上方统一消费)。
+             * 出门即置 done,sm 本次运行不再回锁;速度由 H3 三段律自动回 25(u=1,!sm)。 */
+            if (g_s_mode && is_racing)
+            {
+                {
+                    int32_t sm_dcnt = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base;
+#if NAVSEG_T3_FORCE_RELEASE
+                    /* T3 强制门(06-07 评审): 后备稳线窗有双故障模式——方块阵密路口帧反复
+                     * 重置窗(死锁:sm 永钉 14cps 且 T4 RD-arm 断粮) / 273cm 长直提前凑齐
+                     * (早放,本身无害,S② 保护由 re-arm 另管)。里程上界强制释放双模通吃,
+                     * 保证 sm_done 必置位。S②(re-arm 后)同走此门,S② 短(~50cnt)稳线门
+                     * 通常先放,此门是最后保险。 */
+                    if (sm_dcnt >= SM_EXIT_FORCE_CNT)
+                    {
+                        g_s_mode = 0;
+                        g_s_mode_done = 1;
+                        OLED_ShowString(1, 1, "SM FORCED EXIT  ");
+                    }
+                    else
+#endif
+                    if (!result_BlackPoint.found || result_BlackPoint.is_junction ||
+                        position_get < 10 || position_get > 50)
+                    {
+                        g_sm_stable_run = 0;   /* 丢线/路口/贴边 → 稳线窗重开 */
+                    }
+                    else
+                    {
+                        if (g_sm_stable_run == 0u) g_sm_stable_yaw0 = add_angle;
+                        if (g_sm_stable_run < 0xFFFFu) g_sm_stable_run++;
+                        {
+                            float sm_dy = add_angle - g_sm_stable_yaw0;
+                            if (sm_dy < 0.0f) sm_dy = -sm_dy;
+                            if (sm_dy > 0.30f)
+                            {
+                                g_sm_stable_run = 0;   /* 窗内转向(S 弯内必触)→ 重开窗 */
+                            }
+                            else if (g_sm_stable_run >= 250u && sm_dcnt >= SM_EXIT_MIN_CNT)
+                            {
+                                g_s_mode = 0;
+                                g_s_mode_done = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+#if RADAR_SEGMENT_ENABLE
+            /* ===== P2 雷达避障段状态机(设计/几何见定义处注释) ===== */
+            if (is_racing)
+            {
+                int32_t rd_avg = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
+                switch (g_rd_state)
+                {
+                case RD_OFF:
+                    if (g_s_mode_done &&
+                        (rd_avg - g_sm_cnt_base) >= RD_ZONE_MIN_CNT &&
+                        PID_GetLineLostTicks() >= RD_LOST_CONFIRM_TICKS)
+                    {
+                        g_rd_state = RD_BRAKE; g_rd_tick = 0; g_rd_settle = 0;
+                        PID_SetNavOverride(NAV_OVERRIDE_HOLD, 0.0f, 0.0f);
+                        OLED_ShowString(1, 1, "RD BRAKE        ");
+                    }
+                    break;
+                case RD_BRAKE:
+                    g_rd_tick++;
+                    if (speed_left < 2 && speed_left > -2 && speed_right < 2 && speed_right > -2)
+                        g_rd_settle++;
+                    else
+                        g_rd_settle = 0;
+                    if (g_rd_settle >= RD_BRAKE_SETTLE_TICKS || g_rd_tick >= RD_BRAKE_BUDGET)
+                    {
+                        g_rd_yaw_base = add_angle;     /* 箱前行进方向 = 盲走基准 */
+                        ESP32_SendAtPosition();
+                        g_rd_state = RD_QUERY; g_rd_tick = 0;
+                        OLED_ShowString(1, 1, "RD QUERY        ");
+                    }
+                    break;
+                case RD_QUERY:
+                {
+                    ESP32_Decision_t rd_dec; uint8_t rd_pres; uint8_t rd_go = 0;
+                    g_rd_tick++;
+                    if (ESP32_GetDecision(&rd_dec, &rd_pres))
+                    {
+                        (void)rd_pres;
+                        /* 显式决策=车体系固定映射(GO_RIGHT→右过-1/GO_LEFT→左过+1,不随镜像翻);
+                         * 仅 UNKNOWN 走默认宏。待队友确认 GO_* 坐标系(车头参考 vs 场地参考,
+                         * 若为场地参考则此处消费需随镜像翻——开放问题,见评审日志)。 */
+                        g_rd_dir = (rd_dec == ESP32_GO_RIGHT) ? -1
+                                 : (rd_dec == ESP32_GO_LEFT)  ? 1 : RD_DEFAULT_DIR;
+                        rd_go = 1;
+                    }
+                    else if (g_rd_tick >= RD_QUERY_BUDGET)
+                    {
+                        g_rd_dir = RD_DEFAULT_DIR;   /* 2s 超时 → 默认过侧(06-06 拍板左) */
+                        rd_go = 1;
+                    }
+                    else if ((g_rd_tick % RD_QUERY_RESEND) == 0u)
+                    {
+                        ESP32_SendAtPosition();   /* 500ms 重发 */
+                    }
+                    if (rd_go)
+                    {
+                        PID_SetNavOverride(NAV_OVERRIDE_HEADING,
+                                           g_rd_yaw_base + (float)g_rd_dir * RD_TURN_RAD,
+                                           RD_BLIND_CPS);
+                        g_rd_state = RD_OUT; g_rd_tick = 0; g_rd_settle = 0;
+                        OLED_ShowString(1, 1, (g_rd_dir > 0) ? "RD OUT LEFT     "
+                                                             : "RD OUT RIGHT    ");
+                    }
+                    break;
+                }
+                case RD_OUT:
+                case RD_BACK:
+                {
+                    float rd_tgt = (g_rd_state == RD_OUT)
+                                 ? (g_rd_yaw_base + (float)g_rd_dir * RD_TURN_RAD)
+                                 : g_rd_yaw_base;
+                    float rd_err = add_angle - rd_tgt;
+                    if (rd_err < 0.0f) rd_err = -rd_err;
+                    g_rd_tick++;
+                    if (rd_err < RD_TURN_TOL) g_rd_settle++;
+                    else                      g_rd_settle = 0;
+                    if (g_rd_settle >= RD_TURN_SETTLE)
+                    {
+                        g_rd_cnt_mark = rd_avg;
+                        if (g_rd_state == RD_OUT)
+                        {
+                            g_rd_state = RD_DIAG;
+                            OLED_ShowString(1, 1, "RD DIAG         ");
+                        }
+                        else
+                        {
+                            g_rd_state = RD_THRU; g_rd_found_run = 0;
+                            OLED_ShowString(1, 1, "RD THRU         ");
+                        }
+                        g_rd_tick = 0; g_rd_settle = 0;
+                    }
+                    else if (g_rd_tick >= RD_PHASE_BUDGET)
+                    {
+                        g_rd_state = RD_FAIL;
+                    }
+                    break;
+                }
+                case RD_DIAG:
+                    g_rd_tick++;
+                    if ((rd_avg - g_rd_cnt_mark) >= RD_DIAG_CNT)
+                    {
+                        PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_rd_yaw_base, RD_BLIND_CPS);
+                        g_rd_state = RD_BACK; g_rd_tick = 0; g_rd_settle = 0;
+                        OLED_ShowString(1, 1, "RD BACK         ");
+                    }
+                    else if (g_rd_tick >= RD_PHASE_BUDGET) g_rd_state = RD_FAIL;
+                    break;
+                case RD_THRU:
+                case RD_REJOIN:
+                    g_rd_tick++;
+                    if (result_BlackPoint.found) g_rd_found_run++;
+                    else                         g_rd_found_run = 0;
+                    if (g_rd_found_run >= RD_REACQ_TICKS)
+                    {
+                        PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
+                        g_rd_state = RD_DONE;   /* 重捕成功 → 回循迹(R5 软启动消 D 踢) */
+#if NAVSEG_S2_REARM
+                        /* R5(06-07 评审,丢段级): S胶囊②(2×r15)裸奔修复——出箱重捕边沿
+                         * re-arm sm,S① 全套配方(14cps/A1拖刹/A2锁向/1.7滞回/H1封顶)复用。
+                         * g_s2_active 区分两域(0x30 释放支路对 S② 关闭);里程基准从重捕点
+                         * 起算(P6 锚点清基准),终点兜底 FINISH_FROM_S2_CNT 同锚。 */
+                        g_s_mode = 1;
+                        g_s2_active = 1;
+                        g_sm_cnt_base = rd_avg;
+                        g_sm_stable_run = 0;
+#endif
+                        OLED_ShowString(1, 1, "RD DONE         ");
+                    }
+                    else if (g_rd_state == RD_THRU && (rd_avg - g_rd_cnt_mark) >= RD_THRU_CNT)
+                    {
+                        g_rd_cnt_mark = rd_avg;
+                        g_rd_state = RD_REJOIN; g_rd_tick = 0;
+                        OLED_ShowString(1, 1, "RD REJOIN       ");
+                    }
+                    else if ((g_rd_state == RD_REJOIN && (rd_avg - g_rd_cnt_mark) >= RD_REJOIN_CNT) ||
+                             g_rd_tick >= RD_PHASE_BUDGET)
+                    {
+                        g_rd_state = RD_FAIL;
+                    }
+                    break;
+                case RD_FAIL:
+                    /* 任一相超预算/重捕失败:解除覆盖+安全停车。终态,K1/K3 复位。 */
+                    PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
+                    StopRun();
+                    RGB_SetColor(RGB_COLOR_R);
+                    OLED_ShowString(1, 1, "RD FAIL STOP    ");
+                    break;
+                case RD_DONE:
+                default:
+                    break;   /* 终态:本次运行不再触发(单雷达箱) */
+                }
+            }
+#endif
+
+            /* g_navseg 只读段游标推进(06-07 评审 v2 ⑤(A)):由既有锚点事件驱动,
+             * 不引入新触发源,不夺转向/速度权;用途=遥测 sg= 上图定位+日后守卫复用。 */
+            if (is_racing)
+            {
+                switch (g_navseg)
+                {
+                case NAVSEG_START:       if (g_u_turn_passed)       g_navseg = NAVSEG_U;           break;
+                case NAVSEG_U:           if (g_s_mode)              g_navseg = NAVSEG_SERP1;       break;
+                case NAVSEG_SERP1:       if (g_s_mode_done)         g_navseg = NAVSEG_AFTER_ARCH1; break;
+                case NAVSEG_AFTER_ARCH1: if (g_rd_state != RD_OFF)  g_navseg = NAVSEG_RADAR;       break;
+                case NAVSEG_RADAR:       if (g_rd_state == RD_DONE) g_navseg = NAVSEG_SERP2;       break;
+                case NAVSEG_SERP2:       if (g_finish_armed)        g_navseg = NAVSEG_FINISH;      break;
+                default: break;
+                }
+            }
+
+#if NAVSEG_FINISH_DIST_BACKUP
+            /* R2/C-4(06-07 评审,挂科级): 0x30 未部署时 P1 终点门全悬空→跑完不停冲出场地。
+             * 里程兜底:已过箱(g_s2_active)且自出箱重捕 Δ≥FINISH_FROM_S2_CNT → arm finish。
+             * 阈值宁大勿小(冲过线再停损失小,提前停=没跑完);0x30 部署后拱门2.2 先到先触发,
+             * 本兜底自然退化为备份。锚=g_sm_cnt_base(re-arm 时已置为重捕点,S② 释放不改它)。 */
+            if (is_racing && !g_finish_armed && g_s2_active &&
+                ((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= FINISH_FROM_S2_CNT)
+            {
+                g_finish_armed = 1;
+                g_finish_ticks = FINISH_STOP_TICKS;
+                OLED_ShowString(1, 1, "FINISH DIST 2S  ");
+            }
+#endif
+
+            /* P1 终点倒计时:到 0 → 全停 */
+            if (g_finish_ticks > 0u)
+            {
+                g_finish_ticks--;
+                if (g_finish_ticks == 0u)
+                {
+                    StopRun();
+                    RGB_SetColor(RGB_COLOR_B);
+                    OLED_ShowString(1, 1, "FINISH STOP     ");
+                }
             }
 
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
@@ -842,8 +1244,12 @@ int main(void)
                 else             { if (speed_left  > MOTOR_HOLD_ENTER_CPS) g_dz_hold_l = 1; }
                 if (g_dz_hold_r) { if (speed_right < MOTOR_HOLD_EXIT_CPS)  g_dz_hold_r = 0; }
                 else             { if (speed_right > MOTOR_HOLD_ENTER_CPS) g_dz_hold_r = 1; }
-                float deadzone_l = g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
-                float deadzone_r = g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
+                /* H1(06-06 21:17/21:19 乒乓锤实测): sm 区死区禁回 START——锁向翻边瞬间
+                 * 原拖刹轮 0cps 会被 R3 判"重新起步"挂 START 990,叠加 D3b+pid 成 1560/1600
+                 * 暴力踢出,把捞线甩成换边乒乓。sm 区轮子从 0 起动只用 HOLD(680/710)+pid
+                 * (pivot 外轮 ~1030,19:49 成功量级);非 sm 区行为不变。 */
+                float deadzone_l = (g_dz_hold_l || g_s_mode) ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L;
+                float deadzone_r = (g_dz_hold_r || g_s_mode) ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R;
                 float cmd_l = ClampClosedLoopDuty(g_motor_target_l);
                 float cmd_r = ClampClosedLoopDuty(g_motor_target_r);
                 /* D3(06-06 用户报告皱褶停转): 被命令运动(cmd>EPS)却近停(<3cps)的轮,死区前馈
@@ -866,6 +1272,16 @@ int main(void)
                     if (g_stall_boost_r > 600.0f) g_stall_boost_r = 600.0f;
                 } else if (speed_right > 12 || !is_racing || cmd_r <= MOTOR_CMD_EPS) {
                     g_stall_boost_r -= 8.0f; if (g_stall_boost_r < 0.0f) g_stall_boost_r = 0.0f;
+                }
+                /* H1: sm 区踢腿封顶 100——pivot 外轮从 0 起动属正常工况非托底,
+                 * 600 级脱困档只留给非 sm 区(凸起/搁浅);封顶后 sm 最大
+                 * sent≈710+320+100=1130(对照锤峰 1560/1600)。
+                 * U2(06-06 23:20 Run1): 深弯同帽——U 弯楔住后双轮泵到 sent=890/1462,
+                 * 脱困瞬间弹射(yw 300ms 内 197→-43)出图;U1 内轮停转后 cmd=0 本不触发
+                 * 踢腿,封顶只防楔住工况。600 级脱困档保留给直线段(凸起在直道,deep=0)。 */
+                if (g_s_mode || PID_GetDeepTurnMode()) {
+                    if (g_stall_boost_l > 100.0f) g_stall_boost_l = 100.0f;
+                    if (g_stall_boost_r > 100.0f) g_stall_boost_r = 100.0f;
                 }
                 float duty_l = ApplyDeadzone(cmd_l, deadzone_l + g_stall_boost_l);
                 float duty_r = ApplyDeadzone(cmd_r, deadzone_r + g_stall_boost_r);
@@ -909,7 +1325,14 @@ int main(void)
         }
 
         // ---- 板间协议接收处理（编码器反馈 + ESP32/雷达兼容） ----
+#if ESP32_ON_USART2
+        /* ESP32 接管 USART2：环形缓冲字节喂 A5 5A 帧解析(0x11 DECISION/0x30 ARCH_PASSED)。
+         * 与旧 0xAA Proto 互斥——双解析会在对方 payload 内伪同步并反向发 ACK 污染链路。 */
+        while (Uart2_BytesAvailable() > 0)
+            ESP32_OnByteReceived(Uart2_ReadByteBlocking());
+#else
         Proto_Process();
+#endif
 
         // ---- 人机交互：按键启动/停止 ----
         Key_Scan_Update();
@@ -949,6 +1372,17 @@ int main(void)
                 g_u_turn_passed = 0;
                 g_jc_at_u = 0;              /* S1 基线同清 */
                 g_s_mode = 0;
+                g_s_mode_done = 0;          /* P9: 出口门状态同清 */
+                g_sm_stable_run = 0;
+                g_rd_state = RD_OFF;        /* P2: 雷达段状态机复位 */
+                g_rd_tick = 0; g_rd_settle = 0; g_rd_found_run = 0;
+                g_arch_cool = 0;
+                g_finish_ticks = 0;         /* P1: 终点状态复位 */
+                g_finish_armed = 0;
+                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
+                g_s2_active = 0;
+                g_u_cnt_base = 0;
+                PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
@@ -956,7 +1390,8 @@ int main(void)
                 // K2: 停止运行
                 StopRun();
 #if SINGLE_BOARD_LOCAL_DRIVE
-                g_fan_spot_ticks = 0u;       /* C1: K2 一键全停含风扇 */
+                g_fan_spot_ticks = 0u;       /* C1/G1: K2 一键全停含风扇(锁存态同清) */
+                g_fan_on = 0u;
                 M3PWM_SetDutyCycle(0);
 #endif
                 RGB_SetColor(RGB_COLOR_R);
@@ -971,18 +1406,36 @@ int main(void)
                 g_u_turn_passed = 0;
                 g_jc_at_u = 0;              /* S1 基线同清 */
                 g_s_mode = 0;
+                g_s_mode_done = 0;          /* P9: 出口门状态同清 */
+                g_sm_stable_run = 0;
+                g_rd_state = RD_OFF;        /* P2/P1: 雷达段+终点状态复位 */
+                g_rd_tick = 0; g_rd_settle = 0; g_rd_found_run = 0;
+                g_arch_cool = 0;
+                g_finish_ticks = 0;
+                g_finish_armed = 0;
+                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
+                g_s2_active = 0;
+                g_u_cnt_base = 0;
+                PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
             case KEY_K4:
 #if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE
-                /* C3-kick(06-06 诊断构建): 17kHz/2kHz 全梯 ≤5% 均不起转(有声/声随占空比
-                 * 增大/无温升=驱动链活,纯起转力矩不足)。单次有界 kick: 150(15%) 仅 200ms
-                 * → 控制tick 自动回落 50 保持到 2s。进行中忽略重按,150 暴露严格 ≤200ms。 */
-                if (g_fan_spot_ticks == 0u)
+                /* G1(06-06 用户拍板,接替 C3-kick 诊断): K4=风扇锁存开关——
+                 * 开: kick 150×200ms(实测起转配方)→回落 50 保持常转(跑圈构型,负压抓地);
+                 * 关: 再按 K4 或 K2。kick 进行中忽略按键(150 暴露严格 ≤200ms 不变)。 */
+                if (!g_fan_on && g_fan_spot_ticks == 0u)
                 {
+                    g_fan_on = 1u;
                     M3PWM_SetDutyCycleKickDiag(150);
-                    g_fan_spot_ticks = 1000u;    /* 2s 总窗:150×200ms + 50×1800ms */
-                    OLED_ShowString(1, 1, "FAN KICK150+50  ");
+                    g_fan_spot_ticks = 100u;     /* kick 相位 200ms,倒计时毕回落 50 保持 */
+                    OLED_ShowString(1, 1, "FAN ON 150>50   ");
+                }
+                else if (g_fan_on && g_fan_spot_ticks == 0u)
+                {
+                    g_fan_on = 0u;
+                    M3PWM_SetDutyCycle(0);
+                    OLED_ShowString(1, 1, "FAN OFF         ");
                 }
 #elif SINGLE_BOARD_LOCAL_DRIVE
                 /* C1: 风扇起转阶梯点动 20→35→50 循环,每按 2s 自动归零 */
@@ -1020,7 +1473,15 @@ int main(void)
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
                 else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
                 int n = snprintf(dbg, sizeof(dbg),
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d el=%ld er=%ld",
+                    /* F1(06-06): 加 bv=电池电压×10(整数,如124=12.4V)——19:55 无串口轮 S 弯复挂,
+                     * 嫌疑人之一=3小时跑量电池压降(死区/floor 满电整定,battery-debt 老账)。
+                     * 最坏帧长 237+6=243 < 256 仍安全。 */
+                    /* P2(06-06): 加 rd=雷达段状态(0~9,RD_OFF..RD_FAIL)。最坏帧长 243+5=248,
+                     * 极端情况(全字段同时满宽)超 247 由 ESP32_SendLog 拆两帧——实际典型行
+                     * 150~180B 远不触及;PC 明文模式(开关=0)无此约束。 */
+                    /* 06-07 评审: 加 sg=段游标(0~6,NAVSEG_*)。最坏帧长 248+5=253<256 缓冲安全;
+                     * >247 极端帧由 ESP32_SendLog 拆两帧,典型行 150~185B 不触及。 */
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d bv=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -1034,6 +1495,9 @@ int main(void)
                     (int)dyaw_deg,                     /* 发车以来累计航向变化(°) */
                     (int)g_u_turn_passed,              /* 1=已完成~180°航向变化(U弯) */
                     (int)g_s_mode,                     /* S-mode 分段降速锁存 */
+                    (int)g_rd_state,                   /* P2: 雷达段状态机 */
+                    (int)g_navseg,                     /* 06-07: 段游标(S②域看 sm=1 且 rd=8) */
+                    (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
                 if (n > 0 && n < (int)sizeof(dbg))
@@ -1051,7 +1515,12 @@ int main(void)
                     {
                         dbg[n++] = '\r';
                         dbg[n++] = '\n';
+#if ESP32_ON_USART2
+                        /* 同一行遥测文本封 0x07 帧发 ESP32→BLE→小程序面板(一行一帧,≤243B<247) */
+                        ESP32_SendLog((const uint8_t *)dbg, (uint16_t)n);
+#else
                         Debug_SendBuf((const uint8_t *)dbg, (uint16_t)n);
+#endif
                     }
                 }
             }

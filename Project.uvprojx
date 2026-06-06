@@ -756,6 +756,16 @@
               <FilePath>.\User\Uart_Config.h</FilePath>
             </File>
             <File>
+              <FileName>ESP32_Comm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\ESP32_Comm.c</FilePath>
+            </File>
+            <File>
+              <FileName>ESP32_Comm.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\ESP32_Comm.h</FilePath>
+            </File>
+            <File>
               <FileName>RGB_Led.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\RGB_Led.c</FilePath>

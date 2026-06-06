@@ -190,5 +190,29 @@ uint16_t PID_GetLineLostTicks(void);
  */
 uint8_t PID_GetDeepTurnMode(void);
 
+/* ===== P2 导航覆盖接口(06-06 雷达避障段) =====
+ * 旁路寻线/路口/锁向全套机制,由上层(main 雷达状态机)直接给定运动指令：
+ *   NONE    — 正常循迹(默认)
+ *   HOLD    — 清洁停车保持(目标/输出清零,ApplyDeadzone(0)=0;丢线计数冻结)
+ *   HEADING — 航向保持直行:corr=Kyaw×(当前-目标)yaw,限幅±50(非深弯 cap 域,
+ *             floor 70 下内轮≥20 永不为负);丢线 375 自停被旁路,时长由上层预算兜底 */
+#define NAV_OVERRIDE_NONE     0u
+#define NAV_OVERRIDE_HOLD     1u
+#define NAV_OVERRIDE_HEADING  2u
+
+/**
+ * @brief 设置导航覆盖模式
+ * @param mode: NAV_OVERRIDE_*
+ * @param yaw_target_rad: HEADING 模式的目标航向(add_angle 标系,rad)
+ * @param speed_cps: HEADING 模式的目标速度(cnt/s;实际受速度环 floor 70 托底)
+ * @note  !is_racing(停车)时 PID 内部自动清回 NONE
+ */
+void PID_SetNavOverride(uint8_t mode, float yaw_target_rad, float speed_cps);
+
+/**
+ * @brief 获取当前导航覆盖模式(遥测/状态机查询用)
+ */
+uint8_t PID_GetNavOverride(void);
+
 #endif // __PID_CONTROLLER_H__
 

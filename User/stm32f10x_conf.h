@@ -70,6 +70,16 @@
  *   =0             : 还原旧双层板行为（遥测走 USART3，协议帧无条件发送）。 */
 #define TELEMETRY_ON_USART2   1
 
+/* ESP32S3-1 雷达上位机接入 USART2/J5（同一物理口，06-06 与队友定版 A5 5A 协议）：
+ *   接线：J5 TX(PA2)→ESP32 GPIO18(RX)，J5 RX(PA3)←ESP32 GPIO17(TX)，共地，115200 8N1。
+ *   =1 (本分支默认,06-06 晚雷达板接上后切换): 遥测文本封 0x07 帧(A5 5A|ver|type|seq|len|
+ *                          payload|xor)发 ESP32，ESP32 原样转 BLE A003→小程序"车端串口日志"
+ *                          面板；USART2 RX 改喂 ESP32 帧解析(0x11 DECISION/0x30 ARCH_PASSED)。
+ *   =0 (PC 调试):          明文遥测直发 PC，RX 走旧 0xAA Proto——拔 ESP32 插 USB-TTL 时回 0。
+ *   两套解析互斥（双解析会在对方 payload 内伪同步并反向发 ACK 污染链路），只能二选一。
+ *   注意：0x07 帧的内容源自遥测构建，置 1 时须保持 TELEMETRY_ON_USART2=1 不动。 */
+#define ESP32_ON_USART2   1
+
 /* 单板架构（2合1 单板 = 一颗 MCU 干完控制+电机驱动+编码器+风扇）：
  *   =1 (本分支 2in1-single): 电机本地 TIM1 直驱(Motor_ctr)、编码器本地 TIM3/TIM4 读(ABEncoder)、
  *                            风扇本地 TIM2_CH4(M3PWM)；删串口电机指令转发与远端编码器回传。
