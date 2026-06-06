@@ -19,6 +19,9 @@
 #include "Path.h"
 #include "Motor_ctr.h"
 #include "stm32f10x_it.h"
+#if SINGLE_BOARD_LOCAL_DRIVE
+#include "M3PWM.h"                 /* 单板:风扇 TIM2_CH4 本地 PWM */
+#endif
 
 /*
  * ============================================================
@@ -184,9 +187,13 @@ extern volatile float g_motor_target_r;
 static int16_t g_sent_motor_l = 0;
 static int16_t g_sent_motor_r = 0;
 
-/* 下板链路监视：收到 ENC_FEEDBACK 心跳清零；丢失超时则解除运行防窜车 */
+/* 下板链路监视：收到 ENC_FEEDBACK 心跳清零；丢失超时则解除运行防窜车
+ * 单板:无远端心跳。g_link_alive 保留供 OLED 状态行显示(恒 0=LINK:--)；
+ * g_link_lost_ticks 仅双层板看门狗用，单板下不编译以免未用变量告警。 */
 static volatile uint8_t g_link_alive = 0;
+#if !SINGLE_BOARD_LOCAL_DRIVE
 static uint32_t g_link_lost_ticks = 0;
+#endif
 /* 心跳丢失阈值：下板 100Hz 回传，连续 50 个控制 tick(=100ms) 无心跳判为断链 */
 #ifndef LINK_LOST_TICKS
 #define LINK_LOST_TICKS 50u
@@ -432,6 +439,7 @@ static void OnRadarDist(const ProtoFrame_t *f)
 #ifndef SPEED_WIN_MS
 #define SPEED_WIN_MS 250u
 #endif
+#if !SINGLE_BOARD_LOCAL_DRIVE
 static void OnEncFeedback(const ProtoFrame_t *f)
 {
     int32_t cnt_l, cnt_r, dl, dr;
@@ -504,6 +512,101 @@ static void OnLinkReset(const ProtoFrame_t *f)
     RGB_SetColor(RGB_COLOR_R);
     OLED_ShowString(1, 1, "LOWER RESET     ");
 }
+#endif  /* !SINGLE_BOARD_LOCAL_DRIVE : OnEncFeedback/OnLinkReset 仅双层板用 */
+
+#if SINGLE_BOARD_LOCAL_DRIVE
+/* 单板电机输出：把双层板下板 OnMotorCmd→ApplyMotorDuty 的本地驱动逻辑搬来，
+ * 带符号占空比拆成方向+幅值，幅值钳到 MOTOR_DUTY_MAX(底层 Motor_SetSpeed 再钳 SAFE_MAX)。
+ * 与 lower-pid 执行器等价，duty 口径不变(原串口对接的 sent_motor_l/r 直接喂)。 */
+static void ApplyMotorDutyLocal(uint8_t motor_id, int16_t duty_signed)
+{
+    uint8_t direction;
+    uint16_t duty;
+    if (duty_signed < 0)
+    {
+        direction = MOTOR_DIR_BACKWARD;
+        duty = (uint16_t)(-(int32_t)duty_signed);
+    }
+    else
+    {
+        direction = MOTOR_DIR_FORWARD;
+        duty = (uint16_t)duty_signed;
+    }
+    if (duty > MOTOR_DUTY_MAX) duty = MOTOR_DUTY_MAX;
+    Motor_SetDirection(motor_id, direction);
+    Motor_SetSpeed(motor_id, duty);
+}
+#endif
+
+#if SINGLE_BOARD_LOCAL_DRIVE
+/* 单板编码器本地化：把双层板 OnEncFeedback 的"计数增量→cnt/s 窗口换算"逻辑原样搬来，
+ * 数据源由协议帧 payload 改为本地 ABEncoder 维护的 left/right_encoder_cnt。
+ * 在主控 tick 调用(非 ISR)：先 ABEncoder_UpdateSpeed() 累计 encoder_cnt(lower-pid 原口径，
+ * speed_left/right 此刻是 2ms 增量)，随后本函数把 speed_left/right 覆写为 cnt/s——
+ * 同一 tick 内顺序确定、无竞态，tick 结束时 speed_left/right 即上层速度环期望的 cnt/s。
+ * 窗口长度 SPEED_WIN_MS / 换算公式 / 里程接口全部沿用现值，零参数改动。 */
+static void LocalEncoder_Update(void)
+{
+    int32_t cnt_l, cnt_r, dl, dr;
+    static uint8_t cnt_inited = 0;
+    static int32_t last_cnt_l = 0, last_cnt_r = 0;
+    static int32_t vel_accum_l = 0, vel_accum_r = 0;
+    static uint32_t vel_t0 = 0;
+    /* 窗口换算出的 cnt/s 保持值：双层板 OnEncFeedback 里 speed_left/right 在窗口间
+     * 自然保持上次值(无人覆写)。单板下 ABEncoder_UpdateSpeed 每 tick 把 speed_* 写成
+     * 2ms 增量，故必须用 g_cps_* 缓存窗口值并每 tick 回写，复刻"保持上次 cnt/s"语义。 */
+    static int16_t g_cps_l = 0, g_cps_r = 0;
+
+    ABEncoder_UpdateSpeed();          /* lower-pid 口径：维护 encoder_cnt(+写 2ms 增量 speed_*) */
+
+    cnt_l = left_encoder_cnt;
+    cnt_r = right_encoder_cnt;
+    g_link_cnt_l = cnt_l;
+    g_link_cnt_r = cnt_r;
+
+    if (!cnt_inited)
+    {
+        cnt_inited = 1;
+        last_cnt_l = cnt_l;
+        last_cnt_r = cnt_r;
+        vel_accum_l = 0;
+        vel_accum_r = 0;
+        vel_t0 = Millis_Get();
+        g_cps_l = 0;
+        g_cps_r = 0;
+    }
+    else
+    {
+        dl = cnt_l - last_cnt_l;
+        dr = cnt_r - last_cnt_r;
+        last_cnt_l = cnt_l;
+        last_cnt_r = cnt_r;
+        Path_UpdateOdometer(dl, dr);
+
+        vel_accum_l += dl;
+        vel_accum_r += dr;
+        {
+            uint32_t now = Millis_Get();
+            uint32_t dt  = now - vel_t0;
+            if (dt >= SPEED_WIN_MS)
+            {
+                if (dt == 0) dt = 1;
+                g_cps_l = (int16_t)((vel_accum_l * 1000) / (int32_t)dt);
+                g_cps_r = (int16_t)((vel_accum_r * 1000) / (int32_t)dt);
+                vel_accum_l = 0;
+                vel_accum_r = 0;
+                vel_t0 = now;
+                g_speed_sample_ready = 1;
+            }
+        }
+    }
+
+    /* 每 tick 回写：覆盖 ABEncoder_UpdateSpeed 刚写的 2ms 增量，使下游(速度环/死区/
+     * 遥测)始终读到 cnt/s 量纲。与双层板 speed_* 语义逐位等价。 */
+    speed_left  = g_cps_l;
+    speed_right = g_cps_r;
+}
+#endif
 
 int main(void)
 {
@@ -514,6 +617,17 @@ int main(void)
     g_imu_who_id  = MPU6050_ReadID();
     SysTick_Init();
     BlackPoint_Finder_Init();
+#if SINGLE_BOARD_LOCAL_DRIVE
+    /* 风扇 M3PWM 用 TIM2 部分重映射2(CH3=PB10/CH4=PB11)。必须在 LineSensor_Init 之前，
+     * 由 LineSensor_Init 最后把 PB10 配回 IPU 输入(S7)；M3PWM 只初始化 CH4，不碰 CH3。 */
+    Motor_Init();              /* TIM1 PA8~12 电机驱动 */
+    Motor_StopAll();
+    Motor_Disable();           /* 开机电机禁用，K1 发车再使能 */
+    ABEncoder_Init();          /* TIM3 PA6/7 右轮 + TIM4 PB6/7 左轮 */
+    M3PWM_Init();
+    M3PWM_Start();
+    M3PWM_SetDutyCycle(0);     /* 风扇开机 0%，底层 ABS_CAP 兜底 */
+#endif
     LineSensor_Init();
     Key_Scan_Init();
     Uart2_Init(115200);
@@ -529,6 +643,14 @@ int main(void)
     (void)g_sensor_low_pos10;
     (void)g_sensor_high_pos10;
 
+#if SINGLE_BOARD_LOCAL_DRIVE
+    /* 单板:无远端下板，仅保留 ESP/雷达回调(物理链路另说)；电机/编码器走本地。
+     * 不注册 MOTOR_CMD/ENC_FEEDBACK/LINK_RESET，不发 LinkReset 握手。 */
+    Proto_Init();
+    Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
+    Proto_RegisterHandler(PROTO_CMD_RADAR_DIST, OnRadarDist);
+    is_racing = 0;
+#else
     // 板间/ESP32 协议初始化
     Proto_Init();
     Proto_RegisterHandler(PROTO_CMD_LORA_STOP, OnLoraStop);
@@ -542,6 +664,7 @@ int main(void)
     Proto_SendLinkReset();
     Delay_ms(5);
     Proto_SendLinkReset();
+#endif
 
 #if OLED_TELEMETRY_ENABLE
     uint8_t oled_due = 1;
@@ -554,6 +677,12 @@ int main(void)
         if (g_control_tick)
         {
             g_control_tick = 0;
+
+#if SINGLE_BOARD_LOCAL_DRIVE
+            /* 单板:本地编码器采样+换算(替代远端 OnEncFeedback 心跳)。每 tick 先更新，
+             * 使下方速度环/死区/遥测读到的 speed_left/right 为本 tick 的最新 cnt/s。 */
+            LocalEncoder_Update();
+#endif
 
             // 7路灰度 + PA0电池电压轮询采样
             LineSensor_SampleAll();
@@ -589,6 +718,7 @@ int main(void)
             }
             g_prev_racing = is_racing;
 
+#if !SINGLE_BOARD_LOCAL_DRIVE
             // 下板心跳监视：运行中若下板断链(掉电/重烧/线松)，解除运行防窜车
             if (g_link_alive)
             {
@@ -607,6 +737,7 @@ int main(void)
                     g_link_alive = 0;   /* 等待下板心跳/LINK_RESET 重新置位 */
                 }
             }
+#endif
 
             // U 弯锁存（R2，06-05 审查三方确认）：原埋在调试遥测 #if 块内且 300ms 节流——
             // 关调试串口的构建会让 S-mode 静默失效。移到控制 tick 每帧评估，遥测只读。
@@ -633,7 +764,19 @@ int main(void)
             g_motor_target_r = (float)g_openloop_duty;
             {
                 int16_t duty = (int16_t)ClampMotorDutyFinal((float)g_openloop_duty);
-#if TELEMETRY_ON_USART2
+#if SINGLE_BOARD_LOCAL_DRIVE
+                if (g_openloop_active)
+                {
+                    Motor_Enable();
+                    ApplyMotorDutyLocal(MOTOR_L, duty);
+                    ApplyMotorDutyLocal(MOTOR_R, duty);
+                }
+                else
+                {
+                    Motor_StopAll();
+                    Motor_Disable();
+                }
+#elif TELEMETRY_ON_USART2
                 /* USART2 兼作调试口：无下板心跳(台架裸板)时停发协议帧防二进制刷屏；
                  * 下板 100Hz 主动心跳，链路接通即自动恢复发送 */
                 if (g_link_alive)
@@ -658,7 +801,20 @@ int main(void)
                 float duty_r = ApplyDeadzone(ClampClosedLoopDuty(g_motor_target_r), deadzone_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
                 g_sent_motor_r = (int16_t)ClampMotorDutyFinal(duty_r);
-#if TELEMETRY_ON_USART2
+#if SINGLE_BOARD_LOCAL_DRIVE
+                /* 单板:本地直驱。is_racing 使能/失能 + 下发左右占空比；停车走安全下电。 */
+                if (is_racing)
+                {
+                    Motor_Enable();
+                    ApplyMotorDutyLocal(MOTOR_L, g_sent_motor_l);
+                    ApplyMotorDutyLocal(MOTOR_R, g_sent_motor_r);
+                }
+                else
+                {
+                    Motor_StopAll();
+                    Motor_Disable();
+                }
+#elif TELEMETRY_ON_USART2
                 /* 同上：无下板心跳不发协议帧（裸板台架 USART2 只走明文遥测） */
                 if (g_link_alive)
                     Proto_SendMotorCmd(g_sent_motor_l, g_sent_motor_r, is_racing);
@@ -705,6 +861,7 @@ int main(void)
                 break;
             case KEY_K1:
                 // K1: 启动运行
+#if !SINGLE_BOARD_LOCAL_DRIVE
                 /* R7(06-05 审查): 看门狗对"下板从未上电"是盲区(g_link_alive 初始 0 不武装)，
                  * 今晨 30 分钟误诊根源。无心跳拒发车，当场可见。 */
                 if (!g_link_alive)
@@ -713,6 +870,8 @@ int main(void)
                     OLED_ShowString(1, 1, "NO LINK! CHK PWR");
                     break;
                 }
+#endif
+                /* 单板:电机本地直驱，无远端心跳概念，K1 直接发车(电机在 PID 输出处使能)。 */
                 is_racing = 1;
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();

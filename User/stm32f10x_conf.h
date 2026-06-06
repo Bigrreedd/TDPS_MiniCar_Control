@@ -70,6 +70,13 @@
  *   =0             : 还原旧双层板行为（遥测走 USART3，协议帧无条件发送）。 */
 #define TELEMETRY_ON_USART2   1
 
+/* 单板架构（2合1 单板 = 一颗 MCU 干完控制+电机驱动+编码器+风扇）：
+ *   =1 (本分支 2in1-single): 电机本地 TIM1 直驱(Motor_ctr)、编码器本地 TIM3/TIM4 读(ABEncoder)、
+ *                            风扇本地 TIM2_CH4(M3PWM)；删串口电机指令转发与远端编码器回传。
+ *   =0 (双层板上层): 电机/编码器经 USART2 协议帧与远端下板交互(Proto_SendMotorCmd/OnEncFeedback)。
+ *   网表实证:电机 MOTOR1/2H/L+EN=PA8~12+DRV8701、编码器 PA6/7+PB6/7、风扇 PB11 全在本 MCU。 */
+#define SINGLE_BOARD_LOCAL_DRIVE  1
+
 /* Exported macro ------------------------------------------------------------*/
 #ifdef  USE_FULL_ASSERT
 
