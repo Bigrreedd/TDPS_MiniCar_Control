@@ -389,8 +389,14 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
                           * S①完成(sm_done)自停。比赛/全图回 0。 */
 #endif
 #ifndef SEGTEST_SEED_DISABLE
-#define SEGTEST_SEED_DISABLE 1  /* F26c: 1=K1不播种任何锁存,u/sm 全链自然触发(合段连测,
-                                 * 从起跑线摆位);0=原语义(摆上段出口,播种前段锁存单测本段)。 */
+#define SEGTEST_SEED_DISABLE 0  /* F26c: 1=K1不播种任何锁存,u/sm 全链自然触发(合段连测,
+                                 * 从起跑线摆位);0=原语义(摆上段出口,播种前段锁存单测本段)。
+                                 * F27(备用场地): 回 0——车摆 S 入口直线(Y2 后),播种 u=1,
+                                 * sm 由 U3 deep 签名/jc 自然锁,S①→拱门→矩形区全链实跑。 */
+#endif
+#ifndef SEGTEST_EXIT_DISABLE
+#define SEGTEST_EXIT_DISABLE 1  /* F27: 1=本段出口不自停(跑过 sm_done 继续后链,矩形区出口
+                                 * 手动 K2 收车——段3无固件出口信号);0=原出口自停语义。 */
 #endif
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
@@ -1422,10 +1428,11 @@ int main(void)
                 }
             }
 
-#if TEST_SEGMENT == 1 || TEST_SEGMENT == 2 || TEST_SEGMENT == 5
+#if (TEST_SEGMENT == 1 || TEST_SEGMENT == 2 || TEST_SEGMENT == 5) && !SEGTEST_EXIT_DISABLE
             /* SEG-TEST 出口自停:命中段出口锁存→StopRun(灭扇走 racing 下降沿,G3a)。
              * is_racing 门保证只触发一次;段3/4 无固件出口信号(手动 K2),段6 走既有
-             * FINISH 链自停,均不在此列。 */
+             * FINISH 链自停,均不在此列。F27: SEGTEST_EXIT_DISABLE=1 时本块整体不参编
+             * (跑过本段出口继续后链,手动 K2 收车)。 */
             if (is_racing)
             {
 #if TEST_SEGMENT == 1
