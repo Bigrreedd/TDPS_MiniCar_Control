@@ -452,7 +452,8 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  *  1 START→U出口        种子:无                        出口:u=1 自停
  *  2 U出口→S+拱门+90°右  种子:u=1(+F32a sm播种)          出口:F41 拱门0x30武装+净转向
  *                        ≥75°持续0.5s+见线 自停(sm_done 自停已撤;兜底里程 400cnt 强停)
- *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:F41 里程 SEG3_EXIT_CNT 自停
+ *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:F42 IMU门自停(|Δyaw|≥75°
+ *                        持续0.5s+见线;F41里程门已废,用户:编码器不可靠,状态转化用IMU)
  *                        (+SEG3_SM_RECIPE: 播 sm=1 常驻,S 配方全套,P9/T3 出口门不参编)
  *  4 方块阵出口→圆区出口  种子:同3(方块/圆之间无固件边界,靠摆放位置区分) 出口:手动 K2;
  *                        勿驶入雷达段(sm锚=发车点,Δ<RD_ZONE_MIN_CNT 则 RD 不武装,
@@ -469,7 +470,7 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #define TEST_SEGMENT 3   /* F41(06-08 用户拍板"下面我们先测量矩形区域"): 切方块区单测。
                           * S 弯参数全冻结(F39 态即定版,本版零改动);S 配方借给方块区
                           * (SEG3_SM_RECIPE,用户:"s弯的pid参数可以给正方形区域参考")。
-                          * 3/4 两区分开测;3 区出口=里程门自停(SEG3_EXIT_CNT)。
+                          * 3/4 两区分开测;3 区出口=IMU 门自停(F42,里程门已废)。
                           * 段2 出口同轮重定义:拱门0x30武装+90°右转自停(回测 S 区时切 2)。
                           * 比赛/全图回 0。 */
 #endif
@@ -488,16 +489,34 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  *    sm_done 自停(F40)撤——车须继续过拱门。方向不写死(红线b):用 |Δ|,拱门后唯一弯=右90°等效。
  *    ⚠场地要求:拱门必须摆在全部 S 段之后、90°右转之前,两者之间不得再有弯(否则弧内可能假凑)。
  *    兜底:拱门帧丢失 → 里程 Δ≥SEG2_STOP_BACKSTOP_CNT 强停,履约"必须停止"。
- * ② "3区域过了,到达正方形的出口就停止" + "s弯的pid参数给正方形区域参考":
- *    SEG3 = S 配方常驻(播 sm=1 不释放:T=14/S域死区1025/1065/deep1.5/MIN_INNER=0/A1/A2/F36),
- *    P9/T3 出口门不参编(长直/密路口都不许放);出口=里程门 SEG3_EXIT_CNT 自停(方块区出口
- *    无事件帧/无 yaw 签名,里程是唯一可用门;jc 禁用作锚,S区通胀 2→4 实证)。 */
+ * ② "3区域过了,到达正方形的出口就停止" + "s弯的pid参数给正方形区域参考"
+ *    + "速度和现在的s弯差不多,不要用低速,底盘低会卡住特别是90度":
+ *    SEG3 = S 配方常驻(播 sm=1 不释放:T=14+S域死区1025/1065 → 实跑 20~45cps,与现役
+ *    S 弯完全同规,惯性冲凹凸语义保留);P9/T3 出口门不参编(长直/密路口都不许放)。
+ * ③ F42(用户拍板"里程来判断终点和状态不可靠!编码器有问题,不能依赖,通过imu的角度变化
+ *    来进行状态转化"): SEG3 出口=IMU 门——区内全程直穿(岔口冻结直行),发车后第一个
+ *    持续 90° 级净转向只能是出口右转 → |Δyaw|≥75° 持续 0.5s 且当刻见线(转正上线)
+ *    → 自停;锚=g_yaw_zero(K1 标准清单清零)。F41 里程门 SEG3_EXIT_CNT 废弃删除;
+ *    jc 禁用作锚不变(S区 2→4 通胀实证);方向不写死(红线b,用 |Δ|)。 */
 #ifndef SEG3_SM_RECIPE
 #define SEG3_SM_RECIPE 1
 #endif
-#ifndef SEG3_EXIT_CNT
-#define SEG3_EXIT_CNT 125       /* ⚠占位估计≈3.0m@2.4cm/cnt——首跑后按停点偏差回填,
-                                 * 或手推车发车点→出口读 el/er 均值差直接定值 */
+#if TEST_SEGMENT == 3
+static uint16_t g_seg3_stop_run = 0;    /* F42: 出口 IMU 门持续窗计数(遥测 s3w=) */
+#ifndef SEG3_STOP_YAW_DEG
+#define SEG3_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前收口(同 SEG1 150/180 比例) */
+#endif
+#ifndef SEG3_STOP_HOLD_TICKS
+#define SEG3_STOP_HOLD_TICKS     250u   /* 0.5s 持续确认,滤岔口甩头/瞬时越阈 */
+#endif
+#ifndef SEG3_GUARD_MAX_LOST_TICKS
+#define SEG3_GUARD_MAX_LOST_TICKS 125u  /* 见线守卫:盲旋凑角不算(同 SEG1) */
+#endif
+#define SEG3_TELEM_FMT  " s3w=%d"       /* F42: IMU 门窗计数上遥测(甩头假武装可观测) */
+#define SEG3_TELEM_ARG  , (int)g_seg3_stop_run
+#else
+#define SEG3_TELEM_FMT  ""              /* 非 seg3: 帧格式字节级不变 */
+#define SEG3_TELEM_ARG
 #endif
 #if TEST_SEGMENT == 2
 static uint8_t  g_seg2_arch_seen = 0;   /* F41: 拱门事件已收(首帧锁存,重发帧不刷新基准) */
@@ -809,7 +828,7 @@ static void SegTest_SeedOnStart(void)
 #if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
     g_s_mode = 1;                   /* F41: 方块区借 S 配方(用户拍板)——T=14/S域死区/deep1.5/
                                      * MIN_INNER=0/A1/A2/F36 全套即刻上场;P9/T3 出口门本构型
-                                     * 不参编(见该块 #if),sm 全程常驻,出口=里程门自停。
+                                     * 不参编(见该块 #if),sm 全程常驻,出口=IMU 门自停(F42)。
                                      * sm_done 保持上方 >=3 块的 1(双保险防回锁,无消费冲突)。 */
     g_sm_stable_run = 0;
     g_sm_latch_src = 5;             /* lt=5: 播种(与 SEG2 同义) */
@@ -1399,7 +1418,7 @@ int main(void)
 #if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
             /* F41: 方块区 S 配方常驻——P9/T3 出口门整体不参编(方块阵长直会凑满稳线窗、
              * T3 240cnt 会中途强释,任一放行都让 T 跳 25 破坏"S 参数参考"语义)。
-             * 出口自停走里程门(SEG3_EXIT_CNT,段出口自停块),与释放机制无关。 */
+             * 出口自停走 IMU 门(F42,段出口自停块),与释放机制无关。 */
 #else
             if (g_s_mode && is_racing)
             {
@@ -1673,12 +1692,25 @@ int main(void)
                     StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 BACKSTOP   ");
                 }
 #elif TEST_SEGMENT == 3
-                /* F41(用户拍板"3区域过了,到达正方形的出口就停止"): 方块区出口无事件帧/
-                 * 无 yaw 签名,里程是唯一可用门(锚=发车点,>=3 播种块);jc 禁用作锚(通胀实证)。
-                 * SEG3_EXIT_CNT 首值为占位,标定法见宏注释。 */
-                if (((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= SEG3_EXIT_CNT)
+                /* F42(用户否决 F41 里程门:"编码器有问题,不能依赖,用imu的角度变化做状态
+                 * 转化"): 出口=IMU 门。方块区内全程直穿(岔口冻结直行,yw 始终≈0),发车后
+                 * 第一个持续 90° 级净转向只能是出口右转;|Δyaw|≥75° 持续 0.5s 且当刻见线
+                 * (=转过弯且已转正上线,匹配"末方块上方直线转正即完成"原始口径)→ 停。
+                 * 持续窗滤岔口漏检甩头(瞬时摆头难以 0.5s 稳持±75°且全程见线);
+                 * 盲旋凑角被 lost 守卫滤除。锚=g_yaw_zero(K1 清零,种子不动它)。 */
                 {
-                    StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG3 DONE EXIT  ");
+                    float seg3_dyaw = (add_angle - g_yaw_zero) * 57.2957795f;
+                    if (seg3_dyaw < 0.0f) seg3_dyaw = -seg3_dyaw;
+                    if (seg3_dyaw >= SEG3_STOP_YAW_DEG &&
+                        PID_GetLineLostTicks() < SEG3_GUARD_MAX_LOST_TICKS)
+                    {
+                        if (g_seg3_stop_run < 0xFFFFu) g_seg3_stop_run++;
+                        if (g_seg3_stop_run >= SEG3_STOP_HOLD_TICKS)
+                        {
+                            StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG3 DONE EXIT  ");
+                        }
+                    }
+                    else { g_seg3_stop_run = 0u; }
                 }
 #elif TEST_SEGMENT == 5
                 if (g_rd_state == RD_DONE)  { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG5 DONE rd=8  "); }
@@ -1694,6 +1726,11 @@ int main(void)
             {
                 g_seg2_arch_seen = 0u;    /* F41: 停车态自清,下次 K1 重新武装 */
                 g_seg2_stop_run  = 0u;
+            }
+#elif TEST_SEGMENT == 3
+            else
+            {
+                g_seg3_stop_run = 0u;     /* F42: 停车态自清,下次 K1 重新起算 */
             }
 #endif
 #endif
@@ -2195,7 +2232,9 @@ int main(void)
                      * ——F6b 验收与释放源之谜(03:04)机读化。最坏 +12B 由 SendLog 拆帧兜底。 */
                     /* G2: 加 fn=风机锁存态(1=kick/50常转)——常开构型下每行日志自证风机条件,
                      * 杜绝"这轮到底开没开扇"复盘歧义。+5B,dbg=320 仍裕。 */
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d es=%d fn=%d bv=%d el=%ld er=%ld",
+                    /* F42: seg3 构型追加 s3w=出口IMU门持续窗计数(0=未武装;甩头假武装直读;
+                     * 非 seg3 SEG3_TELEM_FMT="" 帧格式字节级不变)。+10B 最坏仍由 SendLog 拆帧兜底。 */
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d es=%d fn=%d bv=%d el=%ld er=%ld" SEG3_TELEM_FMT,
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -2219,7 +2258,7 @@ int main(void)
                     (int)ESP32_GetStartupState(),        /* 06-07: ESP启动握手状态(0 ACK/1 DONE/2 OK/3 RUN) */
                     (int)FAN_TELEM_VAL,                  /* G2: 风机锁存态 */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
-                    (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
+                    (long)g_link_cnt_l, (long)g_link_cnt_r SEG3_TELEM_ARG);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
                 if (n > 0 && n < (int)sizeof(dbg))
                 {
