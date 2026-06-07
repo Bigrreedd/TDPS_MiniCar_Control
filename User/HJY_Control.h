@@ -55,6 +55,16 @@ typedef enum
 #define HJY_LAUNCH_HOLD_MS    1500u   /* HJY3(用户提议): K1 后静置窗——电机保持 0,
                                        * 去手扰/等风机起转;GO 瞬间才锁航向基准+
                                        * 开轮速窗+打前馈脉冲 */
+/* HJY4(16:58 第二跑三环节): ①右轮 990 地面仍晚破粘 2 窗(左先动右偏)
+ * ②Δ200/窗退绕慢,L3 期左轮被命令 2 却跑 36(pwm 1131 退绕 1s)冲过线
+ * ③横穿线右缘残影一帧改写丢线保持方向(st 2→6),反向右旋 250° 触安全网 */
+#define HJY_CREEP_SPEED       10.0f   /* HJY4a 爬行档:GO 后双轮目标 10cnt/s,先动轮被
+                                       * 闭环按住(不再 36 狂奔),呆轮继续涨积分破粘 */
+#define HJY_CREEP_ALIVE_CNT   2       /* 双轮各计满 2cnt=都活了,切正常巡线 */
+#define HJY_CREEP_TIMEOUT_MS  1000u   /* 爬行兜底时长(单轮死活不动也放行,靠环路扛) */
+#define HJY_ST_DEBOUNCE_TICKS 25u     /* HJY4c 丢线保持方向防抖:状态须连续 ~50ms
+                                       * 才能成为"丢线记忆",杀横穿残影误改向 */
+#define HJY_UNWIND_DROP       10.0f   /* HJY4b 快退绕触发阈:目标一次跌 >10cnt/s */
 /* 速度环(左右独立,初值同,标定后允许分道扬镳) */
 #define HJY_SPD_KP            2.0f
 #define HJY_SPD_KI            14.0f

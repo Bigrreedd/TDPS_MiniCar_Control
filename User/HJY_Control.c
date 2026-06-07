@@ -88,6 +88,18 @@ static uint8_t  s_win_inited = 0u;
 /* HJY3: K1 静置窗——s_go_at 前电机保持 0;到点一次性打不对称前馈脉冲后进闭环 */
 static uint32_t s_go_at = 0u;
 static uint8_t  s_went = 0u;
+/* HJY4a: GO 后爬行段——双轮目标压 10cnt/s,直到两轮都计满 ALIVE_CNT(或超时)。
+ * 先破粘轮被闭环按在 10 而非全速狂奔,把"单轮先动"的甩头角钳到 ~20° 内(线不丢)。 */
+static uint8_t  s_creep_done = 0u;
+static int32_t  s_go_cnt_l = 0, s_go_cnt_r = 0;
+static uint32_t s_creep_deadline = 0u;
+/* HJY4c: 丢线保持方向防抖——瞬时分类照常驱动,但"丢线记忆"须同态连续 25 tick
+ * 才更新;16:58 实测横穿线时右缘残影 1 帧把记忆从 L 改成 R3,反向旋 250°。 */
+static uint8_t  s_hold_st = (uint8_t)HJY_ST_STRAIGHT;
+static uint8_t  s_st_prev = 255u;
+static uint8_t  s_st_run = 0u;
+/* HJY4b: 目标骤降快退绕——上窗目标,检测转向态切入 */
+static float    s_prev_vt_l = 0.0f, s_prev_vt_r = 0.0f;
 
 /* ============================================================ */
 /* 光路穷举分区:任意 7 位黑白组合 → 唯一状态。
@@ -160,6 +172,12 @@ void HJY_ResetRun(void)
     /* HJY3: K1 静置窗计时起点 */
     s_go_at = Millis_Get() + HJY_LAUNCH_HOLD_MS;
     s_went  = 0u;
+    /* HJY4: 爬行段/防抖记忆/快退绕基线同清 */
+    s_creep_done = 0u;
+    s_hold_st = (uint8_t)HJY_ST_STRAIGHT;
+    s_st_prev = 255u;
+    s_st_run  = 0u;
+    s_prev_vt_l = s_prev_vt_r = 0.0f;
     HJY_AnglePID_Reset();
     s_win_inited = 0u;
     g_hjy_state = (uint8_t)HJY_ST_STRAIGHT;
@@ -214,20 +232,35 @@ void HJY_Control_Update(void)
          * 破粘——替代旧"首窗 0→1100,1100 对称跳变"(16:46 右甩根因)。 */
         g_hjy_pwm_l = (int16_t)HJY_LAUNCH_FF_L;
         g_hjy_pwm_r = (int16_t)HJY_LAUNCH_FF_R;
+        /* HJY4a: 爬行段基线快照 */
+        s_go_cnt_l = left_encoder_cnt;
+        s_go_cnt_r = right_encoder_cnt;
+        s_creep_deadline = Millis_Get() + HJY_CREEP_TIMEOUT_MS;
     }
 
     /* 1) 光路分区 */
     st = HJY_Classify(g_line_sensor_values);
     if (st == HJY_ST_ALLWHITE)
     {
-        /* 丢线:沿用上一有效状态的目标继续走(不清不踢),
-         * 超时停车由 main 主环 lose_time(375)兜底,本核不重复判停。 */
-        st = (HJY_LineState_t)g_hjy_state;
-        if (st == HJY_ST_ALLWHITE) st = HJY_ST_STRAIGHT;   /* 防御:不应发生 */
+        /* HJY4c: 丢线沿用"防抖记忆"而非瞬时残影——16:58 实测车横穿线时
+         * 右缘 1 帧残影把保持方向从 L 族改写成 R3,反向旋 250° 触安全网。
+         * 超时停车仍由 main 主环 lose_time(375)兜底,本核不重复判停。 */
+        st = (HJY_LineState_t)s_hold_st;
     }
     else
     {
         g_hjy_state = (uint8_t)st;
+        /* 防抖记忆:同态连续 HJY_ST_DEBOUNCE_TICKS(~50ms)才有资格当丢线锚 */
+        if ((uint8_t)st == s_st_prev)
+        {
+            if (s_st_run < 255u) s_st_run++;
+        }
+        else
+        {
+            s_st_prev = (uint8_t)st;
+            s_st_run  = 1u;
+        }
+        if (s_st_run >= HJY_ST_DEBOUNCE_TICKS) s_hold_st = (uint8_t)st;
     }
 
     base = k_base[st];
@@ -269,6 +302,26 @@ void HJY_Control_Update(void)
     vt_r = base - diff;
     if (vt_l < 0.0f) vt_l = 0.0f;       /* 目标不为负:转向靠速度差,非反转 */
     if (vt_r < 0.0f) vt_r = 0.0f;
+
+    /* HJY4a: GO 后爬行段——双轮压同目标 10cnt/s 直到都活(各 ≥2cnt)或超时。
+     * 先破粘轮被闭环按住(16:58 实测左轮在右轮破粘前以 30+ 狂奔=甩头主力),
+     * 呆轮积分继续上行自寻破粘点;甩头角钳到线不出视野量级。爬行期角度环
+     * 不锁存(车姿尚未定型)。 */
+    if (!s_creep_done)
+    {
+        if ((left_encoder_cnt  - s_go_cnt_l >= HJY_CREEP_ALIVE_CNT &&
+             right_encoder_cnt - s_go_cnt_r >= HJY_CREEP_ALIVE_CNT) ||
+            Millis_Get() >= s_creep_deadline)
+        {
+            s_creep_done = 1u;
+        }
+        else
+        {
+            vt_l = HJY_CREEP_SPEED;
+            vt_r = HJY_CREEP_SPEED;
+            HJY_AnglePID_Reset();
+        }
+    }
     g_hjy_vt_l = (int16_t)vt_l;
     g_hjy_vt_r = (int16_t)vt_r;
 
@@ -301,6 +354,20 @@ void HJY_Control_Update(void)
             s_acc_l = 0;
             s_acc_r = 0;
             s_win_t0 = now;
+
+            /* HJY4b: 目标骤降(切转向态)一次性把积分起点压到该轮起动阈下
+             * (FF−100=左770/右890)——绕过增量式 Δ200/窗慢退绕:16:58 实测
+             * L3 期左轮被命令 2 却以 36 跑了 ~1s(pwm 1131→931→731),车带速
+             * 冲过线引发反向误捕。压到阈下轮子立即降速;回正常态后从
+             * 770/890 起 1~2 窗就能重新咬合。 */
+            if (vt_l + HJY_UNWIND_DROP < s_prev_vt_l &&
+                s_spd_l.last_output > HJY_LAUNCH_FF_L - 100.0f)
+                s_spd_l.last_output = HJY_LAUNCH_FF_L - 100.0f;
+            if (vt_r + HJY_UNWIND_DROP < s_prev_vt_r &&
+                s_spd_r.last_output > HJY_LAUNCH_FF_R - 100.0f)
+                s_spd_r.last_output = HJY_LAUNCH_FF_R - 100.0f;
+            s_prev_vt_l = vt_l;
+            s_prev_vt_r = vt_r;
 
             /* 5) 左右独立速度环(增量式,内部带 Δ200/步 与输出钳位) */
             g_hjy_err_l = (int16_t)(vt_l - (float)g_hjy_v_l);   /* HJY2: PID 实吃误差遥测 */
