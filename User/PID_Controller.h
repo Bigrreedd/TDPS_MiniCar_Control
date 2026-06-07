@@ -199,6 +199,10 @@ uint8_t PID_GetDeepTurnMode(void);
 #define NAV_OVERRIDE_NONE     0u
 #define NAV_OVERRIDE_HOLD     1u
 #define NAV_OVERRIDE_HEADING  2u
+/* TURN(F47) — 写死侧深弯锐弧:corr=±320 按 PID_SetTurnDir 符号,内轮 coast(R≈6.5cm,差速不反转);
+ * 在 PID 分支链最前(压 is_junction/A2);丢线 375 自停+lose_time 被旁路(非 NONE)。SEG3 专用,
+ * 比赛构型(TEST_SEGMENT==0)从不置此值=行为级不变。完成由上层 IMU 到角/Δyaw 预算判定。 */
+#define NAV_OVERRIDE_TURN     3u
 
 /**
  * @brief 设置导航覆盖模式
@@ -213,6 +217,12 @@ void PID_SetNavOverride(uint8_t mode, float yaw_target_rad, float speed_cps);
  * @brief 获取当前导航覆盖模式(遥测/状态机查询用)
  */
 uint8_t PID_GetNavOverride(void);
+
+/**
+ * @brief 设置 NAV_OVERRIDE_TURN 的转向符号(F47)
+ * @param dir: +1=左转(yaw 增大);-1=右转。符号锁存至下次调用。SEG3 专用。
+ */
+void PID_SetTurnDir(int8_t dir);
 
 #endif // __PID_CONTROLLER_H__
 

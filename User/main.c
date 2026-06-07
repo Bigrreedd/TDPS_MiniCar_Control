@@ -513,6 +513,10 @@ static uint8_t  g_seg3_act_turn = 0;    /* F46: 1=左转(到角完成) 0=直穿(
 static float    g_seg3_act_tgt  = 0.0f; /* F46: 本动作 NAV 航向目标(rad) */
 static float    g_seg3_line_yaw = 0.0f; /* F46: 在线居中持续记录的干净航向(rad),直穿锚 */
 static float    g_seg3_exitref  = 0.0f; /* F46: 末zigzag转弯后航向基准,供顶部出口门 */
+static uint16_t g_seg3_wide_run    = 0; /* F47: 宽黑横杠连续 tick(去抖:≥阈才计路口) */
+static uint8_t  g_seg3_seen_center = 0; /* F47: 已见≥1帧干净居中线(入口死区:之前不计路口) */
+static uint16_t g_seg3_straight_run= 0; /* F47: 直穿动作持续 tick(预算兜底防卡死) */
+static float    g_seg3_turn_start  = 0.0f; /* F47: 本次转弯起始航向(rad),Δyaw 预算基准 */
 #ifndef SEG3_STOP_YAW_DEG
 #define SEG3_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前收口(同 SEG1 150/180 比例) */
 #endif
@@ -532,10 +536,25 @@ static float    g_seg3_exitref  = 0.0f; /* F46: 末zigzag转弯后航向基准,�
 #define SEG3_TURN_TOL    0.26f   /* F46: 到角容差≈15°(到此且见线=转弯完成还权) */
 #endif
 #ifndef SEG3_ACT_CPS
-#define SEG3_ACT_CPS     12.0f   /* F46: 动作期(转弯/直穿)NAV爬行速,略低于S配方求紧弧 */
+#define SEG3_ACT_CPS     18.0f   /* F47: 直穿动作 HEADING 爬行速(F46=12,去sm后floor70主导,设18有意义) */
 #endif
 #ifndef SEG3_HOLD_CENTER_BAND
 #define SEG3_HOLD_CENTER_BAND 1.2f /* F46: |precise-3|≤此=在线居中,才刷新直穿航向锚 */
+#endif
+#ifndef SEG3_JCT_DEBOUNCE_TICKS
+#define SEG3_JCT_DEBOUNCE_TICKS 8u /* F47: 宽黑须连续≥8tick(16ms)才计路口=滤斜拐角尖峰/6→7→6抖 */
+#endif
+#ifndef SEG3_TURN_BUDGET_RAD
+#define SEG3_TURN_BUDGET_RAD 2.0f /* F47: 转弯 Δyaw 强制完成上限(~115°),全黑横杠下永不卡死 */
+#endif
+#ifndef SEG3_STRAIGHT_BUDGET_TICKS
+#define SEG3_STRAIGHT_BUDGET_TICKS 400u /* F47: 直穿 tick 兜底(~0.8s)防黑数不落而卡死 */
+#endif
+#ifndef SEG3_CRUISE_CPS
+#define SEG3_CRUISE_CPS  20.0f   /* F47: 丢线地基 HEADING 走直速(floor70 下实跑~20cps) */
+#endif
+#ifndef SEG3_TURN_CPS
+#define SEG3_TURN_CPS    20.0f   /* F47: NAV_OVERRIDE_TURN 锐弧速(外轮=speed+差速,内轮coast) */
 #endif
 #define SEG3_TELEM_FMT  " s3w=%d j3=%d bk=%d"   /* F42 s3w;F46 j3=过路口数,bk=当前黑数(调路口阈) */
 #define SEG3_TELEM_ARG  , (int)g_seg3_stop_run, (int)g_seg3_jct, (int)result_BlackPoint.black_count
@@ -851,12 +870,12 @@ static void SegTest_SeedOnStart(void)
     g_navseg = NAVSEG_AFTER_ARCH1;
 #endif
 #if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
-    g_s_mode = 1;                   /* F41: 方块区借 S 配方(用户拍板)——T=14/S域死区/deep1.5/
-                                     * MIN_INNER=0/A1/A2/F36 全套即刻上场;P9/T3 出口门本构型
-                                     * 不参编(见该块 #if),sm 全程常驻,出口=IMU 门自停(F42)。
-                                     * sm_done 保持上方 >=3 块的 1(双保险防回锁,无消费冲突)。 */
-    g_sm_stable_run = 0;
-    g_sm_latch_src = 5;             /* lt=5: 播种(与 SEG2 同义) */
+    /* F47(用户三跑实证+25-agent取证): sm 种子已删 —— 方块区 ZIGZAG 不能用 S 配方常驻。
+     * sm=1 把路口间(act==0)变成 F44 垃圾 pivot 温床:deep_enter 降1.5、A2锁向±320、内轮
+     * min_inner=0 硬停 → 到路口前就 spin 飞(Run2/3 deep=1@j3=0)。去 sm 后 g_s_mode≡0:
+     * deep_enter 回1.9(PID:886)、A2 锁向支路死(PID:649)、内轮回 min_inner=20(PID:927)。
+     * 锚 g_s_mode_done=1 / g_sm_cnt_base=avg 由上方 >=3 块保留;转向/直穿由 F47 状态机写死执行。
+     * 留空壳保留 SEG3_SM_RECIPE 宏引用(门控 P9/T3 空操作 + F32b 发车死区例外 + 遥测守卫)。 */
 #endif
 #if TEST_SEGMENT == 5
     g_sm_cnt_base = avg - RD_ZONE_MIN_CNT;  /* 圆区出口发车:RD 里程门预满足 */
@@ -1724,10 +1743,12 @@ int main(void)
                  * 持续窗滤岔口漏检甩头(瞬时摆头难以 0.5s 稳持±75°且全程见线);
                  * 盲旋凑角被 lost 守卫滤除。锚=g_yaw_zero(K1 清零,种子不动它)。 */
                 {
-                    /* F46: 出口门仅在末个写死左转后(jct>=4,车已上 上段向北)武装,基准=
-                     * g_seg3_exitref(末转弯完成时航向≈北);此后顶部左转(上段尽头 775,473→745,473)
-                     * |Δyaw|≥75°持续0.5s+见线→停。仅 jct>=4 武装→区内两个写死左转的±90°不假触发。 */
-                    if (g_seg3_jct >= 4u)
+                    /* F46/F47: 出口门仅在末个写死左转完成后武装(jct>=4 且 act==0)。基准=
+                     * g_seg3_exitref(末转弯完成时航向≈北,在动作完成帧才更新);此后顶部左转
+                     * (上段尽头 775,473→745,473) |Δyaw|≥75°持续0.5s+见线→停。
+                     * F47 必加 act==0 守卫:jct 在第4路口"计数时"即++到4(此时第4转弯还在转、
+                     * g_seg3_exitref 仍是发车旧值),不加守卫会在第4转弯中途用旧基准误触发 StopRun。 */
+                    if (g_seg3_jct >= 4u && g_seg3_act == 0u)
                     {
                         float seg3_dyaw = (add_angle - g_seg3_exitref) * 57.2957795f;
                         if (seg3_dyaw < 0.0f) seg3_dyaw = -seg3_dyaw;
@@ -1767,88 +1788,116 @@ int main(void)
                 g_seg3_inj      = 0u;
                 g_seg3_act      = 0u;
                 g_seg3_act_turn = 0u;
+                g_seg3_wide_run    = 0u;  /* F47 */
+                g_seg3_seen_center = 0u;
+                g_seg3_straight_run= 0u;
             }
 #endif
 #endif
 
 #if TEST_SEGMENT == 3
-            /* F46(用户拍板"写死/不需要判断/巡线走最短路径"+§3 纯坐标几何+用户转向 spec):
-             * 方块区=阶梯 ZIGZAG(中方块偏左50)。纯坐标黑线=下段(775,0→50)/上段(775,200→473)/
-             * 三方块轮廓;入口(775,50)向北→出口(775,200)。用户写死转向序列(沿 y 自下而上 4 个
-             * 决策横杠路口): y=50 左转 / y=100 直行 / y=150 直行 / y=200 左转→上段。中间
-             * (750,50 西→北、750,200 北→东)两个 90°拐角=线跟随自然过(非决策,不计数)。
-             * 死因(F44 三跑+14-agent 取证):横杠处质心甩极端→A2±320+deep 吃 held 质心随机 spin。
-             * 修=junction 计数状态机:巡线为主;每检"宽黑横杠"(black_count≥SEG3_JCT_BLACK,
-             * 区分黑少的 90°拐角)上升沿→按动作表[左,直,直,左]执行写死动作:
-             *   左转=NAV_OVERRIDE_HEADING 锁(当前航向+90°),到角±tol 且见线→还权巡线;
-             *   直行=NAV_OVERRIDE_HEADING 锁直穿航向,过杆(black_count 落<阈)且见线→还权。
-             * NAV 覆盖在 PID 分支链最前(压 A2/is_junction+强制 deep=0),动作期不会乱 pivot。
-             * 方向写死=用户本区授权(红线b 解除);状态/转角只用 IMU(add_angle),不碰里程。
-             * 出口=末转弯(jct=4)后记 g_seg3_exitref,顶部左转触发上方 IMU 门(见 exit 块)。
-             * 全程 #if TEST_SEGMENT==3,比赛构型字节级不变;动作表/阈值全 macro 可调。 */
+            /* F47(替换F46,25-agent验证spec): 方块区 ZIGZAG 写死转向序列状态机。
+             * §3 纯坐标:黑线=下段(775,0→50)/上段(775,200→473)/三方块轮廓;入口(775,50)向北→
+             * 出口(775,200)。沿 y 自下而上 4 决策横杠=动作表[左,直,直,左](y=50/100/150/200);
+             * 中间(750,50/750,200)两个90°拐角=线跟随自然过(不计数)。
+             * F46三跑全败死因→F47四修: ①SeedOnStart去 sm(g_s_mode≡0)→路口间不再A2±320/deep1.5/
+             * 内轮硬停垃圾pivot(deep_enter回1.9/min_inner回20); ②计数+边沿复位移块顶每tick算(卡死动作
+             * 不再冻结计数,F46 j3卡1根因); ③转弯换 NAV_OVERRIDE_TURN 深弯锐弧(内轮coast R≈6.5cm,差速
+             * 不反转)+IMU到角/Δyaw预算完成(丢&&found:全黑横杠下永假会卡死,F46死锁根因); ④去抖8tick+
+             * 入口死区(先见干净居中线)滤发车瞬态/斜拐角误计;宽黑含bk==7(全黑=仍在杠)。
+             * NAV覆盖(TURN/HEADING)在PID分支链最前(压is_junction+强制deep=0+旁路丢线375/lose_time);
+             * 方向写死=本区授权;状态/转角只用IMU(add_angle)不碰里程。出口=末转弯完成(jct≥4且act==0)后
+             * 记g_seg3_exitref,顶部左转触发上方IMU门。全程#if TEST_SEGMENT==3,比赛构型行为级不变。 */
             if (is_racing)
             {
+                /* —— 每 tick 块顶:宽黑去抖 + 边沿复位(与动作状态解耦,卡死动作不再冻结计数) —— */
                 uint8_t seg3_bc   = result_BlackPoint.black_count;
-                uint8_t seg3_wide = (seg3_bc >= SEG3_JCT_BLACK) && (seg3_bc < SENSOR_COUNT);
+                uint8_t seg3_wide = (seg3_bc >= SEG3_JCT_BLACK);   /* 含 bk==7 全黑=仍在杠(不丢<SENSOR_COUNT) */
+                if (seg3_wide)
+                {
+                    if (g_seg3_wide_run < 0xFFFFu) g_seg3_wide_run++;
+                }
+                else
+                {
+                    g_seg3_wide_run = 0u;
+                    g_seg3_inj = 0u;                 /* 真离杠才复位边沿,准备识别下一路口 */
+                }
+                /* 干净居中线→刷新航向锚 + 武装入口死区(仅离杠时,防杠上垃圾质心污染锚) */
+                if (result_BlackPoint.found && !seg3_wide)
+                {
+                    float seg3_dp = result_BlackPoint.precise_position - 3.0f;
+                    if (seg3_dp < 0.0f) seg3_dp = -seg3_dp;
+                    if (seg3_dp <= SEG3_HOLD_CENTER_BAND)
+                    {
+                        g_seg3_line_yaw    = add_angle;
+                        g_seg3_seen_center = 1u;
+                    }
+                }
+
                 if (g_seg3_act)
                 {
                     if (g_seg3_act_turn)
-                    {
-                        float seg3_e = add_angle - g_seg3_act_tgt;   /* 写死左转:到角(±tol)且见线→完成 */
-                        if (seg3_e < 0.0f) seg3_e = -seg3_e;
-                        if (seg3_e <= SEG3_TURN_TOL && result_BlackPoint.found)
+                    {   /* 写死左转:深弯锐弧,到角(±tol)或 Δyaw 预算→完成(丢 &&found,全黑下永不卡死) */
+                        float seg3_e = add_angle - g_seg3_act_tgt;       if (seg3_e < 0.0f) seg3_e = -seg3_e;
+                        float seg3_prog = add_angle - g_seg3_turn_start; if (seg3_prog < 0.0f) seg3_prog = -seg3_prog;
+                        if (seg3_e <= SEG3_TURN_TOL || seg3_prog >= SEG3_TURN_BUDGET_RAD)
                         {
                             PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                             g_seg3_act = 0u;
-                            if (g_seg3_jct >= 4u) g_seg3_exitref = add_angle;  /* 末转弯后立出口基准 */
+                            if (g_seg3_jct >= 4u) g_seg3_exitref = add_angle;  /* 末转弯完成→立出口基准 */
                         }
                         else
                         {
-                            PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_act_tgt, SEG3_ACT_CPS);
+                            PID_SetTurnDir(+1);     /* +1=左转(yaw 增);TURN 锐弧内轮 coast R≈6.5cm */
+                            PID_SetNavOverride(NAV_OVERRIDE_TURN, 0.0f, SEG3_TURN_CPS);
                         }
                     }
-                    else   /* 写死直穿:锁直穿航向直到过杆(黑数落)且见线 */
-                    {
-                        if (seg3_bc < SEG3_JCT_BLACK && result_BlackPoint.found)
+                    else
+                    {   /* 写死直穿:锁航向过杆(黑数落<阈)或 tick 预算→完成(丢 &&found) */
+                        if (seg3_bc < SEG3_JCT_BLACK || g_seg3_straight_run >= SEG3_STRAIGHT_BUDGET_TICKS)
                         {
                             PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                             g_seg3_act = 0u;
                         }
                         else
                         {
+                            if (g_seg3_straight_run < 0xFFFFu) g_seg3_straight_run++;
                             PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_act_tgt, SEG3_ACT_CPS);
                         }
                     }
                 }
                 else
-                {
-                    if (result_BlackPoint.found)
-                    {
-                        float seg3_dp = result_BlackPoint.precise_position - 3.0f;  /* 0..6,中心3 */
-                        if (seg3_dp < 0.0f) seg3_dp = -seg3_dp;
-                        if (seg3_dp <= SEG3_HOLD_CENTER_BAND) g_seg3_line_yaw = add_angle;  /* 记干净航向 */
-                    }
-                    if (seg3_wide && !g_seg3_inj && g_seg3_jct < 4u)
+                {   /* act==0: 去抖+死区计路口 → 否则地基(丢线走直)/ 还权常规巡线 */
+                    if (g_seg3_wide_run >= SEG3_JCT_DEBOUNCE_TICKS && !g_seg3_inj &&
+                        g_seg3_seen_center && g_seg3_jct < 4u)
                     {
                         uint8_t seg3_i = (uint8_t)g_seg3_jct;
                         g_seg3_inj = 1u;
                         g_seg3_jct++;
                         if (seg3_i == 0u || seg3_i == 3u)   /* 动作表[L,S,S,L]:路口0,3=左转 */
                         {
-                            g_seg3_act_turn = 1u;
-                            g_seg3_act_tgt  = add_angle + SEG3_TURN_RAD;   /* +90°左转(yaw 增=左) */
+                            g_seg3_act_turn   = 1u;
+                            g_seg3_turn_start = add_angle;
+                            g_seg3_act_tgt    = add_angle + SEG3_TURN_RAD;   /* +90°左转 */
+                            PID_SetTurnDir(+1);
+                            PID_SetNavOverride(NAV_OVERRIDE_TURN, 0.0f, SEG3_TURN_CPS);
                         }
                         else                                 /* 路口1,2=直穿 */
                         {
-                            g_seg3_act_turn = 0u;
-                            g_seg3_act_tgt  = g_seg3_line_yaw;
+                            g_seg3_act_turn     = 0u;
+                            g_seg3_straight_run = 0u;
+                            g_seg3_act_tgt      = g_seg3_line_yaw;
+                            PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_line_yaw, SEG3_ACT_CPS);
                         }
                         g_seg3_act = 1u;
-                        PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_act_tgt, SEG3_ACT_CPS);
                     }
-                    else if (!seg3_wide)
-                    {
-                        g_seg3_inj = 0u;   /* 黑数落回→路口边沿复位,准备识别下一路口 */
+                    else if (!result_BlackPoint.found && !seg3_wide)
+                    {   /* 地基:丢线(非杠)→IMU 锁航向走直,杀垃圾 pivot(抢在 deep/F25b 之前) */
+                        PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_line_yaw, SEG3_CRUISE_CPS);
+                    }
+                    else
+                    {   /* 见线/离杠 → 还权常规巡线(去 sm 后 deep_enter=1.9,跟直线+两个90°拐角) */
+                        PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                     }
                 }
             }
@@ -2231,6 +2280,10 @@ int main(void)
                 g_seg3_act_tgt  = add_angle;
                 g_seg3_line_yaw = add_angle;  /* 航向锚初值=发车航向(首路口前巡线刷新) */
                 g_seg3_exitref  = add_angle;
+                g_seg3_wide_run    = 0u;   /* F47 */
+                g_seg3_seen_center = 0u;
+                g_seg3_straight_run= 0u;
+                g_seg3_turn_start  = add_angle;
 #endif
 #if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE && FAN_AUTO_ON_RACE
                 /* G2: 发车自动起扇——常开构型免 K4 人因漏开。已在转(K4 预热)不重 kick;
@@ -2299,6 +2352,10 @@ int main(void)
                 g_seg3_act_tgt  = add_angle;
                 g_seg3_line_yaw = add_angle;
                 g_seg3_exitref  = add_angle;
+                g_seg3_wide_run    = 0u;   /* F47 */
+                g_seg3_seen_center = 0u;
+                g_seg3_straight_run= 0u;
+                g_seg3_turn_start  = add_angle;
 #endif
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");

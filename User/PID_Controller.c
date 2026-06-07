@@ -455,6 +455,7 @@ static uint16_t g_a2_episode_cool = 0;
 static volatile uint8_t g_nav_override = NAV_OVERRIDE_NONE;
 static float g_nav_yaw_target = 0.0f;
 static float g_nav_speed_cps = 0.0f;
+static int8_t g_nav_turn_dir = 0;   /* F47: NAV_OVERRIDE_TURN 转向符号(+1左/-1右);仅 SEG3 写,比赛构型恒 0 */
 /* 深弯模式滞回状态：1=内侧轮停转模式。误差≥进入阈值置1，≤退出阈值清0，
  * 掐断弯道边缘质心量化噪声(4.19↔4.54)导致的内侧轮768↔0颤振。 */
 static uint8_t g_deep_turn_mode = 0;
@@ -532,6 +533,7 @@ void PID_Control_Update(void)
 			                         * 钉屏≥6s),污染遥测判读;且发车即丢线时陈值直撞 375 自停门。
 			                         * 与主环 lose_time(StopRun 清)对齐,两计数器不再分裂。 */
 			g_nav_override = NAV_OVERRIDE_NONE;  /* P2 导航覆盖同清(K2 停车即退覆盖) */
+			g_nav_turn_dir = 0;                 /* F47: TURN 符号同清 */
 			Motor_StopAll();
 			g_motor_target_l = 0.0f;
 			g_motor_target_r = 0.0f;
@@ -628,7 +630,13 @@ void PID_Control_Update(void)
     {
     static uint8_t s_prev_junction = 0;
     static uint8_t s_prev_a2hold = 0;
-    if (g_nav_override == NAV_OVERRIDE_HEADING) {
+    if (g_nav_override == NAV_OVERRIDE_TURN) {
+        /* F47 写死转弯:满幅 corr 按符号(+dir=左转⇒corr<0⇒左)。必须排在 is_junction 之前——
+         * 全黑横杠会触发 is_junction 冻结(corr=0)挡住转弯;放最前确保锐弧穿过全黑杠。
+         * 内轮 coast 锐弧由下方差速段 turn_arc 实现;到角/Δyaw 预算完成由上层判定。 */
+        position_correction = (g_nav_turn_dir >= 0) ? -320.0f : 320.0f;
+        s_prev_junction = 1;   /* 借同通道,解除首帧走 R5 软启动 */
+    } else if (g_nav_override == NAV_OVERRIDE_HEADING) {
         /* P2 盲走航向保持:旁路寻线/路口/锁向,corr=Kyaw×(当前-目标)。
          * 符号:corr>0=右转(下方差速注释),目标在左(target>yaw)时 corr<0 → 左转 ✓。
          * 限幅 ±50 见 NAV_CORR_CAP 注释;借 s_prev_junction 通道,覆盖解除首帧
@@ -772,8 +780,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 
 			/* P2 盲走:固定爬行档,不走丢线降速(箱内无线是常态非异常)。
 			 * 实际速度受下方 floor 70 托底(≈20cps),几何预算按计数不按时间,不受影响。 */
-			if (g_nav_override == NAV_OVERRIDE_HEADING) {
-				i_speed = g_nav_speed_cps;
+			if (g_nav_override == NAV_OVERRIDE_HEADING || g_nav_override == NAV_OVERRIDE_TURN) {
+				i_speed = g_nav_speed_cps;   /* F47: TURN 同走 NAV 爬行速 */
 			}
 #else
 			i_speed = Path_GetTargetSpeed();
@@ -924,11 +932,12 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 60° 翻边,R-L≈7cps)。持续 deep ≥DEEP_COAST_CONFIRM_TICKS 恢复 coast 资格,
 		 * 瞬态(悬空扫边/量化抖动)仍走爬行档 20;coast 期 cmd=0 → ApplyDeadzone 干净停,
 		 * 不产生负值,反向钳语义不变。 */
-		float min_inner = (g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS ||
+		uint8_t turn_arc = (g_nav_override == NAV_OVERRIDE_TURN);   /* F47: 写死锐弧=内轮 coast(R≈6.5cm) */
+		float min_inner = (turn_arc || g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS ||
 		                   (g_deep_turn_mode && g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS))
-		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;   /* F25a: 深陷盲走即授 coast */
+		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;   /* F25a: 深陷盲走即授 coast;F47: TURN 同授 coast */
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
-		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
+		float decel_cap = (g_deep_turn_mode || turn_arc) ? speed_output : shallow_cap;   /* F47: TURN 满额减速=内轮可到0 */
 		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */
 
 		float inner_decel, outer_accel;
@@ -943,8 +952,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			 * F22b(10:35 [48.978] pid=0 sent=870 实锤): 钳口加 0.5 凑整带——coast 资格
 			 * (min_inner=0)下 (0,0.5) 浮点残差越过 EPS=0.1 触发死区前馈+boost(770+100),
 			 * 破坏干净 coast;亚整数残差一并落底。 */
-			if (g_deep_turn_mode && right_output < min_inner + 0.5f) {
-				right_output = min_inner;
+			if ((g_deep_turn_mode || turn_arc) && right_output < min_inner + 0.5f) {
+				right_output = min_inner;   /* F47: TURN 同享内轮干净 coast 钳 */
 			}
 		} else {
 			/* correction<0：左轮内侧(减速)，右轮外侧(加速)，车头左转 */
@@ -953,8 +962,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			left_output  = speed_output - inner_decel + wheel_balance;
 			right_output = speed_output + outer_accel - wheel_balance;
 			/* 深弯双保险：内侧轮硬下限(F22b 同右轮:钳口+0.5 凑整带防亚整数残差) */
-			if (g_deep_turn_mode && left_output < min_inner + 0.5f) {
-				left_output = min_inner;
+			if ((g_deep_turn_mode || turn_arc) && left_output < min_inner + 0.5f) {
+				left_output = min_inner;   /* F47: TURN 同享内轮干净 coast 钳 */
 			}
 		}
 	    }
@@ -979,6 +988,11 @@ void PID_SetNavOverride(uint8_t mode, float yaw_target_rad, float speed_cps)
 	g_nav_yaw_target = yaw_target_rad;
 	g_nav_speed_cps = speed_cps;
 	g_nav_override = mode;   /* 最后写 mode,参数先就位(主循环单线程,纯防御习惯) */
+}
+
+void PID_SetTurnDir(int8_t dir)   /* F47: TURN 模式转向符号锁存 */
+{
+	g_nav_turn_dir = dir;
 }
 
 uint8_t PID_GetNavOverride(void)

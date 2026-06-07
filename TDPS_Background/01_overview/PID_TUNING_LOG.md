@@ -8325,3 +8325,42 @@ bv~107~111亏电,fn=1,褶皱垫面;el/er跨K1不复位(绝对累计,run3起el=43
 
 ### 版本
 F46=e645777(本三跑);F47设计中。分支 LHX/2in1-single。
+
+---
+
+## 2026-06-08 上午 | F47 落码:方块区 ZIGZAG 重构(去sm/计数解耦/深弯锐弧TURN/IMU完成)— 可烧待测
+
+### 用户原话(本轮)
+> "继续"(批准落 F47)/ 之前"认可"(批准方向)/ "我们现在支持原地pivot吗？我们不是差速转弯吗？"/ "我们这个计划适配这个小车吗？跟之前的转弯方法是否一样"
+> (持续)记录日志全量+每改必push+能测提醒+给参数先测并行迭代。
+
+### 方案来源
+spec=workflow w3qls3eu0(2设计→3对抗验证→1 reconcile),落码后再过1验证agent=PASS(编译安全/符合spec/比赛行为级不变)。诊断源=wrtxkcdq4(25-agent)。
+
+### 代码改动 F47(10 处,User/main.c + PID_Controller.c/.h)
+1. **去sm(根因)**:SegTest_SeedOnStart 的 SEG3_SM_RECIPE 块删 g_s_mode=1(留空壳保宏);g_s_mode≡0→deep_enter回1.9/A2锁向支路死/min_inner回20。锚 g_s_mode_done/cnt_base 由 >=3 块保留。
+2. **新statics/macros**:g_seg3_wide_run/seen_center/straight_run/turn_start;SEG3_JCT_DEBOUNCE_TICKS=8/SEG3_TURN_BUDGET_RAD=2.0/SEG3_STRAIGHT_BUDGET_TICKS=400/SEG3_CRUISE_CPS=20/SEG3_TURN_CPS=20;SEG3_ACT_CPS 12→18。
+3. **状态机重写**:①块顶每tick算 seg3_wide(含bk==7)+去抖 wide_run+离杠复位inj(计数与卡死动作解耦,治F46 j3卡1);②干净居中线刷新航向锚+武装入口死区(仅离杠);③TURN动作=深弯锐弧到角(|Δ|≤tol)或Δyaw预算完成(丢&&found,治死锁);④直穿=锁航向过杆(bk落)或tick预算完成;⑤计数门=去抖≥8&&!inj&&seen_center&&jct<4;⑥地基=丢线(非杠)IMU锁航向走直;⑦否则还权常规巡线。
+4. **出口门**:加 &&g_seg3_act==0u(防第4路口计数即++到4、第4转弯中途用旧基准误停)。
+5. **K1/K3/停车自清**:补 wide_run/seen_center/straight_run/turn_start。
+6. **PID_Controller.h**:+NAV_OVERRIDE_TURN 3u + PID_SetTurnDir(int8_t)原型。
+7. **PID_Controller.c**:+g_nav_turn_dir static+PID_SetTurnDir setter+停车清;选择器最前插 TURN 分支(corr=±320 按符号,压is_junction/A2);速度支路加TURN(走g_nav_speed_cps);差速段 turn_arc OR进 min_inner/decel_cap/双内轮floor守卫(内轮干净coast=锐弧R≈6.5cm,不反转)。
+
+### 转弯机制(回答用户pivot/适配问,落进实现)
+差速锐弧:外轮驱动(speed+320,boost钳100)+内轮coast(0,ApplyDeadzone(0)=0不反转),R≈6.5cm。**非原地pivot,非反转**。全黑横杠段旋转靠IMU角度驱动(TURN分支在is_junction冻结之前),到角/Δyaw预算完成后还权常规跟线。实测realized差速~272(speed_scale 0.85钳),仍内轮coast=锐弧。
+
+### 红线
+比赛构型(TEST_SEGMENT==0):main.c+PID.h **字节级不变**(全#if TEST_SEGMENT==3);**PID_Controller.c=行为级不变**(TURN模式比赛从不置,g_nav_turn_dir只SEG3写,新分支恒短路;+1byte .bss+若干never-taken分支)——⚠redline1从strict降为behavioral,已flag;strict需把TEST_SEGMENT提到共享头(有silent-compile-out风险,暂不做)。S-PID冻结未动(Kp/Kd/Ki/S_MODE_*/死区常量均未改,只是g_s_mode门控的"选择"随去sm改变=固有后果非改常量)。IMU+灰度无里程。方向写死仅SEG3=用户授权。
+
+### 已知后果/残留风险(测试看)
+- 去sm→直线段速由POST_U=25cps+floor70主导≈20-25cps(比旧14快);"14cps慢直"floor70下不可达。
+- 去sm→HOLD域死区降~84-141PWM(S_MODE_HOLD 1076/1118→MOTOR_HOLD 935/1034),发车扭矩降,F32b发车死区例外仅托到双轮过6cps;亏电首杆留意失速。
+- 转弯realized差速272非320,弧略大于R6.5;TURN完成丢&&found靠IMU到角/预算,转完重捕线未证。
+- 直穿过杆后重捕(HEADING±50纠不了大航向误差)未证;入口死区短(发车即居中→几cm内武装),靠去抖8主防。
+
+### 测试协议(F47,可烧;先确认 TEST_SEGMENT=3)
+发车=S弯后第一个90°拐过去的直线,**车头朝北**摆正压线K1。预期:巡线↑→y=50横杠TURN左转~90°(yw增)→线跟随拐北→y=100/150直穿→线跟随拐东→y=200 TURN左转~90°→上段↑→顶部左转IMU门停(OLED"SEG3 DONE EXIT")。
+**重点看(j3=过路口数, bk=黑数)**:①j3 干净 0→1→2→3→4(每杆+1,无发车误+1、无6→7→6双计);②TURN(j3=1,4)yw单调增~+90°(去sm后该是真左转,复核符号!弧锐:内轮sent=0);③直穿(j3=2,3)过杆不甩;④停在顶部左转处=全链对;⑤直线段~20-25cps是否卡褶皱/90°拐角;⑥发车扭矩(亏电)是否失速;⑦bv。
+
+### 版本
+F47=本提交(待push),基于 5e7e5e9。分支 LHX/2in1-single。bv~107~111,fn=1,褶皱垫面。
