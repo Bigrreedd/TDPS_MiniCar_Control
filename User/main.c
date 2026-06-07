@@ -450,8 +450,10 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  * 1..6=单段测试:K1 在标准清单后"播种"前序段锁存/里程锚(车放该段入口发车),
  * 段出口信号命中即自停。段表(边界=现役锁存,无信号段手动 K2):
  *  1 START→U出口        种子:无                        出口:u=1 自停
- *  2 U出口→S①释放       种子:u=1,u锚=当前里程           出口:sm_done 自停
- *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:无固件信号→手动 K2
+ *  2 U出口→S+拱门+90°右  种子:u=1(+F32a sm播种)          出口:F41 拱门0x30武装+净转向
+ *                        ≥75°持续0.5s+见线 自停(sm_done 自停已撤;兜底里程 400cnt 强停)
+ *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:F41 里程 SEG3_EXIT_CNT 自停
+ *                        (+SEG3_SM_RECIPE: 播 sm=1 常驻,S 配方全套,P9/T3 出口门不参编)
  *  4 方块阵出口→圆区出口  种子:同3(方块/圆之间无固件边界,靠摆放位置区分) 出口:手动 K2;
  *                        勿驶入雷达段(sm锚=发车点,Δ<RD_ZONE_MIN_CNT 则 RD 不武装,
  *                        箱前深丢线将走 C-8 丢线自停——无害但勿误判)
@@ -464,10 +466,12 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
  * OLED 开机/发车常显 SEG-TEST n 防误烧。 */
 #ifndef TEST_SEGMENT
-#define TEST_SEGMENT 2   /* F26c(19:5X 用户拍板"把第一二区域合起来测"): 段1已两连过
-                          * (19:42 yw=159 / 19:44 yw=174 真U完成),推进段2出口门;
-                          * 配 SEGTEST_SEED_DISABLE=1 = 从起跑线自然链连跑段1+段2,
-                          * S①完成(sm_done)自停。比赛/全图回 0。 */
+#define TEST_SEGMENT 3   /* F41(06-08 用户拍板"下面我们先测量矩形区域"): 切方块区单测。
+                          * S 弯参数全冻结(F39 态即定版,本版零改动);S 配方借给方块区
+                          * (SEG3_SM_RECIPE,用户:"s弯的pid参数可以给正方形区域参考")。
+                          * 3/4 两区分开测;3 区出口=里程门自停(SEG3_EXIT_CNT)。
+                          * 段2 出口同轮重定义:拱门0x30武装+90°右转自停(回测 S 区时切 2)。
+                          * 比赛/全图回 0。 */
 #endif
 #ifndef SEGTEST_SEED_DISABLE
 #define SEGTEST_SEED_DISABLE 0  /* F26c: 1=K1不播种任何锁存,u/sm 全链自然触发(合段连测,
@@ -478,9 +482,44 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
                                  * (首弧 Δ≈55~65cnt 贴 SM_DEEP_MIN_CNT=60 下界)→ 播种升级:
                                  * 本构型下 SegTest_SeedOnStart 同时播 sm=1(lt=5),见该函数。 */
 #endif
-#if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
+/* ===== F41(06-08 用户两连拍板) =====
+ * ① "经过拱门之后,上位机会让32知道…下一个90度右转之后可以停车(对于单独的s弯道区域测量)":
+ *    SEG2 出口重定义=拱门 0x30 事件武装 + 此后净航向变化 ≥75° 持续 0.5s 且当刻见线 → 自停。
+ *    sm_done 自停(F40)撤——车须继续过拱门。方向不写死(红线b):用 |Δ|,拱门后唯一弯=右90°等效。
+ *    ⚠场地要求:拱门必须摆在全部 S 段之后、90°右转之前,两者之间不得再有弯(否则弧内可能假凑)。
+ *    兜底:拱门帧丢失 → 里程 Δ≥SEG2_STOP_BACKSTOP_CNT 强停,履约"必须停止"。
+ * ② "3区域过了,到达正方形的出口就停止" + "s弯的pid参数给正方形区域参考":
+ *    SEG3 = S 配方常驻(播 sm=1 不释放:T=14/S域死区1025/1065/deep1.5/MIN_INNER=0/A1/A2/F36),
+ *    P9/T3 出口门不参编(长直/密路口都不许放);出口=里程门 SEG3_EXIT_CNT 自停(方块区出口
+ *    无事件帧/无 yaw 签名,里程是唯一可用门;jc 禁用作锚,S区通胀 2→4 实证)。 */
+#ifndef SEG3_SM_RECIPE
+#define SEG3_SM_RECIPE 1
+#endif
+#ifndef SEG3_EXIT_CNT
+#define SEG3_EXIT_CNT 125       /* ⚠占位估计≈3.0m@2.4cm/cnt——首跑后按停点偏差回填,
+                                 * 或手推车发车点→出口读 el/er 均值差直接定值 */
+#endif
+#if TEST_SEGMENT == 2
+static uint8_t  g_seg2_arch_seen = 0;   /* F41: 拱门事件已收(首帧锁存,重发帧不刷新基准) */
+static float    g_seg2_arch_yaw0 = 0.0f;/* F41: 收帧时刻航向基准(rad) */
+static uint16_t g_seg2_stop_run  = 0;   /* F41: ≥75° 持续窗计数 */
+#ifndef SEG2_STOP_YAW_DEG
+#define SEG2_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前量收口(同 SEG1 150/180 比例) */
+#endif
+#ifndef SEG2_STOP_HOLD_TICKS
+#define SEG2_STOP_HOLD_TICKS     250u   /* 0.5s 持续确认,滤弧内瞬时越阈 */
+#endif
+#ifndef SEG2_GUARD_MAX_LOST_TICKS
+#define SEG2_GUARD_MAX_LOST_TICKS 125u  /* 同 SEG1 守卫:盲旋凑角不算 */
+#endif
+#ifndef SEG2_STOP_BACKSTOP_CNT
+#define SEG2_STOP_BACKSTOP_CNT   400    /* ≈9.6m(自 S 入口锚),按场地实距回填 */
+#endif
+#endif
+#if (TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE) || (TEST_SEGMENT == 3 && SEG3_SM_RECIPE)
 static uint8_t g_seed_rolling = 0;  /* F32b: 双轮均≥6cps 一次后置 1,发车 START 例外永久关闭
-                                     * (机理/红队结论见 F32b 注释块,g_stall_wd_run 声明处) */
+                                     * (机理/红队结论见 F32b 注释块,g_stall_wd_run 声明处)。
+                                     * F41: seg3 播 sm 同病同治,条件随扩。 */
 #endif
 #ifndef SEGTEST_EXIT_DISABLE
 #define SEGTEST_EXIT_DISABLE 0  /* F27: 1=本段出口不自停(跑过 sm_done 继续后链,矩形区出口
@@ -766,6 +805,14 @@ static void SegTest_SeedOnStart(void)
     g_s_mode_done = 1;              /* S① 视为已走完(防 jc>基线 回锁) */
     g_sm_cnt_base = avg;            /* RD 里程门/终点兜底锚=发车点 */
     g_navseg = NAVSEG_AFTER_ARCH1;
+#endif
+#if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
+    g_s_mode = 1;                   /* F41: 方块区借 S 配方(用户拍板)——T=14/S域死区/deep1.5/
+                                     * MIN_INNER=0/A1/A2/F36 全套即刻上场;P9/T3 出口门本构型
+                                     * 不参编(见该块 #if),sm 全程常驻,出口=里程门自停。
+                                     * sm_done 保持上方 >=3 块的 1(双保险防回锁,无消费冲突)。 */
+    g_sm_stable_run = 0;
+    g_sm_latch_src = 5;             /* lt=5: 播种(与 SEG2 同义) */
 #endif
 #if TEST_SEGMENT == 5
     g_sm_cnt_base = avg - RD_ZONE_MIN_CNT;  /* 圆区出口发车:RD 里程门预满足 */
@@ -1312,6 +1359,17 @@ int main(void)
                 if (arch_evt && is_racing)
                 {
                     g_last_arch_id = arch_id;
+#if TEST_SEGMENT == 2
+                    /* F41: SEG2 出口武装——拱门帧(任意 id,备用场地单拱门)首帧锁存,
+                     * 记当刻航向为 90°右转检测基准;ARCH_CONTROL_ENABLE=0(F37)不冲突,
+                     * 本支路只武装测试自停,不碰 sm/FINISH。重发帧(无冷却)不刷新基准。 */
+                    if (!g_seg2_arch_seen)
+                    {
+                        g_seg2_arch_seen = 1u;
+                        g_seg2_arch_yaw0 = add_angle;
+                        OLED_ShowString(1, 1, "SEG2 ARCH ARMED ");
+                    }
+#endif
 #if ARCH_CONTROL_ENABLE
                     /* R5(06-07 评审): S② 域(g_s2_active)对释放支路关闭——此时已过拱门2.1,
                      * 任何拱门事件只可能是拱门2.2,落到下方终点支路(id=2 或空payload+done)。 */
@@ -1338,6 +1396,11 @@ int main(void)
 
             /* P9 sm 出口门(后备三重与门;主锚已并入上方统一消费)。
              * 出门即置 done,sm 本次运行不再回锁;速度由 H3 三段律自动回 25(u=1,!sm)。 */
+#if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
+            /* F41: 方块区 S 配方常驻——P9/T3 出口门整体不参编(方块阵长直会凑满稳线窗、
+             * T3 240cnt 会中途强释,任一放行都让 T 跳 25 破坏"S 参数参考"语义)。
+             * 出口自停走里程门(SEG3_EXIT_CNT,段出口自停块),与释放机制无关。 */
+#else
             if (g_s_mode && is_racing)
             {
                 {
@@ -1383,6 +1446,7 @@ int main(void)
                     }
                 }
             }
+#endif /* !(TEST_SEGMENT == 3 && SEG3_SM_RECIPE) */
 
 #if RADAR_SEGMENT_ENABLE
             /* ===== P2 雷达避障段状态机(设计/几何见定义处注释) ===== */
@@ -1560,11 +1624,12 @@ int main(void)
                 }
             }
 
-#if (TEST_SEGMENT == 1 || TEST_SEGMENT == 2 || TEST_SEGMENT == 5) && !SEGTEST_EXIT_DISABLE
+#if (TEST_SEGMENT == 1 || TEST_SEGMENT == 2 || TEST_SEGMENT == 3 || TEST_SEGMENT == 5) && !SEGTEST_EXIT_DISABLE
             /* SEG-TEST 出口自停:命中段出口锁存→StopRun(灭扇走 racing 下降沿,G3a)。
-             * is_racing 门保证只触发一次;段3/4 无固件出口信号(手动 K2),段6 走既有
+             * is_racing 门保证只触发一次;段4 无固件出口信号(手动 K2),段6 走既有
              * FINISH 链自停,均不在此列。F27: SEGTEST_EXIT_DISABLE=1 时本块整体不参编
-             * (跑过本段出口继续后链,手动 K2 收车)。 */
+             * (跑过本段出口继续后链,手动 K2 收车)。
+             * F41: 段2 出口重定义=拱门武装+90°右转(sm_done 自停撤);段3 新增里程门出口。 */
             if (is_racing)
             {
 #if TEST_SEGMENT == 1
@@ -1585,7 +1650,36 @@ int main(void)
                 }
                 if (g_seg1_done_latch)      { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG1 DONE u=1   "); }
 #elif TEST_SEGMENT == 2
-                if (g_s_mode_done)          { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 DONE smdone"); }
+                /* F41(用户拍板): 拱门 0x30 武装后,净航向变化 ≥75° 持续 0.5s 且当刻见线
+                 * → 90°右转完成 → 停。持续窗滤弧内瞬时越阈;lost 守卫滤盲旋凑角(同 SEG1)。
+                 * 兜底:拱门帧丢失时里程 Δ≥SEG2_STOP_BACKSTOP_CNT(锚=S入口) 强停。 */
+                if (g_seg2_arch_seen)
+                {
+                    float seg2_dyaw = (add_angle - g_seg2_arch_yaw0) * 57.2957795f;
+                    if (seg2_dyaw < 0.0f) seg2_dyaw = -seg2_dyaw;
+                    if (seg2_dyaw >= SEG2_STOP_YAW_DEG &&
+                        PID_GetLineLostTicks() < SEG2_GUARD_MAX_LOST_TICKS)
+                    {
+                        if (g_seg2_stop_run < 0xFFFFu) g_seg2_stop_run++;
+                        if (g_seg2_stop_run >= SEG2_STOP_HOLD_TICKS)
+                        {
+                            StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 DONE A+90  ");
+                        }
+                    }
+                    else { g_seg2_stop_run = 0u; }
+                }
+                if (((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= SEG2_STOP_BACKSTOP_CNT)
+                {
+                    StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 BACKSTOP   ");
+                }
+#elif TEST_SEGMENT == 3
+                /* F41(用户拍板"3区域过了,到达正方形的出口就停止"): 方块区出口无事件帧/
+                 * 无 yaw 签名,里程是唯一可用门(锚=发车点,>=3 播种块);jc 禁用作锚(通胀实证)。
+                 * SEG3_EXIT_CNT 首值为占位,标定法见宏注释。 */
+                if (((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= SEG3_EXIT_CNT)
+                {
+                    StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG3 DONE EXIT  ");
+                }
 #elif TEST_SEGMENT == 5
                 if (g_rd_state == RD_DONE)  { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG5 DONE rd=8  "); }
 #endif
@@ -1594,6 +1688,12 @@ int main(void)
             else
             {
                 g_seg1_done_latch = 0u;   /* F24a: 停车态自清,下次 K1 重新起算 */
+            }
+#elif TEST_SEGMENT == 2
+            else
+            {
+                g_seg2_arch_seen = 0u;    /* F41: 停车态自清,下次 K1 重新武装 */
+                g_seg2_stop_run  = 0u;
             }
 #endif
 #endif
@@ -1715,10 +1815,11 @@ int main(void)
                     }
                 }
                 uint8_t f10_deep = g_f10_deep_latch;
-#if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
+#if (TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE) || (TEST_SEGMENT == 3 && SEG3_SM_RECIPE)
                 /* F32b: 播种 sm 静止发车例外(设计/红队结论见 g_stall_wd_run 声明处注释块)。
                  * 滚动确认前死区直接锁 START(凌驾 sm/deep 三目);双轮均≥6cps 一次即永久
-                 * 退出,回 H1 语义。!is_racing 自清,二次发车窗重开。 */
+                 * 退出,回 H1 语义。!is_racing 自清,二次发车窗重开。
+                 * F41: seg3 播 sm 静止发车同病(S域 R 地板 1065<START R 1089),条件随扩。 */
                 if (!is_racing) { g_seed_rolling = 0u; }
                 else if (!g_seed_rolling && speed_left >= 6 && speed_right >= 6)
                 {
