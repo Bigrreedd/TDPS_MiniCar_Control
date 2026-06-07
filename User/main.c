@@ -156,11 +156,17 @@ static float ClampMotorDuty(float duty)
 #ifndef MOTOR_HOLD_DEADZONE_R
 #define MOTOR_HOLD_DEADZONE_R   940.0f   /* F18b: 与 L 同步回退,不对称 90(F16b)不动 */
 #endif
+/* F33(06-08 00:07-14 三组,用户拍板"你先只加占空比,试试情况,因为之前都是惯性不够被卡住"):
+ * S 配方冻结解除(冻结方=用户,拍板生效)。730/760 在褶皱备用场地三轮全卡:卡点 sent 钉
+ * ~900/1000 级(760+pid+帽100)推不过褶皱脊,G2 00:13:02 自然脱困耗 2.5s。+40 对称上调到
+ * 770/800 = U_DEEP 同档(03:30 清洁过 U 实证档,非 sm deep pivot 已在此档健康运行)。
+ * 不对称 30 保持;T=14/帽 100/A1/A2 全不动。代价预期:S 巡线底速 14→~16,弯径略宽,留观;
+ * 过冲征兆=S 弧外甩丢线 → 回 750/780 折中。 */
 #ifndef S_MODE_HOLD_DEADZONE_L
-#define S_MODE_HOLD_DEADZONE_L  730.0f
+#define S_MODE_HOLD_DEADZONE_L  770.0f   /* F33: 730→770(用户拍板加占空比) */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_R
-#define S_MODE_HOLD_DEADZONE_R  760.0f
+#define S_MODE_HOLD_DEADZONE_R  800.0f   /* F33: 760→800(同上,+40 对称) */
 #endif
 /* F10(06-07 04:29 第三组实测): U 弯回归应验——F9 850/880 把非 sm 深弯外轮一并加热
  * (pivot 外轮 sent≈880+290=1170,03:30 清洁过 U 档为 800+pid≈1090):U 中段单帧翻边
@@ -248,7 +254,10 @@ static uint16_t g_stall_wd_run = 0;         /* 双轮停滞连续 tick 计数(�
  * 编码器单通道故障(轮转读零)误停=该轮已失闭环,停车反而是安全行为。n=1 样本不敢
  * 默认开,先随双轮 WD 并行采数据,拍板后翻 1。纯 StopRun 零红线,与 F31 同构。 */
 #ifndef PER_WHEEL_WD_ENABLE
-#define PER_WHEEL_WD_ENABLE         0       /* 默认关:待多跑样本验证后拍板 */
+#define PER_WHEEL_WD_ENABLE         1       /* F33 翻开: 00:08:08 G1 直角边第二例单轮卡死
+                                             * (er 冻 209,sent_r~870 有令不动,左轮 30~46cps
+                                             * 在转,双轮门永不满足)→ n=2 实证,leader 拍开。
+                                             * 纯 StopRun 零红线;误停一次即回 0 复议。 */
 #endif
 #ifndef PW_WD_SENT_MARGIN
 #define PW_WD_SENT_MARGIN           60.0f   /* sent ≥ 死区+此值才视为"有令" */
