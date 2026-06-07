@@ -208,8 +208,22 @@ static const uint16_t g_fan_ladder[3] = {20u, 35u, 50u};
 static uint8_t  g_fan_step = 0u;
 #endif
 #if SINGLE_BOARD_LOCAL_DRIVE
+/* G2(06-07 用户拍板): 风机定版"常开构型"——占空比就此冻结,不再作调参变量:
+ * kick 150/1000×200ms(实测唯一起转配方,06-06 19:10)→保持 50/1000(=ABS_CAP 硬钳,
+ * 钳内唯一实测可保持档;>50 解锁仍欠铜皮/温升实测,见 19:00 网表审查)。
+ * K1 发车自动起扇(免 K4 人因漏开),StopRun 全路径灭扇(收口 RunArch点1:
+ * 丢线自停/FINISH/RD_FAIL/LORA_STOP 此前残留 50 常吹)。K4 保留=台架手动开关。 */
+#ifndef FAN_AUTO_ON_RACE
+#define FAN_AUTO_ON_RACE        1
+#endif
+#define FAN_RACE_KICK_DUTY      150u     /* 仅走 KickDiag 专用入口(独立钳 150) */
+#define FAN_RACE_KICK_TICKS     100u     /* 200ms @ 2ms tick,kick 暴露上限不变 */
+#define FAN_RACE_HOLD_DUTY      50u      /* 定版保持档 = FAN_DUTY_ABS_CAP,经常规入口 */
 static uint16_t g_fan_spot_ticks = 0u;   /* >0=kick/点动进行中,2ms tick 递减 */
-static uint8_t  g_fan_on = 0u;           /* G1(06-06): 风扇锁存运行态(kick→50保持直至再按K4/K2) */
+static uint8_t  g_fan_on = 0u;           /* G1: 风扇锁存运行态(G2 起 K1 自动置位,StopRun/K4/K2 清) */
+#define FAN_TELEM_VAL  g_fan_on
+#else
+#define FAN_TELEM_VAL  0u
 #endif
 #ifndef MOTOR_CMD_EPS
 #define MOTOR_CMD_EPS     0.1f
@@ -542,6 +556,14 @@ static void StopRun(void)
     lose_time = 0;
     g_stall_boost_l = 0.0f;
     g_stall_boost_r = 0.0f;
+#if SINGLE_BOARD_LOCAL_DRIVE
+    /* G2: 全部停车路径统一灭扇(原只 K2 清——丢线自停/FINISH/RD_FAIL/LORA_STOP
+     * 停车后风扇残留 50 常吹 = RunArch点1,就此收口)。PID:606 丢线自停绕过本函数,
+     * 由 main 1s 路径 ≤250ms 后补调,残留窗口有界。 */
+    g_fan_spot_ticks = 0u;
+    g_fan_on = 0u;
+    M3PWM_SetDutyCycle(0);
+#endif
 }
 
 #if OPENLOOP_TEST_ENABLE
@@ -891,7 +913,7 @@ int main(void)
             if (g_fan_spot_ticks > 0u)
             {
                 g_fan_spot_ticks--;
-                if (g_fan_spot_ticks == 0u) M3PWM_SetDutyCycle(g_fan_on ? 50 : 0);
+                if (g_fan_spot_ticks == 0u) M3PWM_SetDutyCycle(g_fan_on ? FAN_RACE_HOLD_DUTY : 0u);
             }
 #endif
 
@@ -1549,18 +1571,23 @@ int main(void)
                 g_launch_grace = 250u;      /* F6a: 发车 500ms 踢腿封顶窗 */
                 g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
                 g_sm_rel_src = 0;
+#if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE && FAN_AUTO_ON_RACE
+                /* G2: 发车自动起扇——常开构型免 K4 人因漏开。已在转(K4 预热)不重 kick;
+                 * kick 进行中(K4 后 200ms 内按 K1)不打断,150 暴露 ≤200ms 不变。 */
+                if (!g_fan_on && g_fan_spot_ticks == 0u)
+                {
+                    g_fan_on = 1u;
+                    M3PWM_SetDutyCycleKickDiag(FAN_RACE_KICK_DUTY);
+                    g_fan_spot_ticks = FAN_RACE_KICK_TICKS;
+                }
+#endif
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
                 break;
             case KEY_K2:
                 // K2: 停止运行
-                StopRun();
-#if SINGLE_BOARD_LOCAL_DRIVE
-                g_fan_spot_ticks = 0u;       /* C1/G1: K2 一键全停含风扇(锁存态同清) */
-                g_fan_on = 0u;
-                M3PWM_SetDutyCycle(0);
-#endif
+                StopRun();                   /* G2: 灭扇已上收 StopRun,全部停车路径统一 */
                 RGB_SetColor(RGB_COLOR_R);
                 OLED_ShowString(1, 1, "STOP K2         ");
                 break;
@@ -1601,8 +1628,8 @@ int main(void)
                 if (!g_fan_on && g_fan_spot_ticks == 0u)
                 {
                     g_fan_on = 1u;
-                    M3PWM_SetDutyCycleKickDiag(150);
-                    g_fan_spot_ticks = 100u;     /* kick 相位 200ms,倒计时毕回落 50 保持 */
+                    M3PWM_SetDutyCycleKickDiag(FAN_RACE_KICK_DUTY);
+                    g_fan_spot_ticks = FAN_RACE_KICK_TICKS;  /* kick 相位 200ms,倒计时毕回落 50 保持 */
                     OLED_ShowString(1, 1, "FAN ON 150>50   ");
                 }
                 else if (g_fan_on && g_fan_spot_ticks == 0u)
@@ -1657,7 +1684,9 @@ int main(void)
                      * 用于区分拱门锚、雷达默认方向、S②域。典型行仍低于单帧上限。 */
                     /* F8: 加 lt=锁存源(0未锁/1jc/2U3/3T2/4re-arm) rs=释放源(0未放/1主锚/2T3/3后备)
                      * ——F6b 验收与释放源之谜(03:04)机读化。最坏 +12B 由 SendLog 拆帧兜底。 */
-                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d es=%d bv=%d el=%ld er=%ld",
+                    /* G2: 加 fn=风机锁存态(1=kick/50常转)——常开构型下每行日志自证风机条件,
+                     * 杜绝"这轮到底开没开扇"复盘歧义。+5B,dbg=320 仍裕。 */
+                    "L=%d R=%d T=%d out=%d pid=%d,%d sent=%d,%d pos=%d lost=%d deep=%d junc=%d jc=%d yw=%d u=%d sm=%d rd=%d sg=%d ar=%d rdir=%d s2=%d lt=%d rs=%d es=%d fn=%d bv=%d el=%ld er=%ld",
                     (int)speed_left, (int)speed_right,
                     (int)PID_GetCurrentTargetSpeed(),
                     (int)g_speed_pid.last_output,
@@ -1679,6 +1708,7 @@ int main(void)
                     (int)g_sm_latch_src,                /* F8: sm 锁存源 */
                     (int)g_sm_rel_src,                  /* F8: sm 释放源 */
                     (int)ESP32_GetStartupState(),        /* 06-07: ESP启动握手状态(0 ACK/1 DONE/2 OK/3 RUN) */
+                    (int)FAN_TELEM_VAL,                  /* G2: 风机锁存态 */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
