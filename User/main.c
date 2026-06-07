@@ -280,11 +280,12 @@ static uint8_t  g_fan_step = 0u;
  * K1 发车自动起扇(免 K4 人因漏开),StopRun 全路径灭扇(收口 RunArch点1:
  * 丢线自停/FINISH/RD_FAIL/LORA_STOP 此前残留 50 常吹)。K4 保留=台架手动开关。 */
 #ifndef FAN_AUTO_ON_RACE
-#define FAN_AUTO_ON_RACE        0   /* F30a(备用场地A/B): 关——场地垫面未贴死有气泡,风机抽底
-                                     * 部空气=把松垫吸拱到底盘下,气泡越跑越大阻力递增(用户
-                                     * 23:1X实测观察);三组卡死(23:04/06/08)均 fn=1。先做无风机
-                                     * A/B 验证气泡-托底因果。⚠回真实场地(贴死垫)改回 1,
-                                     * 比赛=风机常开构型(下压力抓地)。 */
+#define FAN_AUTO_ON_RACE        1   /* F34(06-08 00:37 用户拍板"必须打开风扇,这是死参数"):
+                                     * A/B 已出结论——关风机治"吸拱"却放大"悬空":G1 00:37:18
+                                     * 起 3.5s el/yw/pos 全冻仅 er 爬 60→114=右轮悬空空转铁证
+                                     * (第三类卡死,编码器在转→双看门狗结构性盲区,唯一解=
+                                     * 风机下压)。占空比构型不变(kick 150×200ms→回落保持),
+                                     * 自此风机=死参数,任何场地不再关断。 */
 #endif
 #define FAN_RACE_KICK_DUTY      150u     /* 仅走 KickDiag 专用入口(独立钳 150) */
 #define FAN_RACE_KICK_TICKS     100u     /* 200ms @ 2ms tick,kick 暴露上限不变 */
@@ -718,7 +719,12 @@ static void SegTest_SeedOnStart(void)
      * 预核: P9 后备门 floor 120cnt>入口直线~60cnt 不早放(yaw 静默 500ms 在 S 内不可凑);
      * T3 强释 240cnt≈S①出口外余量足; jc/U3/T2 三锁存支路被 !g_s_mode 安全短路。 */
     g_s_mode = 1;
-    g_sm_cnt_base = avg;            /* P9/T3 里程锚=发车点 */
+    g_sm_cnt_base = avg + 60;       /* F34: 锚=发车点+60cnt≈真 S 入口(实测首弧 Δ55~65)。
+                                     * G2 00:38:57 实证:锚=发车点时 P9 后备门(floor 120)在
+                                     * S① 弧间短直凑齐三重与门提前放行(avg 124,rs=3),sm 中途
+                                     * 释放→T 跳 25 甩丢线——议会"S 内不可能凑齐"被数据驳回。
+                                     * +60 把 P9(120)/T3(240) 恢复到以 S 入口为基的设计几何;
+                                     * 主释放锚=拱门 0x30(本轮 ar=1 实收,链路场上活体✓)。 */
     g_sm_stable_run = 0;
     g_sm_latch_src = 5;             /* lt=5: SEG2 播种(区分自然锁存源 1~4) */
     g_navseg = NAVSEG_SERP1;        /* 议会: 对齐 1453 边沿语义,sg 遥测起点即 SERP1 */
