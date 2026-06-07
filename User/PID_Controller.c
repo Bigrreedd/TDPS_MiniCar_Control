@@ -10,6 +10,17 @@ extern BlackPointResult_t result_BlackPoint;
 #ifndef PID_GYRO_ENABLE
 #define PID_GYRO_ENABLE 0
 #endif
+/* G1(06-07 晚 12-agent 议会,用户批准备码): gyro 率阻尼内环一键包——上行宏置 1 即同时
+ * 获得 kd=-80(下方 PID_GYRO_KD_INIT 跟随)+内环限幅 150(gyro_term 处跟随);置 0 全部
+ * 回 F24 死字段语义(字节级等价)。符号链已复核:gz 左转为正(10:21 U 左转 yw=+176 字段
+ * 实证)+corr>0=右转指令+output-=gyro_kd*gz ⇒ kd 取负=阻尼。
+ * ⚠烧车前台架定号仍强制(防机械装反/轴向意外):架空+传感器下垫黑线白纸,K1,绕传感器
+ * 中点手转车头(质心保持≈30),左转时 pid 应右增左减(压制转动);反向→改 +80.0f。 */
+#if PID_GYRO_ENABLE
+#define PID_GYRO_KD_INIT  (-80.0f)   /* 台架定号若反向→ +80.0f */
+#else
+#define PID_GYRO_KD_INIT  (0.0f)     /* 门关=死字段回零(F23 防误导语义) */
+#endif
 #ifndef WHEEL_BALANCE_ENABLE
 #define WHEEL_BALANCE_ENABLE 1
 #endif
@@ -243,10 +254,10 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	float gyro_term = 0.0f;
 #if PID_GYRO_ENABLE
 	gyro_term = controller->param.gyro_kd * MPU6050_data.gz_rads;
-	// gyro_kd * gz_rads 的典型量级远超 3500，需要按实际角速度范围重新标定限幅
-	// 正常行驶 gz_rads ≈ ±5 rad/s，急转弯 ≈ ±20 rad/s
-	// 限幅设为 output_max 的 40%，保证补偿有效但不过度
-	float gyro_limit = controller->param.output_max * 0.4f;
+	/* G1(06-07 晚): 限幅 output_max×0.4(=3600)→固定 150——corr 下游钳位 ±320(PC:780),
+	 * 3600 等于让 gyro 独占全部 corr 预算(U pivot 会被反扭顶宽);150 留一半给 P/D。
+	 * 乒乓摆速 2~4.5rad/s→|kd×gz|=160~360 触限幅,典型工作点即满阻尼。 */
+	float gyro_limit = 150.0f;
 	if(gyro_term >= gyro_limit)
 	{
 		gyro_term = gyro_limit;
@@ -397,7 +408,9 @@ void PID_Init(void)
      * 保留(非调参项):F22a/b bug修复、F18a 去抖、F16ab、SEG、风机 G 链;
      * HOLD 850/940 不随回(纯电池唯一过段验证档;770/800 的零卡滞实测全在 USB 共电
      * 披露窗内,且有 F9"太慢一直卡住"史——亏电下照搬=赌卡滞)。 */
-    PositionPID_Init(&g_position_pid, 40.0f, 0.0f, 550.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    /* G1(06-07 晚): gyro_kd 改由 PID_GYRO_KD_INIT 跟随编译门(PC:头部)——门=0 时仍为
+     * 0.0f(F23/F24 字节级等价),门=1 时 -80;不再出现"死字段写实值"的 F21 式误导。 */
+    PositionPID_Init(&g_position_pid, 40.0f, 0.0f, 550.0f, PID_GYRO_KD_INIT, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
