@@ -135,8 +135,12 @@ static float ClampMotorDuty(float duty)
  * 看护项:①U 弯半径回归(头号,+80 后累计自弯道验证态+170)——U 内轮 sent 应仍出现 0,
  * 入口外甩/盘旋=硬回退线;②巡航自驱超 T(HOLD+floor=920 PWM 若>28cps,速度环被 floor
  * 钳住压不下)→征兆=直线蛇摆/弯道跑宽。回退链:850/880→810/840→770/800(F5)。 */
+/* F17b(06-07 08:51 风机120常开首跑): 风机债实证——速度环 out 70→245 持续 windup 仍
+ * avg L/R≈15<T=28(03:30 关扇同 T 仅需 out≈70~110),末段双轮失速帧再现;按 G2 预授权
+ * 协议 HOLD 对称上抬(+30:120 档吸力≈100 档预估×1.44),不对称 90(F16b)不动。
+ * 看护(上方 F9 警告同源):若直线出现"out 钉 70 地板 + L/R>28 慢蛇摆"=自驱超 T,回退本档。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   850.0f
+#define MOTOR_HOLD_DEADZONE_L   880.0f
 #endif
 /* F16b(06-07 07:30 用户观察+实测指纹): 稳态巡线慢性右坐——线钉在阵列左侧 pos≈15(中心=30)。
  * 51.1~52.3 五连帧 pos=15、yw=0、L=R≈30,但 pid=30~49/101~158:速度等、航向直,PID 却要
@@ -147,7 +151,7 @@ static float ClampMotorDuty(float duty)
  * 半步 +60: 880→940(不对称 30→90);预期 pos 稳态 15→约 22~28。
  * 过补偿征兆=pos 坐 >35(06-05 第11轮 +120 过补偿同症)→回 910 折中。 */
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   940.0f
+#define MOTOR_HOLD_DEADZONE_R   970.0f   /* F17b: 940+30 与 L 同步,保持不对称 90 */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_L
 #define S_MODE_HOLD_DEADZONE_L  730.0f

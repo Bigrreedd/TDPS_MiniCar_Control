@@ -1,0 +1,127 @@
+# 2026-06-07 08:51 风机120常开首跑(直线段乒乓发散→丢线自旋→楔死) 原始串口 verbatim
+# 测试输入固件: 1fee7dc (G3a+G3b: 灭扇=racing下降沿 / FAN hold=120 / fn=遥测)
+# 用户陈述: 风扇运行完全没有问题; 直线巡线 PID 需调整; 占空比(速度)低会卡住(物理限制)
+# 乱码前缀=0x07 封帧头字节被串口助手按 GBK 显示, 文本载荷不受影响(旧账)
+
+[08:51:45.516]收←◆,4095
+8謀0\0\0
+[08:51:45.647]收←◆谣Z譢0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+
+[08:51:45.947]收←◆豛0禱0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,1365,0,0,4095,4095
+4
+[08:51:46.251]收←◆賊0筡0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=35 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=0 er=0 S=4095,4095,2730,0,1365,4095,4095
+
+[08:51:46.548]收←◆赲0筡0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,1365,0,1365,4095,4095
+
+[08:51:46.671]收←◆踈0\0\0
+[08:51:46.845]收←◆撺Z躙0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=111 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+
+[08:51:47.152]收←◆輁0禱0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=35 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,2730,0,0,4095,4095
+3
+[08:51:47.451]收←◆轡0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+
+[08:51:47.749]收←◆運0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=111 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+
+[08:51:47.837]收←◆郳0\0\0
+[08:51:48.038]收←◆浈Z醆0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+9
+[08:51:48.346]收←◆鈂0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+:
+[08:51:48.650]收←◆鉢0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+;
+[08:51:48.946]收←◆鋅0砛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=111 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+=錦0\0\0
+[08:51:49.247]收←◆幞Z鎈0禱0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=113 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=0 er=0 S=4095,4095,1365,0,0,4095,4095
+
+
+[08:51:49.552]收←◆鏫0籠0L=0 R=0 T=28 out=0 pid=70,70 sent=1020,1140 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+)
+[08:51:49.837]收←◆鑌0縗0L=6 R=6 T
+[08:51:49.862]收←◆=28 out=70 pid=20,145 sent=970,1215 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-9 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=4 er=3 S=4095,0,0,4095,4095,4095,4095
+,
+[08:51:50.145]收←◆閈0羂0L=19 R=16 T=28 out=70 pid=0,282 sent=0,1082 pos=0 lost=0 deep=1 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=11 er=10 S=0,4095,4095,4095,4095,4095,4095
+O
+[08:51:50.449]收←◆闬0耚0L=13 R=20 T=28 out=86 pid=103,68 sent=953,1008 pos=35 lost=0 deep=0 junc=0 jc=0 yw=7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=13 er=15 S=4095,4095,4095,0,0,4095,4095
+{
+[08:51:50.752]收←◆隲0肻0L=13 R=13 T=28 out=99 pid=49,180 sent=899,1120 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-9 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=110 el=20 er=19 S=4095,0,0,4095,4095,4095,4095
+T
+[08:51:51.047]收←◆靄0羂0L=26 R=20 T=28 out=86 pid=0,298 sent=0,1098 pos=0 lost=0 deep=1 junc=0 jc=0 yw=5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=26 er=26 S=0,4095,4095,4095,4095,4095,4095
+J
+[08:51:51.352]收←◆韁0繺0L=6 R=16 T=28 out=120 pid=120,120 sent=990,1060 pos=30 lost=0 deep=0 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=28 er=30 S=4095,4095,0,0,0,4095,4095
+y
+[08:51:51.651]收←◆頫0芢0L=16 R=13 T=28 out=114 pid=20,327 sent=790,1127 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-6 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=111 el=34 er=35 S=1365,0,4095,4095,4095,4095,4095
+`
+[08:51:51.946]收←◆颸0肻0L=23 R=20 T=28 out=111 pid=0,323 sent=0,1123 pos=5 lost=0 deep=1 junc=0 jc=0 yw=21 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=111 el=41 er=42 S=1365,0,4095,4095,4095,4095,4095
+A
+[08:51:52.237]收←◆餦0繺0L=10 R=26 T=28 out=127 pid=339,0 sent=1109,0 pos=55 lost=0 deep=1 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=110 el=44 er=47 S=4095,4095,4095,4095,4095,0,0
+k
+[08:51:52.552]收←◆馶0芢0L=23 R=3 T=22 out=140 pid=0,460 sent=0,1360 pos=0 lost=19 deep=1 junc=0 jc=0 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=51 er=48 S=4095,4095,4095,4095,4095,4095,4095
+u
+[08:51:52.851]收←◆騖0肻0L=10 R=16 T=28 out=134 pid=346,20 sent=1116,820 pos=55 lost=0 deep=1 junc=0 jc=0 yw=8 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=53 er=56 S=4095,4095,4095,4095,4095,0,0
+S
+[08:51:53.151]收←◆骪0腬0L=23 R=23 T=28 out=135 pid=20,348 sent=790,1148 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-15 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=64 er=62 S=0,0,4095,4095,4095,4095,4095
+t
+[08:51:53.445]收←◆鬨0肻0L=30 R=23 T=28 out=134 pid=0,346 sent=0,1146 pos=0 lost=0 deep=1 junc=0 jc=0 yw=21 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=69 er=70 S=0,4095,4095,4095,4095,4095,4095
+R
+[08:51:53.747]收←◆鮘0繺0L=6 R=26 T=28 out=158 pid=371,0 sent=1141,0 pos=55 lost=0 deep=1 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=110 el=72 er=75 S=4095,4095,4095,4095,4095,0,0
+z
+[08:51:54.048]收←◆鯸0綷0L=23 R=3 T=28 out=164 pid=0,377 sent=0,1277 pos=5 lost=0 deep=1 junc=0 jc=0 yw=7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=77 er=77 S=0,0,4095,4095,4095,4095,4095
+
+[08:51:54.353]收←◆鱘0芢0L=3 R=16 T=28 out=178 pid=194,162 sent=1240,1102 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=81 er=81 S=4095,4095,4095,0,0,4095,4095
+u
+[08:51:54.652]收←◆鳿0蚛0L=26 R=9 T=22 out=171 pid=185,157 sent=1035,1097 pos=35 lost=64 deep=0 junc=0 jc=0 yw=-51 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=92 er=87 S=4095,4095,4095,4095,4095,4095,4095
+K
+[08:51:54.941]收←◆鵟0衆0L=39 R=26 T=22 out=146 pid=164,129 sent=1014,1069 pos=35 lost=128 deep=0 junc=0 jc=0 yw=-68 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=102 er=95 S=4095,4095,4095,4095,4095,4095,4095
+l
+[08:51:55.247]收←◆鶿0裓0L=36 R=30 T=22 out=154 pid=172,137 sent=1022,1077 pos=35 lost=191 deep=0 junc=0 jc=0 yw=-86 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=114 er=105 S=4095,4095,4095,4095,4095,4095,4095
+Z
+[08:51:55.551]收←◆鸤0芢0L=43 R=33 T=28 out=142 pid=0,355 sent=0,1155 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-67 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=126 er=116 S=1365,4095,4095,4095,4095,0,1365
+x
+[08:51:55.846]收←◆黒0芢0L=20 R=36 T=28 out=168 pid=0,381 sent=0,1181 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-62 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=110 el=128 er=121 S=0,4095,4095,4095,4095,4095,1365
+y
+[08:51:56.151]收←◆齖0羂0L=3 R=3 T=28 out=207 pid=0,420 sent=0,1320 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-62 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=128 er=122 S=0,4095,4095,4095,4095,4095,0
+M
+[08:51:56.441]收←◆0羂0L=0 R=0 T=28 out=211 pid=0,423 sent=0,1323 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-62 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=128 er=122 S=0,4095,4095,4095,4095,4095,0
+I
+[08:51:56.750]收←◆\0腬0L=0 R=0 T=28 out=225 pid=13,438 sent=883,1338 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-63 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=128 er=121 S=0,4095,4095,4095,4095,4095,0
+y
+[08:51:57.046]收←◆\0肻0L=0 R=-3 T=28 out=245 pid=33,458 sent=903,1358 pos=0 lost=0 deep=1 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=1 bv=109 el=128 er=121 S=0,4095,4095,4095,4095,4095,0
+
+[08:51:57.353]收←◆互Z絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=1365,1365,4095,1365,1365,1365,1365
+
+[08:51:57.638]收←◆邾Z絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0
+[08:51:57.674]收←◆ lt=0 rs=0 es=0 fn=0 bv=110 el=128 er=121 S=1365,2730,4095,2730,4095,1365,1365
+
+[08:51:57.789]收←◆荪Z\0\0
+[08:51:57.951]收←◆碶0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=128 er=121 S=0,1365,4095,2730,4095,0,0
+
+[08:51:58.238]收←◆幞Z絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=1365,2730,4095,2730,4095,1365,1365
+
+[08:51:58.549]收←◆谣Z甛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=0,0,4095,0,2730,0,0
+
+[08:51:58.851]收←◆Z絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=110 el=128 er=121 S=1365,1365,4095,2730,4095,2730,2730
+
+[08:51:58.958]收←◆讠Z\0\0
+[08:51:59.140]收←◆    猏0L=0 R=0 T=0 out=0 pid=0,
+[08:51:59.164]收←◆0 sent=0,0 pos=5 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=74 el=128 er=121 S=0,0,0,0,0,0,4095
+
+[08:51:59.448]收←◆
+絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=111 el=128 er=121 S=1365,2730,4095,2730,4095,2730,2730
+
+[08:51:59.740]收←◆豫Z絓0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=1365,2730,4095,2730,4095,2730,1365
+
+[08:52:00.037]收←◆邾Z篭0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=0,1365,4095,2730,2730,2730,2730
+
+[08:52:00.127]收←◆幞Z\0\0
+[08:52:00.350]收←◆甛0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=109 el=128 er=121 S=0,0,4095,0,2730,0,0
+
+[08:52:00.650]收←◆馥Z猏0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=74 el=128 er=121 S=0,0,0,0,0,0,4095
+
+[08:52:00.950]收←◆Z猏0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=68 el=128 er=121 S=0,0,0,0,0,0,4095
+
+[08:52:01.248]收←◆毳Z玕0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=73 el=128 er=121 S=0,0,0,0,0,0,4095
+谣Z\0\0
+[08:52:01.547]收←◆玕0L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=69 el=128 er=121 S=0,0,0,0,0,0,4095
+
+[08:52:01.840]收←◆讠Z玕0L=0 R=0 T=0 out=0 pid=0,
+[08:52:01.864]收←◆0 sent=0,0 pos=25 lost=0 deep=0 junc=1 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=0 fn=0 bv=72 el=128 er=121 S=0,0,0,0,0,0,4095
