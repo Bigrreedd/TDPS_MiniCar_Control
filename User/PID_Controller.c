@@ -401,6 +401,17 @@ static float g_nav_speed_cps = 0.0f;
 /* 深弯模式滞回状态：1=内侧轮停转模式。误差≥进入阈值置1，≤退出阈值清0，
  * 掐断弯道边缘质心量化噪声(4.19↔4.54)导致的内侧轮768↔0颤振。 */
 static uint8_t g_deep_turn_mode = 0;
+/* F16(06-07 07:30 实测): 非 sm deep 内轮 coast 资格门——deep 连续保持 ≥ 本阈值才允许
+ * min_inner=0,否则仍走 F12 爬行档 20。两难调和:F12 动机(04:54 悬空扫边停轮,瞬扫是
+ * 单帧~百 ms 级) vs U 弯几何(07:03 F13/07:30 双实测:死区仿射两档律下 sent=750 内轮
+ * 仍 23~30cps,327~447 PWM 指令差速实测 R-L≈7cps,U 仅转 60° 即翻边——06-06 23:2X U1
+ * 同律,降底座追不到停转点)。持续 100ms 的 deep 只在真弯出现(07:30 U 入口 deep 连续
+ * ≥900 tick),质心量化抖动(deep 隔帧 0↔1)永远到不了。
+ * 注意:悬空把传感器按住边路 >100ms 内轮仍会停——这是 U pivot 的必要几何行为,非故障。 */
+#ifndef DEEP_COAST_CONFIRM_TICKS
+#define DEEP_COAST_CONFIRM_TICKS 50u  /* 100ms @ 500Hz */
+#endif
+static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈值),非 deep 即清零 */
 #ifndef PID_LINE_LOST_STOP_TICKS
 #define PID_LINE_LOST_STOP_TICKS 375u  /* 750ms @ 500Hz control tick */
 #endif
@@ -430,6 +441,7 @@ void PID_Control_Update(void)
 			SpeedPID_Reset(&g_speed_pid);
 			PositionPID_Reset(&g_position_pid);
 			g_deep_turn_mode = 0;   /* 停车清深弯模式,避免重启残留 */
+			g_deep_hold_ticks = 0;  /* F16 coast 资格计数同清(F11 教训:新增 static 必入本清单) */
 			g_reacq_run = 0;        /* A2 去抖状态同清 */
 			g_last_edge_side = 0;   /* A2b 边缘记忆同清 */
 			g_reacq_grace = 0;      /* A2c 宽限同清 */
@@ -742,6 +754,14 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			}
 		}
 		}
+		/* F16: deep 持续计数。路口冻结期 deep 保持也照计——冻结期 corr=0 双轮同速,
+		 * coast 资格不会被消费;出冻结若仍真弯则无缝接 pivot。丢线冻结期 raw_err 冻在
+		 * 高位 → deep 保持 → 计数不断,07:30 式冻结 pivot 段照常享有 coast。 */
+		if (g_deep_turn_mode) {
+			if (g_deep_hold_ticks < DEEP_COAST_CONFIRM_TICKS) g_deep_hold_ticks++;
+		} else {
+			g_deep_hold_ticks = 0;
+		}
 		/* decel_cap: 深弯模式内侧减速，否则正常前进(50)。
 		 * 06-07 F12: 悬空扫到最左/最右边路时,非 sm deep 直接 sent=0 再次被用户判定不可接受;
 		 * 仅 S-mode 保留内轮 coast 几何解,非 sm deep 恢复 20 爬行下限。 */
@@ -756,8 +776,13 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * F12 将 coast 授权收回到 sm 域:U/普通深弯不再直接停内轮,防悬空边路测试和浅弯边缘
 		 * 被 deep 触发后单轮 0;若 U 弯半径变宽,按 D5 只退 U_DEEP 或复核 F12,不动 PID。
 		 * 安全:CLOSED_LOOP_REVERSE_ENABLE=1 下负值会经 ApplyDeadzone 放大成反向脉冲
-		 * (12:55 Run1 同族)——min_inner 仅做非负托底,不得绕过本钳。 */
-		float min_inner = g_s_mode ? 0.0f : MIN_INNER_WHEEL_SPEED;
+		 * (12:55 Run1 同族)——min_inner 仅做非负托底,不得绕过本钳。
+		 * F16(06-07 07:30): 执行上注预案"复核 F12"——U 半径变宽实锤(F13 底座 730 下仍
+		 * 60° 翻边,R-L≈7cps)。持续 deep ≥DEEP_COAST_CONFIRM_TICKS 恢复 coast 资格,
+		 * 瞬态(悬空扫边/量化抖动)仍走爬行档 20;coast 期 cmd=0 → ApplyDeadzone 干净停,
+		 * 不产生负值,反向钳语义不变。 */
+		float min_inner = (g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS)
+		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
 		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
 		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */

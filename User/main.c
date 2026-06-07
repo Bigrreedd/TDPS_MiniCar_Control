@@ -138,8 +138,16 @@ static float ClampMotorDuty(float duty)
 #ifndef MOTOR_HOLD_DEADZONE_L
 #define MOTOR_HOLD_DEADZONE_L   850.0f
 #endif
+/* F16b(06-07 07:30 用户观察+实测指纹): 稳态巡线慢性右坐——线钉在阵列左侧 pos≈15(中心=30)。
+ * 51.1~52.3 五连帧 pos=15、yw=0、L=R≈30,但 pid=30~49/101~158:速度等、航向直,PID 却要
+ * 恒给右轮 +≈125 PWM 才走直 → 右传动链本占空比段偏弱(编码器 L=R 排除滑胎),Ki=0 下
+ * P 环用 15 格稳态误差供养该前馈=经典 P 降落;左 U 入场余量被吃半格(07:30 60° 翻边帮凶)。
+ * 旧不对称 30 系 06-05 第13轮按 pivot 对称定标——早于 F10 深弯分域;deep pivot 已走
+ * U_DEEP 域,HOLD 不对称不再背 pivot 包袱,可按巡航直行重标(START 120 同向佐证)。
+ * 半步 +60: 880→940(不对称 30→90);预期 pos 稳态 15→约 22~28。
+ * 过补偿征兆=pos 坐 >35(06-05 第11轮 +120 过补偿同症)→回 910 折中。 */
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   880.0f
+#define MOTOR_HOLD_DEADZONE_R   940.0f
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_L
 #define S_MODE_HOLD_DEADZONE_L  730.0f
@@ -157,8 +165,13 @@ static float ClampMotorDuty(float duty)
 /* F13(06-07 07:04 U弯实测): 编码器修复后 U 左转 deep 丢线。
  * pos=0/5 时 sentR-sentL≈327 但实测 R-L≈0cps,左内轮 790 仍拖着跑,半径变宽后翻边。
  * 只降左内轮 deep 底座 770→730;右侧 800 保持外轮扭矩,不动 PID/主HOLD/S/T。 */
+/* F16a(06-07 07:30 实测): F13 证伪——底座 730(实发 750)左内轮仍 23~30cps,差速仍≈7cps,
+ * U 仅转 60° 翻边;死区仿射两档律(任意 cmd>0 ≈≥24cps)下降底座追不到停转点。
+ * 真修在 PID 侧:持续 deep ≥100ms 恢复内轮 coast(见 PID_Controller.c F16 注)。
+ * 本底座回 770 对齐 03:30 验证锚:爬行只剩 coast 资格期前 100ms,底座差 40 影响可忽略;
+ * 右深弯外轮(L 侧)扭矩回满。 */
 #ifndef U_DEEP_HOLD_DEADZONE_L
-#define U_DEEP_HOLD_DEADZONE_L  730.0f
+#define U_DEEP_HOLD_DEADZONE_L  770.0f
 #endif
 #ifndef U_DEEP_HOLD_DEADZONE_R
 #define U_DEEP_HOLD_DEADZONE_R  800.0f
