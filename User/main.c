@@ -218,8 +218,9 @@ static uint8_t  g_fan_step = 0u;
 #endif
 #define FAN_RACE_KICK_DUTY      150u     /* 仅走 KickDiag 专用入口(独立钳 150) */
 #define FAN_RACE_KICK_TICKS     100u     /* 200ms @ 2ms tick,kick 暴露上限不变 */
-#define FAN_RACE_HOLD_DUTY      100u     /* G3: 50→100 升一档(=ABS_CAP,板级堵转全额定内),
-                                          * 台架温升+上图过测后锁死,再不动;不过测回 50 */
+#define FAN_RACE_HOLD_DUTY      120u     /* G3b: 100→120(=ABS_CAP=绝对安全天花板,堵转
+                                          * 二极管 2.96A/颗·XT30 10.1A 全额定内;130 起零裕
+                                          * 度),台架温升+上图过测后锁死,再不动;不过测回 50 */
 static uint16_t g_fan_spot_ticks = 0u;   /* >0=kick/点动进行中,2ms tick 递减 */
 static uint8_t  g_fan_on = 0u;           /* G1: 风扇锁存运行态(G2 起 K1 自动置位,StopRun/K4/K2 清) */
 #define FAN_TELEM_VAL  g_fan_on
@@ -553,18 +554,13 @@ static void UpdateSensorDebugSnapshot(void)
 
 static void StopRun(void)
 {
+    /* G3a: G2 曾在此灭扇——但本函数被 lose_time 饱和路径(越线/台架静置)每 tick
+     * 连环调用,K4 台架开扇 ≤2ms 即被掐(08:2X 实测"只转~500ms")。灭扇改挂
+     * racing 下降沿(主循环 Path_StopRace 处),此处还原纯停车语义。 */
     is_racing = 0;
     lose_time = 0;
     g_stall_boost_l = 0.0f;
     g_stall_boost_r = 0.0f;
-#if SINGLE_BOARD_LOCAL_DRIVE
-    /* G2: 全部停车路径统一灭扇(原只 K2 清——丢线自停/FINISH/RD_FAIL/LORA_STOP
-     * 停车后风扇残留 50 常吹 = RunArch点1,就此收口)。PID:606 丢线自停绕过本函数,
-     * 由 main 1s 路径 ≤250ms 后补调,残留窗口有界。 */
-    g_fan_spot_ticks = 0u;
-    g_fan_on = 0u;
-    M3PWM_SetDutyCycle(0);
-#endif
 }
 
 #if OPENLOOP_TEST_ENABLE
@@ -971,6 +967,15 @@ int main(void)
             else if (!is_racing && g_prev_racing)
             {
                 Path_StopRace();
+#if SINGLE_BOARD_LOCAL_DRIVE
+                /* G3a: 灭扇=racing 下降沿事件(原 G2 放 StopRun 内,被丢线饱和路径
+                 * 每 tick 连环触发,台架 K4 开扇即被掐)。下降沿恰好一次;且 PID:606
+                 * 直写 is_racing=0 的旁路停车也被捕获(G2 时代要等 1s 兜底 ≤250ms,
+                 * 现 ≤2ms)。台架手动关扇走 K4/K2(K2 分支无条件灭扇=总开关)。 */
+                g_fan_spot_ticks = 0u;
+                g_fan_on = 0u;
+                M3PWM_SetDutyCycle(0);
+#endif
             }
             g_prev_racing = is_racing;
 
@@ -1588,7 +1593,13 @@ int main(void)
                 break;
             case KEY_K2:
                 // K2: 停止运行
-                StopRun();                   /* G2: 灭扇已上收 StopRun,全部停车路径统一 */
+                StopRun();
+#if SINGLE_BOARD_LOCAL_DRIVE
+                g_fan_spot_ticks = 0u;       /* G3a: K2 无条件灭扇(台架总开关)——比赛停车
+                                              * 的灭扇在 racing 下降沿,台架态(未发车)靠这里 */
+                g_fan_on = 0u;
+                M3PWM_SetDutyCycle(0);
+#endif
                 RGB_SetColor(RGB_COLOR_R);
                 OLED_ShowString(1, 1, "STOP K2         ");
                 break;
@@ -1631,7 +1642,7 @@ int main(void)
                     g_fan_on = 1u;
                     M3PWM_SetDutyCycleKickDiag(FAN_RACE_KICK_DUTY);
                     g_fan_spot_ticks = FAN_RACE_KICK_TICKS;  /* kick 相位 200ms,倒计时毕回落 50 保持 */
-                    OLED_ShowString(1, 1, "FAN ON 150>100  ");
+                    OLED_ShowString(1, 1, "FAN ON 150>120  ");
                 }
                 else if (g_fan_on && g_fan_spot_ticks == 0u)
                 {
