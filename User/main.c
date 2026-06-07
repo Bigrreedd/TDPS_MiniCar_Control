@@ -140,7 +140,10 @@ static float ClampMotorDuty(float duty)
  * 协议 HOLD 对称上抬(+30:120 档吸力≈100 档预估×1.44),不对称 90(F16b)不动。
  * 看护(上方 F9 警告同源):若直线出现"out 钉 70 地板 + L/R>28 慢蛇摆"=自驱超 T,回退本档。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   880.0f
+#define MOTOR_HOLD_DEADZONE_L   850.0f   /* F18b: F17b(+30)回退——其自带回退条款命中:
+                                          * 09:16 盲走帧 L/R 33~36cps > T=28/22 且 out 沿
+                                          * 地板下行 = F9"自驱超 T"征兆实锤(带扇 880+floor70
+                                          * =950 PWM 自驱 ≈33cps,速度环压不下来→直线蛇摆助燃) */
 #endif
 /* F16b(06-07 07:30 用户观察+实测指纹): 稳态巡线慢性右坐——线钉在阵列左侧 pos≈15(中心=30)。
  * 51.1~52.3 五连帧 pos=15、yw=0、L=R≈30,但 pid=30~49/101~158:速度等、航向直,PID 却要
@@ -151,7 +154,7 @@ static float ClampMotorDuty(float duty)
  * 半步 +60: 880→940(不对称 30→90);预期 pos 稳态 15→约 22~28。
  * 过补偿征兆=pos 坐 >35(06-05 第11轮 +120 过补偿同症)→回 910 折中。 */
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   970.0f   /* F17b: 940+30 与 L 同步,保持不对称 90 */
+#define MOTOR_HOLD_DEADZONE_R   940.0f   /* F18b: 与 L 同步回退,不对称 90(F16b)不动 */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_L
 #define S_MODE_HOLD_DEADZONE_L  730.0f

@@ -479,7 +479,12 @@ void PID_Control_Update(void)
 	     * 修正方向(17:07 波浪换边实测)——再捕获需连续 REACQ_CONFIRM_TICKS 帧 found 才
 	     * 解除丢线;确认期内 g_line_lost_ticks 冻结在 >125,下方 A2 锁向分支继续生效。 */
 	    if (result_BlackPoint.found) {
-		if (g_s_mode && g_line_lost_ticks > 125u) {
+		/* F18a(06-07 09:16): 去抖扩展到全域(原 g_s_mode 限定)——非 sm 假重捕翻边
+		 * 两次实锤(07:30 U弯 pos=60 单瞥拆 72° / 09:16 [10.170] S 七路全白却报
+		 * pos=60→pid 377 满舵→单帧点燃自旋 yw -44→-128)。门槛仍要求深丢线
+		 * (>125tick)才启用确认,正常巡线单帧质心跳变不受影响;sm 行为不变;
+		 * 真出线→lost 单调爬 375 干净自停,不再被全白伪帧反复清零横跳。 */
+		if (g_line_lost_ticks > 125u) {
 		    g_reacq_run++;
 		    if (g_reacq_run >= REACQ_CONFIRM_TICKS) {
 			g_line_lost_ticks = 0;   /* 去抖通过,正式解除丢线 */
