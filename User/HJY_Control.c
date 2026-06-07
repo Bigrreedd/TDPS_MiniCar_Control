@@ -1,13 +1,13 @@
 /**
  * HJY_Control.c —— HJY 三环重构核(2026-06-07)
  *
- * 架构(方案原文见 PID_TUNING_LOG.md 同日条目):
- *   光路穷举分区 → (基速, 差速等级) ┐
- *   角度环(直行态锁航向, 1 套 PID) ┼→ 左/右轮目标速度 → 左右独立速度 PID → PWM 直驱
- *   per-state PWM 前馈表(实测标定) ┘
+ * 架构(方案原文见 PID_TUNING_LOG.md 同日条目;HJY7 起角度环全程生效):
+ *   光路穷举分区 → (基速, 目标偏航率 w_t) ┐
+ *   角度环=全程率环 diff=−[FF·w_t+KP·(w_t−gz)] ┼→ 左/右轮目标速度 → 左右独立速度 PID → PWM 直驱
+ *   直行族另加航向保持分量(锁存航向→小目标率) ┘   (per-state PWM 前馈表留作标定钩子)
  *
  * 显式不用:位置环 PID、START/HOLD 静态死区前馈、coast pivot、踢腿 boost。
- * 左右电机机械不对称 → 由两套独立速度环的积分项动态补偿(HJY 方案核心主张)。
+ * 左右电机机械不对称 → 两套独立速度环动态补偿;旋转动量 → MPU 率环全程看管。
  */
 #include "HJY_Control.h"
 
@@ -35,33 +35,26 @@ volatile int16_t  g_hjy_err_l = 0, g_hjy_err_r = 0;
 static SpeedPID_Controller_t s_spd_l;   /* 左轮速度环(独立 Kp/Ki/Kd) */
 static SpeedPID_Controller_t s_spd_r;   /* 右轮速度环(独立 Kp/Ki/Kd) */
 
-/* 角度环:位置式 PID,误差单位 rad,输出差速 cnt/s。自带最小实现保证
- * 符号语义透明:err = add_angle - target,err>0(车头偏左) → 输出>0 → 右修。 */
-typedef struct
-{
-    float kp, ki, kd;
-    float integral;
-    float last_err;
-    float out_max;          /* 对称钳位 ±out_max */
-} HJY_AnglePID_t;
-static HJY_AnglePID_t s_ang;
-static float   s_yaw_target = 0.0f;     /* 直行态锁存的目标航向(rad) */
+/* HJY7: 原"直行态专属角度位置式 PID"已并入全程率环(Update 第 3 节),
+ * 此处仅保留航向保持的锁存状态。 */
+static float   s_yaw_target = 0.0f;     /* 直行族锁存的目标航向(rad) */
 static uint8_t s_yaw_latched = 0u;      /* 1=target 有效 */
 
 /* ===== 状态→目标查表 ===== */
-/* 差速等级(cnt/s):负=左转(vL<vR),正=右转。直行/全黑 0,微修全交角度环。
- * 初值=合理大区间中点,串口实测收敛。 */
-static const float k_diff[HJY_ST_COUNT] =
+/* HJY7: 目标偏航率表 rad/s(>0=左旋,与 gz 同号)——光电分情况逻辑的输出端,
+ * 角度环(率环)全程伺服。L1/L2/L3≈60/120/180°/s(U 弯需求 ~150°/s,封顶留量),
+ * R 镜像;直行/全黑 0(航向保持分量另加)。 */
+static const float k_rate[HJY_ST_COUNT] =
 {
-    0.0f,    /* STRAIGHT */
-    -5.0f,   /* L1 小左 */
-    -10.0f,  /* L2 中左 */
-    -16.0f,  /* L3 大左 */
-    +5.0f,   /* R1 小右 */
-    +10.0f,  /* R2 中右 */
-    +16.0f,  /* R3 大右 */
-    0.0f,    /* ALLBLACK 直穿 */
-    0.0f     /* ALLWHITE(不用,沿用上一状态) */
+    0.0f,    /* STRAIGHT(保持分量另加) */
+    +1.0f,   /* L1 小左 ≈60°/s */
+    +2.1f,   /* L2 中左 ≈120°/s */
+    +3.1f,   /* L3 大左 ≈180°/s */
+    -1.0f,   /* R1 小右 */
+    -2.1f,   /* R2 中右 */
+    -3.1f,   /* R3 大右 */
+    0.0f,    /* ALLBLACK 直穿(保持分量另加) */
+    0.0f     /* ALLWHITE(不用,盲走沿记忆态) */
 };
 /* 基速(cnt/s) */
 static const float k_base[HJY_ST_COUNT] =
@@ -141,26 +134,15 @@ static HJY_LineState_t HJY_Classify(const volatile uint16_t *s)
     return HJY_ST_R3;
 }
 
-static void HJY_AnglePID_Reset(void)
-{
-    s_ang.integral = 0.0f;
-    s_ang.last_err = 0.0f;
-    s_yaw_latched  = 0u;
-}
-
 void HJY_Init(void)
 {
     /* 左右速度环:独立实例,初值相同;标定阶段经串口数据各自收敛。
-     * 输出域=PWM(带符号),上限留 200 余量给 SAFE_MAX,反转钳 -400 轻刹。 */
+     * 输出域=PWM(带符号),上限留 200 余量给 SAFE_MAX,反转钳 -400 轻刹。
+     * HJY7: 角度环(全程率环)无状态参数,直接用 #define;仅航向锁存需复位。 */
     SpeedPID_Init(&s_spd_l, HJY_SPD_KP, HJY_SPD_KI, HJY_SPD_KD, HJY_PWM_MAX, -HJY_PWM_REV_MAX);
     SpeedPID_Init(&s_spd_r, HJY_SPD_KP, HJY_SPD_KI, HJY_SPD_KD, HJY_PWM_MAX, -HJY_PWM_REV_MAX);
 
-    s_ang.kp = HJY_ANG_KP;
-    s_ang.ki = HJY_ANG_KI;
-    s_ang.kd = HJY_ANG_KD;
-    s_ang.out_max = HJY_ANG_CORR_MAX;
-    HJY_AnglePID_Reset();
-
+    s_yaw_latched = 0u;
     s_win_inited = 0u;
 }
 
@@ -183,7 +165,7 @@ void HJY_ResetRun(void)
     s_prev_vt_l = s_prev_vt_r = 0.0f;
     /* HJY5: 破粘标志同清 */
     s_broke_l = s_broke_r = 0u;
-    HJY_AnglePID_Reset();
+    s_yaw_latched = 0u;   /* HJY7: 航向锁存复位(原 AnglePID 已并入全程率环) */
     s_win_inited = 0u;
     g_hjy_state = (uint8_t)HJY_ST_STRAIGHT;
     g_hjy_vt_l = g_hjy_vt_r = 0;
@@ -198,8 +180,7 @@ void HJY_Control_Update(void)
     HJY_LineState_t st;
     HJY_LineState_t raw;
     uint8_t blind;
-    float base, diff, ang_out = 0.0f;
-    float damp = 0.0f;
+    float base, w_t, diff;
     float vt_l, vt_r;
 
     if (!is_racing)
@@ -232,7 +213,7 @@ void HJY_Control_Update(void)
             g_hjy_v_l = g_hjy_v_r = 0;
             g_hjy_err_l = g_hjy_err_r = 0;
             s_win_inited = 0u;
-            HJY_AnglePID_Reset();
+            s_yaw_latched = 0u;   /* HJY7: 同上 */
             return;
         }
         s_went = 1u;
@@ -250,7 +231,7 @@ void HJY_Control_Update(void)
     raw = HJY_Classify(g_line_sensor_values);
     blind = (raw == HJY_ST_ALLWHITE) ? 1u : 0u;
     st = raw;
-    if (st == HJY_ST_ALLWHITE)
+    if (blind)
     {
         /* HJY4c: 丢线沿用"防抖记忆"而非瞬时残影——16:58 实测车横穿线时
          * 右缘 1 帧残影把保持方向从 L 族改写成 R3,反向旋 250° 触安全网。
@@ -280,49 +261,11 @@ void HJY_Control_Update(void)
     g_hjy_state = (uint8_t)st;
 
     base = k_base[st];
-    diff = k_diff[st];
+    w_t  = k_rate[st];   /* 角度环全程目标:目标偏航率 rad/s(>0=左旋) */
 
-    /* 2) 角度环(仅直行/全黑态):进入态沿锁存航向,误差>0(偏左)→正差速右修 */
-    if (st == HJY_ST_STRAIGHT || st == HJY_ST_ALLBLACK)
-    {
-        float err, dterm;
-        if (!s_yaw_latched)
-        {
-            s_yaw_target  = add_angle;
-            s_yaw_latched = 1u;
-            s_ang.integral = 0.0f;
-            s_ang.last_err = 0.0f;
-        }
-        err = add_angle - s_yaw_target;
-        s_ang.integral += s_ang.ki * err;
-        if (s_ang.integral >  s_ang.out_max) s_ang.integral =  s_ang.out_max;
-        if (s_ang.integral < -s_ang.out_max) s_ang.integral = -s_ang.out_max;
-        dterm = s_ang.kd * (err - s_ang.last_err);
-        s_ang.last_err = err;
-        ang_out = s_ang.kp * err + s_ang.integral + dterm;
-        if (ang_out >  s_ang.out_max) ang_out =  s_ang.out_max;
-        if (ang_out < -s_ang.out_max) ang_out = -s_ang.out_max;
-        g_hjy_yaw_err_d10 = (int16_t)(err * 572.957795f);   /* rad→0.1° */
-    }
-    else
-    {
-        /* 转向态:角度环退出,目标失效,出弯重新锁存 */
-        HJY_AnglePID_Reset();
-        g_hjy_yaw_err_d10 = 0;
-    }
-    /* (HJY6: g_hjy_ang_corr 改在阻尼合成后统一写,见下方) */
-
-    /* 3) 轮目标速度:差速>0=右转(vL 高 vR 低,与 LHX corr 符号体系一致) */
-    diff += ang_out;
-    vt_l = base + diff;
-    vt_r = base - diff;
-    if (vt_l < 0.0f) vt_l = 0.0f;       /* 目标不为负:转向靠速度差,非反转 */
-    if (vt_r < 0.0f) vt_r = 0.0f;
-
-    /* HJY4a: GO 后爬行段——双轮压同目标 10cnt/s 直到都活(各 ≥2cnt)或超时。
-     * 先破粘轮被闭环按住(16:58 实测左轮在右轮破粘前以 30+ 狂奔=甩头主力),
-     * 呆轮积分继续上行自寻破粘点;甩头角钳到线不出视野量级。爬行期角度环
-     * 不锁存(车姿尚未定型)。 */
+    /* HJY4a: GO 后爬行段——双轮压 10cnt/s 直到都活(各 ≥2cnt)或超时。
+     * HJY7: 爬行期角度环照常全程生效(w_t=0 → 率环主动扯平单轮先破粘的
+     * 偏航,死轮自动多分目标);航向保持锁存延后到爬行结束。 */
     if (!s_creep_done)
     {
         if ((left_encoder_cnt  - s_go_cnt_l >= HJY_CREEP_ALIVE_CNT &&
@@ -333,9 +276,9 @@ void HJY_Control_Update(void)
         }
         else
         {
-            vt_l = HJY_CREEP_SPEED;
-            vt_r = HJY_CREEP_SPEED;
-            HJY_AnglePID_Reset();
+            base = HJY_CREEP_SPEED;
+            w_t  = 0.0f;
+            s_yaw_latched = 0u;
             /* HJY5a/b: 破粘检测与突降都在 tick 级(2ms),不等 200ms 窗——
              * 17:20 实测静摩擦阈(1170/1290@12.34V)≫动摩擦需求,窗级响应下
              * 破粘瞬间 40+cnt/s 暴冲 30cm。死轮 tick 爬坡加速破粘;首计数
@@ -372,23 +315,44 @@ void HJY_Control_Update(void)
         }
     }
 
-    /* HJY6: 偏航阻尼(MPU gz,500Hz 连续)——17:34 实测纠偏摆零阻尼,-14° 修回
-     * 一路冲到 +178°(200°/s 扫线一帧横穿)。仅直行/全黑/盲走态生效:这些态
-     * 里偏航率本就该小,转起来全是动量病;有线转向态(L*/R* 可见)不阻,
-     * 不削正经弯道转速。爬行期同样生效——单轮先破粘的偏航会让阻尼自动
-     * 把目标向死轮侧搬(死轮多分目标加速破粘,活轮被按住)。
-     * 符号链(v1 实测继承):gz>0=左旋;diff>0=右修 ⇒ damp=+K×gz 成对抗力矩。 */
-    if (blind || st == HJY_ST_STRAIGHT || st == HJY_ST_ALLBLACK)
+    /* 2) 航向保持(角度环"位置"分量,直行/全黑且爬行完成):锁存进入时航向,
+     * 偏差折算成小目标率拉回;转向态退出、出弯重锁。盲走若记忆=直行族,
+     * 继续按锁存航向走(≈直穿语义)。 */
+    if (s_creep_done && (st == HJY_ST_STRAIGHT || st == HJY_ST_ALLBLACK))
     {
-        damp = HJY_YAW_DAMP * MPU6050_data.gz_rads;
-        if (damp >  HJY_YAW_DAMP_MAX) damp =  HJY_YAW_DAMP_MAX;
-        if (damp < -HJY_YAW_DAMP_MAX) damp = -HJY_YAW_DAMP_MAX;
-        vt_l += damp;
-        vt_r -= damp;
-        if (vt_l < 0.0f) vt_l = 0.0f;
-        if (vt_r < 0.0f) vt_r = 0.0f;
+        float w_hold;
+        if (!s_yaw_latched)
+        {
+            s_yaw_target  = add_angle;
+            s_yaw_latched = 1u;
+        }
+        w_hold = HJY_HOLD_KP * (s_yaw_target - add_angle);  /* 目标在左→正(左旋)率 */
+        if (w_hold >  HJY_HOLD_RATE_MAX) w_hold =  HJY_HOLD_RATE_MAX;
+        if (w_hold < -HJY_HOLD_RATE_MAX) w_hold = -HJY_HOLD_RATE_MAX;
+        w_t += w_hold;
+        g_hjy_yaw_err_d10 = (int16_t)((add_angle - s_yaw_target) * 572.957795f);
     }
-    g_hjy_ang_corr = (int16_t)((ang_out + damp) * 10.0f);   /* 遥测=角度环+阻尼合计 */
+    else if (st != HJY_ST_STRAIGHT && st != HJY_ST_ALLBLACK)
+    {
+        s_yaw_latched = 0u;
+        g_hjy_yaw_err_d10 = 0;
+    }
+
+    /* 3) 角度环主体(率环,全程生效——用户 17:5X 指令"角度环全程生效,与光电
+     * 分情况逻辑紧密配合"):光电状态只产目标偏航率 w_t,轮差速一律由 MPU
+     * 闭环伺服。直行 w_t=0=保持+阻尼;转向=受控转速(L3≈180°/s);盲走=记忆
+     * 态目标率——旋转动量任何时刻都被看管(17:34 摆飞 +178° 的结构性根治)。
+     * 法则: diff = −[FF×w_t + KP×(w_t − gz)];diff>0=右修(LHX 符号系);
+     * 验算: w_t=0 时 diff=+KP×gz=纯阻尼(HJY6 等价);左转目标(w_t>0)未达率
+     * 时 diff<0=vR>vL 左转 ✓。 */
+    diff = -(HJY_RATE_FF * w_t + HJY_RATE_KP * (w_t - MPU6050_data.gz_rads));
+    if (diff >  HJY_DIFF_MAX) diff =  HJY_DIFF_MAX;
+    if (diff < -HJY_DIFF_MAX) diff = -HJY_DIFF_MAX;
+    g_hjy_ang_corr = (int16_t)(diff * 10.0f);   /* 遥测 ang=角度环全程输出×10 */
+    vt_l = base + diff;
+    vt_r = base - diff;
+    if (vt_l < 0.0f) vt_l = 0.0f;       /* 目标不为负:转向靠速度差,非反转 */
+    if (vt_r < 0.0f) vt_r = 0.0f;
     g_hjy_vt_l = (int16_t)vt_l;
     g_hjy_vt_r = (int16_t)vt_r;
 

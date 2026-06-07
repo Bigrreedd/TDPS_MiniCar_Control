@@ -77,23 +77,22 @@ typedef enum
                                        * 叠加窗级+160/窗≈+800/s)——破粘提前到 ~0.4s */
 #define HJY_BREAK_DROP_OFFSET 100.0f  /* HJY5b 破粘突降:首计数瞬间(2ms 级)把该轮
                                        * 积分一次性压回 FF−100(左770/右890),杀突奔 */
-/* HJY6(17:34 第四跑): 发车链已通(突降/爬坡/无暴冲全验,kick 仅 -14° 线未丢),
- * 新死因=纠偏摆零阻尼——状态查表是继电器式航向控制,从 -14° 修回时旋转动量
- * 一路冲到 +178°(200°/s 扫线一帧横穿不可捕)触安全网。MPU 角速度阻尼补上
- * "角度环管整车姿态"的缺口:仅直行/全黑/丢线盲走态生效,有线转向态不阻
- * (不削正经弯道转速)。 */
-#define HJY_YAW_DAMP          6.0f    /* 阻尼增益 cnt/s per rad/s(gz>0 左旋→正差速
-                                       * 右抗;盲走 L2 档平衡转速 ≈10/6≈1.7rad/s≈95°/s) */
-#define HJY_YAW_DAMP_MAX      15.0f   /* 阻尼贡献钳位 cnt/s */
+/* (HJY6 的局部偏航阻尼已并入 HJY7 全程率环——w_t=0 态的率环数学上=阻尼,
+ * 且全态覆盖;17:34 第四跑事故链与裁决见日志同日条目。) */
 /* 速度环(左右独立,初值同,标定后允许分道扬镳) */
 #define HJY_SPD_KP            2.0f
 #define HJY_SPD_KI            14.0f
 #define HJY_SPD_KD            0.0f    /* 编码器粗(44cnt/m),Kd 先 0 防量化噪声 */
-/* 角度环(MPU add_angle,整车 1 套;仅直行/全黑态生效,锁存进入时航向) */
-#define HJY_ANG_KP            120.0f  /* 输出差速 cnt/s / rad(≈2.1 cnt/s 每°) */
-#define HJY_ANG_KI            0.0f
-#define HJY_ANG_KD            0.0f
-#define HJY_ANG_CORR_MAX      6.0f    /* 角度环差速钳位 cnt/s(微修定位) */
+/* HJY7(用户指令"要保证角度环全程生效,和光电扫描分情况逻辑紧密配合"):
+ * 角度环升级为全程率环——光电状态只给目标偏航率 w_t(rad/s,>0=左旋,gz 同号),
+ * 轮差速一律由 diff=−[FF×w_t+KP×(w_t−gz)] 闭环产生(diff>0=右修,LHX 符号系)。
+ * 直行 w_t=0(=航向保持+阻尼);转向=受控转速;盲走=记忆态目标率;
+ * 旋转动量全程被 MPU 看管(17:34 摆飞 +178° 的结构性根治,HJY6 局部阻尼弃用)。 */
+#define HJY_RATE_KP           8.0f    /* 率环 P:差速 cnt/s per rad/s 率差 */
+#define HJY_RATE_FF           3.0f    /* 率前馈:几何换算≈半轮距/里程刻度(7.5/2.5) */
+#define HJY_DIFF_MAX          18.0f   /* 差速总钳位 cnt/s */
+#define HJY_HOLD_KP           2.0f    /* 航向保持(直行族):目标率 rad/s per rad 偏差 */
+#define HJY_HOLD_RATE_MAX     0.8f    /* 保持分量钳位(≈46°/s) */
 
 void HJY_Init(void);
 void HJY_ResetRun(void);       /* K1 发车/K3 复位:三套 PID+状态全清 */
