@@ -483,8 +483,12 @@ static uint8_t g_seed_rolling = 0;  /* F32b: 双轮均≥6cps 一次后置 1,发
                                      * (机理/红队结论见 F32b 注释块,g_stall_wd_run 声明处) */
 #endif
 #ifndef SEGTEST_EXIT_DISABLE
-#define SEGTEST_EXIT_DISABLE 1  /* F27: 1=本段出口不自停(跑过 sm_done 继续后链,矩形区出口
-                                 * 手动 K2 收车——段3无固件出口信号);0=原出口自停语义。 */
+#define SEGTEST_EXIT_DISABLE 0  /* F27: 1=本段出口不自停(跑过 sm_done 继续后链,矩形区出口
+                                 * 手动 K2 收车——段3无固件出口信号);0=原出口自停语义。
+                                 * F40(06-08 用户拍板"测量完对应区域就停止,必须停止"): 回 0——
+                                 * SEG2 在 sm_done 当 tick StopRun(F37 下 done 由 P9 后备门
+                                 * rs=3 / T3 强释 rs=2 双门保证必置位,出口必停);停车位置
+                                 * 顺带=释放点直读。段3/4 仍无固件出口信号,手动 K2 不变。 */
 #endif
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
