@@ -218,8 +218,10 @@ F23 = 全史复盘回滚轮:控制核回到 03:30 史上最远 + 19:49 蛇形①
 `HJY st= vt=L,R v=L,R pwm=L,R ang= ye= pos= lost= yw= u= fn= bv= el= er= S=…`(0x07 帧路径/小程序面板/300ms 节流全沿用)。
 - **按 st 分组**即得各状态样本集:稳态 `pwm` → 回填该状态前馈表 s_ff_l/r;`vt−v` 残差 → 调各轮 Kp/Ki;`ang/ye` → 角度环验收;`S=` 原始值 → 分区器误判审计。
 - st 不会显示 8(全白帧沿用上一状态目标,丢线看 lost= 上爬);300ms 帧率=每 3 个控制窗 1 帧,首测够用,不够再提频。
-**版本映射**:本条目落码后=HJY 分支首 commit(待编号);测试输入=该 commit Keil 编译产物。
-**表现**:未编译未跑车(本机无 arm-none-eabi/Keil 命令行,首编在用户 Keil 里做,报错回传即修)。
+**版本映射**:本条目落码后=HJY 分支首 commit **c7a5fca**;测试输入=该 commit Keil 编译产物。
+**表现**:未跑车。**Keil 首编通过(用户回传,ARMCC V5.06u5):0 Error / 18 Warning,Code=22072 RO=2252 RW=452 ZI=2756**。
+- main.c 8 条 #177(g_dz_hold_l/r、ApplyDeadzone、Clamp×2、g_sent_motor_l/r、ApplyMotorDutyLocal 未引用)=**HJY 门控的预期签名**——死区输出级整段被编译旁路,函数/变量成死代码。无害,留作"LHX 级确实没在跑"的自证;HJY_CORE_ENABLE=0 时自然消失。
+- 其余 10 条(LineSensor #188×7、Uart_Config #177、BlackPoint #167、PID_Controller 标签)=基底既有警告,非本轮引入。
 **硬件条件**:同 R0/R1(满电 12.60V/重装+补焊/新平地面);HJY 首跑建议直线段起步。
 **困难**:①方案的角度环-光路状态衔接原文未细述,实现取"直行/全黑锁航向、转向态退出重锁"语义,若与 HJY 本人构想不符再改;②100ms 窗 vs 44cnt/m 编码器=±10cnt/s 离散噪声,Kd 必须 0;③无本机编译器,首编依赖用户回传报错。
 
