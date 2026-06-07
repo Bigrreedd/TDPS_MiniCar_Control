@@ -18,6 +18,7 @@
 #include "LineSensor.h"       /* g_line_sensor_values[SENSOR_COUNT] */
 #include "Motor_ctr.h"        /* MOTOR_L/R, Motor_Enable/Disable/StopAll */
 #include "stm32f10x_it.h"     /* add_angle(rad), Millis_Get() */
+#include "MPU6050_Config.h"   /* HJY6: MPU6050_data.gz_rads(偏航阻尼) */
 
 extern volatile uint8_t is_racing;
 
@@ -195,7 +196,10 @@ void HJY_ResetRun(void)
 void HJY_Control_Update(void)
 {
     HJY_LineState_t st;
+    HJY_LineState_t raw;
+    uint8_t blind;
     float base, diff, ang_out = 0.0f;
+    float damp = 0.0f;
     float vt_l, vt_r;
 
     if (!is_racing)
@@ -243,7 +247,9 @@ void HJY_Control_Update(void)
     }
 
     /* 1) 光路分区 */
-    st = HJY_Classify(g_line_sensor_values);
+    raw = HJY_Classify(g_line_sensor_values);
+    blind = (raw == HJY_ST_ALLWHITE) ? 1u : 0u;
+    st = raw;
     if (st == HJY_ST_ALLWHITE)
     {
         /* HJY4c: 丢线沿用"防抖记忆"而非瞬时残影——16:58 实测车横穿线时
@@ -304,7 +310,7 @@ void HJY_Control_Update(void)
         HJY_AnglePID_Reset();
         g_hjy_yaw_err_d10 = 0;
     }
-    g_hjy_ang_corr = (int16_t)(ang_out * 10.0f);
+    /* (HJY6: g_hjy_ang_corr 改在阻尼合成后统一写,见下方) */
 
     /* 3) 轮目标速度:差速>0=右转(vL 高 vR 低,与 LHX corr 符号体系一致) */
     diff += ang_out;
@@ -365,6 +371,24 @@ void HJY_Control_Update(void)
             g_hjy_pwm_r = (int16_t)s_spd_r.last_output;
         }
     }
+
+    /* HJY6: 偏航阻尼(MPU gz,500Hz 连续)——17:34 实测纠偏摆零阻尼,-14° 修回
+     * 一路冲到 +178°(200°/s 扫线一帧横穿)。仅直行/全黑/盲走态生效:这些态
+     * 里偏航率本就该小,转起来全是动量病;有线转向态(L*/R* 可见)不阻,
+     * 不削正经弯道转速。爬行期同样生效——单轮先破粘的偏航会让阻尼自动
+     * 把目标向死轮侧搬(死轮多分目标加速破粘,活轮被按住)。
+     * 符号链(v1 实测继承):gz>0=左旋;diff>0=右修 ⇒ damp=+K×gz 成对抗力矩。 */
+    if (blind || st == HJY_ST_STRAIGHT || st == HJY_ST_ALLBLACK)
+    {
+        damp = HJY_YAW_DAMP * MPU6050_data.gz_rads;
+        if (damp >  HJY_YAW_DAMP_MAX) damp =  HJY_YAW_DAMP_MAX;
+        if (damp < -HJY_YAW_DAMP_MAX) damp = -HJY_YAW_DAMP_MAX;
+        vt_l += damp;
+        vt_r -= damp;
+        if (vt_l < 0.0f) vt_l = 0.0f;
+        if (vt_r < 0.0f) vt_r = 0.0f;
+    }
+    g_hjy_ang_corr = (int16_t)((ang_out + damp) * 10.0f);   /* 遥测=角度环+阻尼合计 */
     g_hjy_vt_l = (int16_t)vt_l;
     g_hjy_vt_r = (int16_t)vt_r;
 
