@@ -234,8 +234,11 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	/* F20(06-07 10:02): α 0.4→0.2(τ 3.9→9ms)——Kd 550→700 实测乒乓无改善(用户"仍然
 	 * 很抖动"),根因=量化 D 是跳格脉冲(α0.4 下 140PWM 仅持续 ~8ms,电机机电时间常数
 	 * ~30ms 接不住);摊宽脉冲电机才吃得到,等效阻尼 ↑30~50%。这是量化 D 通道最后一档,
-	 * 再不够转 gyro 内环(gyro_kd,下方 238 行现成钩子,需先台架定符号)。 */
-	controller->d_filtered = 0.2f * d_raw + 0.8f * controller->d_filtered;
+	 * 再不够转 gyro 内环(gyro_kd,下方 238 行现成钩子,需先台架定符号)。
+	 * F23(06-07 11:0X): α 回 0.4——F20 后两轮(10:21/10:35)+F22 轮(10:59/11:00)乒乓
+	 * 零改善,0.2 收益未兑现且 0.8 长记忆曾引爆 R5 出口残留踢(F22a 补丁因此而生);
+	 * 回 03:30 史上最远轮的验证档。 */
+	controller->d_filtered = 0.4f * d_raw + 0.6f * controller->d_filtered;
 	float d_term = controller->param.kd * controller->d_filtered;
 	float gyro_term = 0.0f;
 #if PID_GYRO_ENABLE
@@ -381,7 +384,20 @@ void PID_Init(void)
      * 裕度内,U 半径须复验,变宽先回 -50);gyro 零偏 ~0.03rad/s→2.4PWM 可忽略。
      * 限幅 ±output_max×0.4(PC:242)既有;junction 冻结/深丢线(>125tick)期 corr 冻结,内环
      * 同步失效(既有边界,F18a 已兜自旋)。 */
-    PositionPID_Init(&g_position_pid, 32.0f, 0.0f, 700.0f, -80.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    /* F23(06-07 11:0X 基线回滚,用户指令"查全史日志,用历史最好用的参数做基础"):
+     * Kp 32→40 / Kd 700→550 / α 0.2→0.4(PC:238) / slew 关断(PC:438)——一次性撤销今晨
+     * 四连档,回到 03:30 史上最远轮(F5,拱门2.1)+19:49 蛇形①全通+06-05 第9轮直线判定
+     * 通过的同一控制核(Kp40/Kd550/α0.4/无gyro/无slew,全史成功轮全部出自它)。
+     * 依据:F17(Kp32) 当轮 corr 饱和仅 −1.5% 已证伪未回退;F19(Kd700) 当轮证伪未回退;
+     * F20(α)/F22c(slew) 后续四轮乒乓零改善——叠加偏离验证基线,无一兑现收益。
+     * ⚠F21 勘误(本轮发现):PID_GYRO_ENABLE 全仓库无人定义为 1=恒 0(PC:11),gyro 项
+     * 从未编译——-80 写进死字段,10:21 过段1与其后全部失败轮均无 gyro 参与,
+     * "gyro 无辜"裁决空洞成立(空操作当然无辜)。字段回 0 防误导;gyro 内环=未测试
+     * 后手,启用须 #define PID_GYRO_ENABLE 1 + 单变量轮专测。
+     * 保留(非调参项):F22a/b bug修复、F18a 去抖、F16ab、SEG、风机 G 链;
+     * HOLD 850/940 不随回(纯电池唯一过段验证档;770/800 的零卡滞实测全在 USB 共电
+     * 披露窗内,且有 F9"太慢一直卡住"史——亏电下照搬=赌卡滞)。 */
+    PositionPID_Init(&g_position_pid, 40.0f, 0.0f, 550.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
@@ -435,7 +451,11 @@ static uint8_t g_deep_turn_mode = 0;
 #endif
 static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈值),非 deep 即清零 */
 #ifndef CORR_SLEW_PER_TICK
-#define CORR_SLEW_PER_TICK 15.0f  /* F22c: corr 斜率限制(±/tick),满幅 0→320 约 21tick=42ms;回退=设 999 */
+#define CORR_SLEW_PER_TICK 999.0f /* F23: 999=关断(corr∈±320,单tick最大Δ640<999 永不钳)。
+                                   * F22c 原值 15.0f:10:59/11:00 两轮实测满幅乒乓如旧(0↔60 对穿,
+                                   * S 全白线下穿越),止血未兑现且引入 ~36ms 反向迟滞(1.7Hz 摆频下
+                                   * ≈22°相位滞后,继电器系统里是负资产);基线回滚一并撤销。
+                                   * 复用=改回 15.0f(代码与清零位全保留)。 */
 #endif
 static float g_corr_slew_prev = 0.0f;  /* F22c: 斜率限制记忆(F11 纪律:停车/路口冻结同清) */
 #ifndef PID_LINE_LOST_STOP_TICKS
