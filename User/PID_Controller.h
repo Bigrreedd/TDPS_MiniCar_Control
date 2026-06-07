@@ -224,5 +224,12 @@ uint8_t PID_GetNavOverride(void);
  */
 void PID_SetTurnDir(int8_t dir);
 
+/**
+ * @brief 设置 SEG3 分叉偏置(F48):巡线域内(NAV_OVERRIDE_NONE)注入固定 corr 把车拐上支线。
+ * @param dir: -1=左偏(corr<0) / +1=右偏(corr>0) / 0=关闭。非0时压过 is_junction 冻结+强制 deep=0
+ *             (两轮都驱动的中等弧,不甩离线)。SEG3 专用;比赛构型从不置非0=行为级不变。
+ */
+void PID_SetBranchBias(int8_t dir);
+
 #endif // __PID_CONTROLLER_H__
 

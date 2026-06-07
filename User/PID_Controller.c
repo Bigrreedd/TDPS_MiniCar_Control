@@ -456,6 +456,10 @@ static volatile uint8_t g_nav_override = NAV_OVERRIDE_NONE;
 static float g_nav_yaw_target = 0.0f;
 static float g_nav_speed_cps = 0.0f;
 static int8_t g_nav_turn_dir = 0;   /* F47: NAV_OVERRIDE_TURN 转向符号(+1左/-1右);仅 SEG3 写,比赛构型恒 0 */
+static int8_t g_seg3_bias = 0;      /* F48: SEG3 分叉偏置(-1左/+1右/0关);仅 SEG3 写,比赛构型恒 0 */
+#ifndef SEG3_BRANCH_BIAS_CORR
+#define SEG3_BRANCH_BIAS_CORR 130.0f /* F48: 分叉偏置 corr 幅度(介于 HEADING±50 太软 与 TURN±320 甩离线 之间) */
+#endif
 /* 深弯模式滞回状态：1=内侧轮停转模式。误差≥进入阈值置1，≤退出阈值清0，
  * 掐断弯道边缘质心量化噪声(4.19↔4.54)导致的内侧轮768↔0颤振。 */
 static uint8_t g_deep_turn_mode = 0;
@@ -534,6 +538,7 @@ void PID_Control_Update(void)
 			                         * 与主环 lose_time(StopRun 清)对齐,两计数器不再分裂。 */
 			g_nav_override = NAV_OVERRIDE_NONE;  /* P2 导航覆盖同清(K2 停车即退覆盖) */
 			g_nav_turn_dir = 0;                 /* F47: TURN 符号同清 */
+			g_seg3_bias = 0;                    /* F48: 分叉偏置同清 */
 			Motor_StopAll();
 			g_motor_target_l = 0.0f;
 			g_motor_target_r = 0.0f;
@@ -644,6 +649,13 @@ void PID_Control_Update(void)
         position_correction = (add_angle - g_nav_yaw_target) * NAV_YAW_KP;
         if (position_correction > NAV_CORR_CAP) position_correction = NAV_CORR_CAP;
         else if (position_correction < -NAV_CORR_CAP) position_correction = -NAV_CORR_CAP;
+        s_prev_junction = 1;
+    } else if (g_seg3_bias != 0) {
+        /* F48 SEG3 分叉偏置(巡线域内,override==NONE):注入固定 corr 把车拐上支线,必须压过
+         * 下方 is_junction 冻结(否则横杠处 corr=0 走直,左路口会错过左支)。-1左⇒corr<0,+1右⇒corr>0。
+         * 中等幅(±130)两轮都驱动(deep 下方按 g_seg3_bias 强制 0,不内轮 coast),车不甩离线;
+         * 释放(上层重捕干净单线/Δyaw 预算)。借 s_prev_junction 通道,解除首帧走 R5 软启动。 */
+        position_correction = (g_seg3_bias < 0) ? -SEG3_BRANCH_BIAS_CORR : SEG3_BRANCH_BIAS_CORR;
         s_prev_junction = 1;
     } else if (result_BlackPoint.is_junction) {
         /* 路口/岔路：旁路位置环，强制走直(correction=0)。
@@ -893,8 +905,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		{
 		float deep_enter = g_s_mode ? 1.5f : 1.9f;
 		float deep_exit  = g_s_mode ? 1.2f : 1.5f;
-		if (g_nav_override != NAV_OVERRIDE_NONE) {
-			g_deep_turn_mode = 0;   /* P2 覆盖:航向保持用温和差速,禁深弯 pivot(raw_err 是噪声) */
+		if (g_nav_override != NAV_OVERRIDE_NONE || g_seg3_bias != 0) {
+			g_deep_turn_mode = 0;   /* P2 覆盖/F48 分叉偏置:禁深弯 pivot,中等差速两轮都驱动不甩离线 */
 		} else if (g_s_mode && g_reacq_grace > 0u) {
 			g_deep_turn_mode = 0;   /* A2c 宽限:禁深弯 pivot,缓差速滚上线 */
 		} else if (!result_BlackPoint.is_junction) {
@@ -993,6 +1005,11 @@ void PID_SetNavOverride(uint8_t mode, float yaw_target_rad, float speed_cps)
 void PID_SetTurnDir(int8_t dir)   /* F47: TURN 模式转向符号锁存 */
 {
 	g_nav_turn_dir = dir;
+}
+
+void PID_SetBranchBias(int8_t dir)  /* F48: SEG3 分叉偏置符号锁存(-1左/+1右/0关) */
+{
+	g_seg3_bias = dir;
 }
 
 uint8_t PID_GetNavOverride(void)

@@ -8454,3 +8454,28 @@ F47b=本提交(待push),基于 54c0cac(F47)。比赛构型 main.c 字节不变/P
 
 ### 版本/硬件
 F47b=8065afa(本三跑)。bv~108~111,fn=1,褶皱垫面。el/er跨run累计。无代码改动(用户令先说问题)。分支 LHX/2in1-single。
+
+---
+
+## 2026-06-08 上午 | F48:方块区架构重构=巡线为默认+只4个真T/+横杠写死"分叉偏置"(用户架构纠正)— 可烧待测
+
+### 用户原话(本轮)
+> "确认"(批准 F48 方向)/ 前一条架构纠正:"非路口区域应该使用巡线算法，只有在路口区域才使用写死判断""小车完全没有巡线!"
+
+### 诊断定稿(workflow wyrlyp4o1 4-agent 全确认)
+F47b 两 blocker:① 6事件表结构错——两个90°拐角(750,50/750,200)是线弯,灰度黑少(bk≤4)永不呈宽黑→j3 卡1,拐角RIGHT永不触发(Run1/3实证);② 开环 NAV_OVERRIDE_TURN 弧转(±320内轮coast)把车甩离线,转完 found=0 落到盲航向保持漂,从不重捕线="完全没巡线"。RIGHT符号链本身对(Run2 j3=2左=离线自旋spurious计数,非符号bug)。
+
+### 代码改动 F48(User/main.c + PID_Controller.c/.h)
+- **巡线设默认**:删 F47 盲航向保持漂分支;SEG3 每 tick 默认 NAV_OVERRIDE_NONE(质心环跟直线+两个90°拐角,同U弯);丢线交质心环重捕+375兜底。
+- **拐角不写死**:②⑤交巡线自然过(车跟线弯=自然右转)。动作表 6→**4横杠分叉表 g_seg3_branch[4]={-1,0,0,-1}**(左,直,直,左);SEG3_JCT_BLACK 5→**6**(=SENSOR_COUNT-1,排除拐角≤4黑+杀离线5黑误计)。
+- **路口=短暂分叉偏置(非开环弧)**:真横杠武装偏置 episode——巡线域内(override仍NONE)PID 注 **±130 中等corr**(新分支在链中 HEADING 后/is_junction 前,压过冻结)+**强制 deep=0**(两轮都驱动,不内轮coast甩离线);重捕干净单线(found&&bk≤4&&run==1)或 **Δyaw预算0.7rad(~40°)** 即释放交回纯巡线。直穿横杠(br==0)走原生 is_junction 冻结。
+- 新增:PID_SetBranchBias(int8) setter + g_seg3_bias static + SEG3_BRANCH_BIAS_CORR=130;main.c g_seg3_branch/bias_dir/bias_start;SEG3_BIAS_BUDGET_RAD=0.7。出口门 jct>=6→**>=4 且非偏置中**。NAV_OVERRIDE_TURN 本区不再用(留死码)。K1/K3/停车清 bias。
+- 红线:全 main.c 改动 #if TEST_SEGMENT==3;PID 侧行为级不变(g_seg3_bias 仅SEG3置非0,比赛恒0→偏置分支永不进)。S-PID冻结。已过 verify-agent:编译安全/逻辑无卡死/比赛字节安全=PASS。
+
+### 测试协议(F48,可烧;确认 TEST_SEGMENT=3)
+车头朝北摆正压线 K1。预期:**全程巡线**;到4个真横杠按表[左,直,直,左]短暂偏置(车不离线);两个拐角靠巡线自然右转。停在顶部左转处。
+**重点看**:① **lost 不再爬到375**(=真在巡线,非漂)是本版核心成败;② j3 干净 0→1→2→3→4(只4个真横杠);③ 偏置期 pid 两轮都驱动(无 X,0/0,X 内轮coast),bk 几帧内落回单线(bias释放);④ 左偏置处 yw 增;⑤ 拐角处车跟线弯(yw平滑变,非开环跳);⑥ 停顶部左转。
+若偏置太弱(到左横杠仍直行没拐上左支)→调高 SEG3_BRANCH_BIAS_CORR(130→160);太强甩离线→调低/缩 SEG3_BIAS_BUDGET_RAD。
+
+### 版本/硬件
+F48=本提交(待push),基于 8065afa。bv~108~111,fn=1,褶皱垫面。分支 LHX/2in1-single。
