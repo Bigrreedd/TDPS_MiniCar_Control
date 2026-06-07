@@ -505,7 +505,11 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #define SEG3_SM_RECIPE 1
 #endif
 #if TEST_SEGMENT == 3
-static uint16_t g_seg3_stop_run = 0;    /* F42: 出口 IMU 门持续窗计数(遥测 s3w=) */
+static uint16_t g_seg3_stop_run    = 0; /* F42: 出口 IMU 门持续窗计数(遥测 s3w=) */
+static uint16_t g_seg3_hold_active = 0; /* F45: 直穿监督器——1=航向保持覆盖生效中 */
+static uint16_t g_seg3_hold_ticks  = 0; /* F45: 当前 hold 持续 tick(到顶强制解除还权) */
+static uint16_t g_seg3_hold_count  = 0; /* F45: 本次运行 hold 触发累计(遥测 s3h=,抗欠采样) */
+static float    g_seg3_line_yaw    = 0.0f; /* F45: 在线居中时持续记录的干净航向(rad),hold 锚 */
 #ifndef SEG3_STOP_YAW_DEG
 #define SEG3_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前收口(同 SEG1 150/180 比例) */
 #endif
@@ -515,8 +519,20 @@ static uint16_t g_seg3_stop_run = 0;    /* F42: 出口 IMU 门持续窗计数(�
 #ifndef SEG3_GUARD_MAX_LOST_TICKS
 #define SEG3_GUARD_MAX_LOST_TICKS 125u  /* 见线守卫:盲旋凑角不算(同 SEG1) */
 #endif
-#define SEG3_TELEM_FMT  " s3w=%d"       /* F42: IMU 门窗计数上遥测(甩头假武装可观测) */
-#define SEG3_TELEM_ARG  , (int)g_seg3_stop_run
+#ifndef SEG3_HOLD_ENGAGE_LOST_TICKS
+#define SEG3_HOLD_ENGAGE_LOST_TICKS 6u  /* F45: 丢线≥6tick(12ms)即接管,抢在 deep/A2(125)之前 */
+#endif
+#ifndef SEG3_HOLD_MAX_TICKS
+#define SEG3_HOLD_MAX_TICKS      80u    /* F45: hold 上限,超此仍未重捕=非横穿(顶弯/出界)→解除还权 */
+#endif
+#ifndef SEG3_HOLD_SPEED_CPS
+#define SEG3_HOLD_SPEED_CPS      14.0f  /* F45: 直穿爬行速,与 S 配方同速(用户:不要低速) */
+#endif
+#ifndef SEG3_HOLD_CENTER_BAND
+#define SEG3_HOLD_CENTER_BAND    1.2f   /* F45: |precise-3|≤此值=在线居中,才刷新航向锚 */
+#endif
+#define SEG3_TELEM_FMT  " s3w=%d s3h=%d"   /* F42 s3w=出口门窗;F45 s3h=直穿hold触发累计 */
+#define SEG3_TELEM_ARG  , (int)g_seg3_stop_run, (int)g_seg3_hold_count
 #else
 #define SEG3_TELEM_FMT  ""              /* 非 seg3: 帧格式字节级不变 */
 #define SEG3_TELEM_ARG
@@ -1733,9 +1749,65 @@ int main(void)
 #elif TEST_SEGMENT == 3
             else
             {
-                g_seg3_stop_run = 0u;     /* F42: 停车态自清,下次 K1 重新起算 */
+                g_seg3_stop_run    = 0u;  /* F42: 停车态自清,下次 K1 重新起算 */
+                g_seg3_hold_active = 0u;  /* F45: 直穿监督器停车态自清 */
+                g_seg3_hold_ticks  = 0u;
             }
 #endif
+#endif
+
+#if TEST_SEGMENT == 3
+            /* F45(用户拍板"写死直穿/不需要判断/巡线走最短路径"+§3 几何=黑线沿 x=775 直线穿
+             * 底/顶方块中线、旁过偏置中方块):方块区是一条直线,4 道方块黑横边=垂直交叉(直穿),
+             * 顶部 90°左转=出口。死因(F44 三跑+14-agent 取证一致):横边处质心被甩到极端(pos 0/60)
+             * →A2 锁向 ±320 与 deep pivot 吃 held 垃圾质心→随机乱转脱轨(jc 全程 0,岔口冻结从未触发)。
+             * 修=丢线即用 IMU 航向保持(复用雷达 NAV_OVERRIDE_HEADING:在 PID 分支链最前,压过
+             * is_junction/A2 锁向,且强制 g_deep_turn_mode=0)沿"丢线前最后干净航向"直穿横边;
+             * 重捕线立即还权常规巡线(自校横向漂移)。锚=g_seg3_line_yaw(在线居中持续记录,非
+             * g_yaw_zero——抗发车朝向偏差/抗已起转污染);hold 上限 80tick 防顶弯被按直(超限解除
+             * 还权:巡线朝线左拐+恢复 lost>375 兜底)。方向不写死(只保持自身航向=红线b 合规)。
+             * 出口仍走既有 IMU 门(|Δyaw|≥75°持续0.5s+见线),本修使其可靠触发(车不再中途旋出)。
+             * 全程 #if TEST_SEGMENT==3,比赛构型(TEST_SEGMENT==0)字节级不变。 */
+            if (is_racing)
+            {
+                if (g_seg3_hold_active)
+                {
+                    if (result_BlackPoint.found)
+                    {
+                        PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);  /* 重捕→还权巡线 */
+                        g_seg3_hold_active = 0u;
+                    }
+                    else if (g_seg3_hold_ticks >= SEG3_HOLD_MAX_TICKS)
+                    {
+                        PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);  /* 超时(非横穿)→还权 */
+                        g_seg3_hold_active = 0u;
+                    }
+                    else
+                    {
+                        if (g_seg3_hold_ticks < 0xFFFFu) g_seg3_hold_ticks++;
+                        PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_line_yaw, SEG3_HOLD_SPEED_CPS);
+                    }
+                }
+                else
+                {
+                    if (result_BlackPoint.found)
+                    {
+                        float seg3_p = result_BlackPoint.precise_position;   /* 0..6,中心 3 */
+                        float seg3_dp = seg3_p - 3.0f;
+                        if (seg3_dp < 0.0f) seg3_dp = -seg3_dp;
+                        if (seg3_dp <= SEG3_HOLD_CENTER_BAND) g_seg3_line_yaw = add_angle;  /* 记干净航向 */
+                    }
+                    else if (!result_BlackPoint.is_junction &&
+                             PID_GetLineLostTicks() >= SEG3_HOLD_ENGAGE_LOST_TICKS &&
+                             PID_GetNavOverride() == NAV_OVERRIDE_NONE)
+                    {
+                        g_seg3_hold_active = 1u;
+                        g_seg3_hold_ticks  = 0u;
+                        if (g_seg3_hold_count < 0xFFFFu) g_seg3_hold_count++;
+                        PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_seg3_line_yaw, SEG3_HOLD_SPEED_CPS);
+                    }
+                }
+            }
 #endif
 
 #if NAVSEG_FINISH_DIST_BACKUP
@@ -2107,6 +2179,12 @@ int main(void)
                 g_launch_grace = 250u;      /* F6a: 发车 500ms 踢腿封顶窗 */
                 g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
                 g_sm_rel_src = 0;
+#if TEST_SEGMENT == 3
+                g_seg3_hold_active = 0u;    /* F45: 直穿监督器状态复位 */
+                g_seg3_hold_ticks  = 0u;
+                g_seg3_hold_count  = 0u;
+                g_seg3_line_yaw    = add_angle;  /* 航向锚初值=发车航向(首横边前巡线刷新) */
+#endif
 #if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE && FAN_AUTO_ON_RACE
                 /* G2: 发车自动起扇——常开构型免 K4 人因漏开。已在转(K4 预热)不重 kick;
                  * kick 进行中(K4 后 200ms 内按 K1)不打断,150 暴露 ≤200ms 不变。 */
@@ -2166,6 +2244,12 @@ int main(void)
                 g_u3_deep_run = 0;          /* F8(RunArch F2): 与 K1 对称补清 */
                 g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
                 g_sm_rel_src = 0;
+#if TEST_SEGMENT == 3
+                g_seg3_hold_active = 0u;    /* F45: 直穿监督器状态复位 */
+                g_seg3_hold_ticks  = 0u;
+                g_seg3_hold_count  = 0u;
+                g_seg3_line_yaw    = add_angle;
+#endif
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
                 break;
