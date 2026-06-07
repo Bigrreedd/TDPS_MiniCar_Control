@@ -353,6 +353,31 @@ enum { NAVSEG_START = 0, NAVSEG_U, NAVSEG_SERP1, NAVSEG_AFTER_ARCH1,
 static uint8_t  g_navseg = NAVSEG_START;
 static uint8_t  g_s2_active = 0;       /* R5: S胶囊②域标志;g_s_mode_done 语义自此="S①已完成" */
 static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(强制锁里程锚) */
+
+/* ===== SEG-TEST 分段测试选择器(06-07 队友提案+用户拍板) =====
+ * 0=全图(比赛构型——本特性全部 #if 包裹,=0 时不参编,比赛固件字节级不变)。
+ * 1..6=单段测试:K1 在标准清单后"播种"前序段锁存/里程锚(车放该段入口发车),
+ * 段出口信号命中即自停。段表(边界=现役锁存,无信号段手动 K2):
+ *  1 START→U出口        种子:无                        出口:u=1 自停
+ *  2 U出口→S①释放       种子:u=1,u锚=当前里程           出口:sm_done 自停
+ *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:无固件信号→手动 K2
+ *  4 方块阵出口→圆区出口  种子:同3(方块/圆之间无固件边界,靠摆放位置区分) 出口:手动 K2;
+ *                        勿驶入雷达段(sm锚=发车点,Δ<RD_ZONE_MIN_CNT 则 RD 不武装,
+ *                        箱前深丢线将走 C-8 丢线自停——无害但勿误判)
+ *  5 圆区出口→雷达段完成  种子:同3+sm锚回拨 RD_ZONE_MIN_CNT(里程门预满足,箱前深丢线
+ *                        300ms 即武装)                 出口:RD_DONE 自停(RD_FAIL 本就自停)
+ *  6 雷达出口→FINISH     种子:同3+rd=DONE+S②re-arm 等效(sm=1,s2=1,sm锚=当前,lt=4;
+ *                        终点里程兜底 110cnt 与全图同锚) 出口:FINISH 链自停(既有)
+ * 分段 PID 说明:各段速度/死区/专属行为已全部键控于锁存(T 28/25(u后)/14(sm)、死区
+ * sm>deep>R3 四域、A1/A2 等 sm 专属)——播种锁存=自动获得该段行为;不另设分段增益表,
+ * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
+ * OLED 开机/发车常显 SEG-TEST n 防误烧。 */
+#ifndef TEST_SEGMENT
+#define TEST_SEGMENT 0
+#endif
+#if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
+#error "TEST_SEGMENT must be 0..6"
+#endif
 static uint16_t g_u3_deep_run = 0;     /* U3: u后(里程门内)deep 连续 tick 计数 */
 static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250tick=500ms) */
 /* F8(06-07 团队轮): sm 锁存/释放源遥测——三锁存源(jc/U3/T2)与三释放源(0x30/T3/后备)
@@ -566,6 +591,38 @@ static void StopRun(void)
     g_stall_boost_l = 0.0f;
     g_stall_boost_r = 0.0f;
 }
+
+#if TEST_SEGMENT != 0
+/* SEG-TEST: K1 标准清单之后调用,把"前序段已完成"的锁存/锚点一次性播种。
+ * F11 纪律:只写 K1 清单已有变量(播种=覆盖默认值),不引入新 static;
+ * 段6 的 S②re-arm 逐行镜像 R5 边沿动作(main RD_REJOIN 重捕分支)。 */
+static void SegTest_SeedOnStart(void)
+{
+#if TEST_SEGMENT >= 2
+    int32_t avg = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
+    g_u_turn_passed = 1;            /* U 段视为已完成(PID 经 extern 自动切 POST_U 速度档) */
+    g_u_cnt_base = avg;             /* T2 强制锁里程锚=发车点(≈U出口,与全图语义一致) */
+    g_navseg = NAVSEG_U;
+#endif
+#if TEST_SEGMENT >= 3
+    g_s_mode_done = 1;              /* S① 视为已走完(防 jc>基线 回锁) */
+    g_sm_cnt_base = avg;            /* RD 里程门/终点兜底锚=发车点 */
+    g_navseg = NAVSEG_AFTER_ARCH1;
+#endif
+#if TEST_SEGMENT == 5
+    g_sm_cnt_base = avg - RD_ZONE_MIN_CNT;  /* 圆区出口发车:RD 里程门预满足 */
+#endif
+#if TEST_SEGMENT == 6
+    g_rd_state = RD_DONE;           /* 雷达段视为已完成(终态,单箱不再触发) */
+    g_s_mode = 1;                   /* S② re-arm 等效开始(镜像 R5) */
+    g_s2_active = 1;
+    g_sm_stable_run = 0;
+    g_sm_latch_src = 4;
+    g_sm_rel_src = 0;
+    g_navseg = NAVSEG_SERP2;        /* S② re-arm 等效结束 */
+#endif
+}
+#endif
 
 #if OPENLOOP_TEST_ENABLE
 static void OpenLoop_Set(uint8_t active, int16_t duty)
@@ -899,6 +956,12 @@ int main(void)
 #if OLED_TELEMETRY_ENABLE
     uint8_t oled_due = 1;
     uint32_t oled_last_tick = add_angle_num;
+#endif
+
+#if TEST_SEGMENT != 0
+    /* SEG-TEST 构建警示:开机常显,防误把分段测试固件当比赛固件烧场(比赛必须 =0) */
+    OLED_ShowString(1, 1, "SEG-TEST MODE   ");
+    OLED_ShowChar(1, 15, (char)('0' + TEST_SEGMENT));
 #endif
 
     while (1)
@@ -1332,6 +1395,22 @@ int main(void)
                 }
             }
 
+#if TEST_SEGMENT == 1 || TEST_SEGMENT == 2 || TEST_SEGMENT == 5
+            /* SEG-TEST 出口自停:命中段出口锁存→StopRun(灭扇走 racing 下降沿,G3a)。
+             * is_racing 门保证只触发一次;段3/4 无固件出口信号(手动 K2),段6 走既有
+             * FINISH 链自停,均不在此列。 */
+            if (is_racing)
+            {
+#if TEST_SEGMENT == 1
+                if (g_u_turn_passed)        { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG1 DONE u=1   "); }
+#elif TEST_SEGMENT == 2
+                if (g_s_mode_done)          { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 DONE smdone"); }
+#elif TEST_SEGMENT == 5
+                if (g_rd_state == RD_DONE)  { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG5 DONE rd=8  "); }
+#endif
+            }
+#endif
+
 #if NAVSEG_FINISH_DIST_BACKUP
             /* R2/C-4(06-07 评审,挂科级): 0x30 未部署时 P1 终点门全悬空→跑完不停冲出场地。
              * 里程兜底:已过箱(g_s2_active)且自出箱重捕 Δ≥FINISH_FROM_S2_CNT → arm finish。
@@ -1592,8 +1671,15 @@ int main(void)
                 }
 #endif
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
+#if TEST_SEGMENT != 0
+                SegTest_SeedOnStart();      /* SEG-TEST: 标准清单之后播种,覆盖默认值 */
+                RGB_SetColor(RGB_COLOR_G);
+                OLED_ShowString(1, 1, "RUN SEG-TEST    ");
+                OLED_ShowChar(1, 14, (char)('0' + TEST_SEGMENT));
+#else
                 RGB_SetColor(RGB_COLOR_G);
                 OLED_ShowString(1, 1, "RUN  K1 START   ");
+#endif
                 break;
             case KEY_K2:
                 // K2: 停止运行
