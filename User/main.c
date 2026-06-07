@@ -231,6 +231,32 @@ static uint16_t g_f10_deep_off_run = 0;   /* deep 退出连续 tick 计数 */
                                              * 预算 1s),3s 仍留 1s 余量不抢逃生窗 */
 #endif
 static uint16_t g_stall_wd_run = 0;         /* 双轮停滞连续 tick 计数(自清) */
+/* F32b(06-07 23:32-37 三组+议会三补丁): 播种 sm 静止发车例外。全图中 sm 只在滚动中
+ * 锁存,"sm 域静止破摩"仅 SEG2 播种态存在:730/760+帽100≈990 < 静摩阈 1170/1290
+ * @12.34V 必卡死(G1 23:32:53-56 实景=同构型)。滚动确认前死区直接锁 START 870/990
+ * (不走 sm/deep 三目——议会:deep 抢档会落 770/800 破摩反弱);双轮均 ≥6cps 一次即
+ * 锁存滚动,例外永久关闭,回 H1 语义(sm 永不回 START)。闭环退出替代固定 500ms 开环
+ * 赌注;若 START+帽100 仍破不了静摩,车钉原地由 F31 看门狗 3s 收尸=正确报告非静默。
+ * 只改死区档数值选择,PID 侧全程读真 g_s_mode=1(A2 锁向/i_speed/min_inner 不受扰)。
+ * 比赛构型(TEST_SEGMENT=0)本块不参编,H1 红线字节级原样。
+ * (滚动锁存 static 声明在 SEGTEST_SEED_DISABLE 定义后,见 TEST_SEGMENT 宏区) */
+/* F32c(06-07 23:36 G3 实证,议会裁决"落码默认关待拍板"): 单轮卡死看门狗——G3 右轮
+ * er 冻 82 整 3s、sent_r 863~986 有令不动、左轮打滑 el 116→151:F31 双轮门(wd_both_dead)
+ * 结构上永不满足(左轮在转每 tick 自清),只能人工 K2;比赛=无声单轮坐死。单轮判据=
+ * |cps_w|<2 且 sent_w ≥ 当前死区+60(排除深弯内轮 coast sent=0 的合法长零速)持续 3s
+ * 且非故意停车。红队过筛:浅弯内轮典型 ≥8cps 不触;reacq grace ≪3s 凑不满计数;
+ * 编码器单通道故障(轮转读零)误停=该轮已失闭环,停车反而是安全行为。n=1 样本不敢
+ * 默认开,先随双轮 WD 并行采数据,拍板后翻 1。纯 StopRun 零红线,与 F31 同构。 */
+#ifndef PER_WHEEL_WD_ENABLE
+#define PER_WHEEL_WD_ENABLE         0       /* 默认关:待多跑样本验证后拍板 */
+#endif
+#ifndef PW_WD_SENT_MARGIN
+#define PW_WD_SENT_MARGIN           60.0f   /* sent ≥ 死区+此值才视为"有令" */
+#endif
+#if PER_WHEEL_WD_ENABLE
+static uint16_t g_pw_wd_run_l = 0;          /* 单轮停滞连续 tick 计数(自清) */
+static uint16_t g_pw_wd_run_r = 0;
+#endif
 #if SINGLE_BOARD_LOCAL_DRIVE && !FAN_KICK_DIAG_ENABLE
 /* C1(06-06 用户批准): 风扇起转阶梯点动——K4 每按推进 20/35/50 档,点动 2s 自动归零;
  * K2 强停同时灭风扇。全程受 M3PWM 底层 FAN_DUTY_ABS_CAP=50 硬钳兜底(C0)。
@@ -417,7 +443,14 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #define SEGTEST_SEED_DISABLE 0  /* F26c: 1=K1不播种任何锁存,u/sm 全链自然触发(合段连测,
                                  * 从起跑线摆位);0=原语义(摆上段出口,播种前段锁存单测本段)。
                                  * F27(备用场地): 回 0——车摆 S 入口直线(Y2 后),播种 u=1,
-                                 * sm 由 U3 deep 签名/jc 自然锁,S①→拱门→矩形区全链实跑。 */
+                                 * sm 由 U3 deep 签名/jc 自然锁,S①→拱门→矩形区全链实跑。
+                                 * F32(06-07 23:3X 三组实证): jc 正门全程 0 次、U3 旁门必迟到
+                                 * (首弧 Δ≈55~65cnt 贴 SM_DEEP_MIN_CNT=60 下界)→ 播种升级:
+                                 * 本构型下 SegTest_SeedOnStart 同时播 sm=1(lt=5),见该函数。 */
+#endif
+#if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
+static uint8_t g_seed_rolling = 0;  /* F32b: 双轮均≥6cps 一次后置 1,发车 START 例外永久关闭
+                                     * (机理/红队结论见 F32b 注释块,g_stall_wd_run 声明处) */
 #endif
 #ifndef SEGTEST_EXIT_DISABLE
 #define SEGTEST_EXIT_DISABLE 1  /* F27: 1=本段出口不自停(跑过 sm_done 继续后链,矩形区出口
@@ -444,7 +477,7 @@ static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250t
 /* F8(06-07 团队轮): sm 锁存/释放源遥测——三锁存源(jc/U3/T2)与三释放源(0x30/T3/后备)
  * 在 sm= 上不可分,OLED 字串会被后续转移覆盖,事后无法回答"这轮谁锁的/谁放的"
  * (03:04 轮释放源至今判不出)。纯遥测,零控制消费者。 */
-static uint8_t  g_sm_latch_src = 0;    /* 0=未锁 1=jc自然 2=U3 deep 3=T2里程 4=R5 re-arm */
+static uint8_t  g_sm_latch_src = 0;    /* 0=未锁 1=jc自然 2=U3 deep 3=T2里程 4=R5 re-arm 5=SEG2播种(F32a) */
 static uint8_t  g_sm_rel_src = 0;      /* 0=未放 1=0x30主锚 2=T3强释 3=P9后备门 */
 
 static float ApplyDeadzone(float duty, float deadzone)
@@ -667,6 +700,19 @@ static void SegTest_SeedOnStart(void)
     g_u_turn_passed = 1;            /* U 段视为已完成(PID 经 extern 自动切 POST_U 速度档) */
     g_u_cnt_base = avg;             /* T2 强制锁里程锚=发车点(≈U出口,与全图语义一致) */
     g_navseg = NAVSEG_U;
+#endif
+#if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
+    /* F32a(06-07 23:32-37 三组实证+议会复核): 备用场地发车点≈S入口,jc 正门(入口右侧
+     * 黑斑)三组 0 次,U3 旁门结构性迟到(首弧 Δ≈55~65cnt 贴 SM_DEEP_MIN_CNT=60 下界,
+     * 三组锁存帧均值 61/63/63)→ 首弧永远以 T=22~25+主HOLD 裸跑直行冲出(G2/G3)。
+     * 播种 sm=1 = 诚实覆盖"车已位于 S 入口"语义,S 配方(14cps/A1/A2)从首弧即上场。
+     * 预核: P9 后备门 floor 120cnt>入口直线~60cnt 不早放(yaw 静默 500ms 在 S 内不可凑);
+     * T3 强释 240cnt≈S①出口外余量足; jc/U3/T2 三锁存支路被 !g_s_mode 安全短路。 */
+    g_s_mode = 1;
+    g_sm_cnt_base = avg;            /* P9/T3 里程锚=发车点 */
+    g_sm_stable_run = 0;
+    g_sm_latch_src = 5;             /* lt=5: SEG2 播种(区分自然锁存源 1~4) */
+    g_navseg = NAVSEG_SERP1;        /* 议会: 对齐 1453 边沿语义,sg 遥测起点即 SERP1 */
 #endif
 #if TEST_SEGMENT >= 3
     g_s_mode_done = 1;              /* S① 视为已走完(防 jc>基线 回锁) */
@@ -1614,12 +1660,32 @@ int main(void)
                     }
                 }
                 uint8_t f10_deep = g_f10_deep_latch;
+#if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
+                /* F32b: 播种 sm 静止发车例外(设计/红队结论见 g_stall_wd_run 声明处注释块)。
+                 * 滚动确认前死区直接锁 START(凌驾 sm/deep 三目);双轮均≥6cps 一次即永久
+                 * 退出,回 H1 语义。!is_racing 自清,二次发车窗重开。 */
+                if (!is_racing) { g_seed_rolling = 0u; }
+                else if (!g_seed_rolling && speed_left >= 6 && speed_right >= 6)
+                {
+                    g_seed_rolling = 1u;
+                }
+                uint8_t seed_start_win = (is_racing && !g_seed_rolling) ? 1u : 0u;
+                float deadzone_l = seed_start_win ? MOTOR_START_DEADZONE_L
+                                 : (g_s_mode ? S_MODE_HOLD_DEADZONE_L
+                                 : (f10_deep ? U_DEEP_HOLD_DEADZONE_L
+                                 : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L)));
+                float deadzone_r = seed_start_win ? MOTOR_START_DEADZONE_R
+                                 : (g_s_mode ? S_MODE_HOLD_DEADZONE_R
+                                 : (f10_deep ? U_DEEP_HOLD_DEADZONE_R
+                                 : (g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R)));
+#else
                 float deadzone_l = g_s_mode ? S_MODE_HOLD_DEADZONE_L
                                  : (f10_deep ? U_DEEP_HOLD_DEADZONE_L
                                  : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L));
                 float deadzone_r = g_s_mode ? S_MODE_HOLD_DEADZONE_R
                                  : (f10_deep ? U_DEEP_HOLD_DEADZONE_R
                                  : (g_dz_hold_r ? MOTOR_HOLD_DEADZONE_R : MOTOR_START_DEADZONE_R));
+#endif
                 float cmd_l = ClampClosedLoopDuty(g_motor_target_l);
                 float cmd_r = ClampClosedLoopDuty(g_motor_target_r);
                 /* D3(06-06 用户报告皱褶停转): 被命令运动(cmd>EPS)却近停(<3cps)的轮,死区前馈
@@ -1669,6 +1735,34 @@ int main(void)
                 float duty_r = ApplyDeadzone(cmd_r, deadzone_r + g_stall_boost_r);
                 g_sent_motor_l = (int16_t)ClampMotorDutyFinal(duty_l);
                 g_sent_motor_r = (int16_t)ClampMotorDutyFinal(duty_r);
+#if PER_WHEEL_WD_ENABLE
+                /* F32c: 单轮卡死看门狗(默认关,机理/红队结论见宏定义处)。"有令不动"判据
+                 * 用本 tick 死区+sent 终值,深弯内轮 coast(cmd=0→sent=0)天然豁免;
+                 * reacq grace ≪3s 凑不满计数,无需入排除清单(议会复核)。 */
+                {
+                    uint8_t pw_intentional =
+                        (g_launch_grace > 0u) || (g_finish_ticks > 0u) ||
+                        (PID_GetNavOverride() != NAV_OVERRIDE_NONE);
+                    uint8_t pw_l_jam =
+                        (speed_left  > -STALL_WD_CPS_THRESH && speed_left  < STALL_WD_CPS_THRESH &&
+                         (float)g_sent_motor_l >= deadzone_l + PW_WD_SENT_MARGIN) ? 1u : 0u;
+                    uint8_t pw_r_jam =
+                        (speed_right > -STALL_WD_CPS_THRESH && speed_right < STALL_WD_CPS_THRESH &&
+                         (float)g_sent_motor_r >= deadzone_r + PW_WD_SENT_MARGIN) ? 1u : 0u;
+                    if (is_racing && pw_l_jam && !pw_intentional) { if (g_pw_wd_run_l < 0xFFFFu) g_pw_wd_run_l++; }
+                    else { g_pw_wd_run_l = 0; }
+                    if (is_racing && pw_r_jam && !pw_intentional) { if (g_pw_wd_run_r < 0xFFFFu) g_pw_wd_run_r++; }
+                    else { g_pw_wd_run_r = 0; }
+                    if (g_pw_wd_run_l >= STALL_WD_TRIGGER_TICKS || g_pw_wd_run_r >= STALL_WD_TRIGGER_TICKS)
+                    {
+                        StopRun();
+                        RGB_SetColor(RGB_COLOR_R);
+                        OLED_ShowString(1, 1, "PW WD STOP      ");
+                        g_pw_wd_run_l = 0;
+                        g_pw_wd_run_r = 0;
+                    }
+                }
+#endif
 #if SINGLE_BOARD_LOCAL_DRIVE
                 /* 单板:本地直驱。is_racing 使能/失能 + 下发左右占空比；停车走安全下电。 */
                 if (is_racing)
@@ -1911,7 +2005,7 @@ int main(void)
                      * 150~180B 远不触及;PC 明文模式(开关=0)无此约束。 */
                     /* 06-07 评审: 加 sg=段游标(0~6,NAVSEG_*);leader复核再加 ar/rdir/s2,
                      * 用于区分拱门锚、雷达默认方向、S②域。典型行仍低于单帧上限。 */
-                    /* F8: 加 lt=锁存源(0未锁/1jc/2U3/3T2/4re-arm) rs=释放源(0未放/1主锚/2T3/3后备)
+                    /* F8: 加 lt=锁存源(0未锁/1jc/2U3/3T2/4re-arm/5SEG2播种) rs=释放源(0未放/1主锚/2T3/3后备)
                      * ——F6b 验收与释放源之谜(03:04)机读化。最坏 +12B 由 SendLog 拆帧兜底。 */
                     /* G2: 加 fn=风机锁存态(1=kick/50常转)——常开构型下每行日志自证风机条件,
                      * 杜绝"这轮到底开没开扇"复盘歧义。+5B,dbg=320 仍裕。 */
