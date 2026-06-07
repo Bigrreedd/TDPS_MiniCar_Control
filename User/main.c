@@ -266,6 +266,25 @@ static uint16_t g_stall_wd_run = 0;         /* 双轮停滞连续 tick 计数(�
 static uint16_t g_pw_wd_run_l = 0;          /* 单轮停滞连续 tick 计数(自清) */
 static uint16_t g_pw_wd_run_r = 0;
 #endif
+/* F36(06-08 01:0X 四组实证+用户策略"增加占空比利用惯性冲过褶皱地段"): sm 域托底脱困档。
+ * 议会 F30b spec(红队定版)落地: 四组卡住帧 sent 970~1180 顶帽 100 推不动(机械托底,
+ * 用户定性"底盘太低被挡住"),全域再加巡航占空比的代价已现身(G2/G4 轮速 26~33cps 切线
+ * 直出 S 弧)——脱困档只在卡住瞬间解锁扭矩,巡航构型零污染。时序窗: 0.5s arm →
+ * 1s 预算(任一轮 >12cps 即收) → F31 看门狗 3s 兜底,三层不抢窗。 */
+#ifndef STALL_ESCAPE_ENABLE
+#define STALL_ESCAPE_ENABLE         1       /* F36: 默认开(用户冲褶皱策略的外科手术版) */
+#endif
+#ifndef STALL_ESCAPE_ARM_TICKS
+#define STALL_ESCAPE_ARM_TICKS      250u    /* 双轮近停持续 0.5s 才解锁(瞬态不触) */
+#endif
+#ifndef STALL_ESCAPE_BUDGET_TICKS
+#define STALL_ESCAPE_BUDGET_TICKS   500u    /* 1s 预算,到点未脱交还看门狗 */
+#endif
+#ifndef STALL_ESCAPE_CAP
+#define STALL_ESCAPE_CAP            400.0f  /* 红队保守档: sm 峰≈880+320+400=1600<1990 */
+#endif
+static uint16_t g_escape_arm_run = 0;       /* 解锁资格连续 tick 计数(自清) */
+static uint16_t g_escape_budget = 0;        /* 脱困预算倒计时(>0=解锁中) */
 #if SINGLE_BOARD_LOCAL_DRIVE && !FAN_KICK_DIAG_ENABLE
 /* C1(06-06 用户批准): 风扇起转阶梯点动——K4 每按推进 20/35/50 档,点动 2s 自动归零;
  * K2 强停同时灭风扇。全程受 M3PWM 底层 FAN_DUTY_ABS_CAP=50 硬钳兜底(C0)。
@@ -1734,8 +1753,38 @@ int main(void)
                  * 脱困瞬间弹射(yw 300ms 内 197→-43)出图;U1 内轮停转后 cmd=0 本不触发
                  * 踢腿,封顶只防楔住工况。高脱困档仅留给普通循迹段;NAV 覆盖(雷达盲走)同封 100。 */
                 if (g_s_mode || PID_GetDeepTurnMode() || PID_GetNavOverride() != NAV_OVERRIDE_NONE) {
-                    if (g_stall_boost_l > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_l = MOTOR_STALL_BOOST_SAFE_CAP;
-                    if (g_stall_boost_r > MOTOR_STALL_BOOST_SAFE_CAP) g_stall_boost_r = MOTOR_STALL_BOOST_SAFE_CAP;
+                    float sm_boost_cap = MOTOR_STALL_BOOST_SAFE_CAP;
+#if STALL_ESCAPE_ENABLE
+                    /* F36(设计/红队结论见宏定义处): sm 域双轮托底脱困——平时帽 100 原样
+                     * (H1 防锤),双轮 |v|<2cps 持续 0.5s 且线在视场(found,排除丢线推墙)
+                     * 才解锁到 400,破粘任一轮 >12cps 立即收回;1s 预算到点交还看门狗。
+                     * U2 弹射工况天然排除: arming 要求 g_s_mode,U 楔住是非 sm deep。 */
+                    {
+                        uint8_t esc_both_dead =
+                            (speed_left  > -STALL_WD_CPS_THRESH && speed_left  < STALL_WD_CPS_THRESH &&
+                             speed_right > -STALL_WD_CPS_THRESH && speed_right < STALL_WD_CPS_THRESH) ? 1u : 0u;
+                        if (!is_racing) { g_escape_arm_run = 0; g_escape_budget = 0; }
+                        else if (g_escape_budget > 0u)
+                        {
+                            if (speed_left > 12 || speed_right > 12) { g_escape_budget = 0; }
+                            else { g_escape_budget--; sm_boost_cap = STALL_ESCAPE_CAP; }
+                        }
+                        else if (g_s_mode && esc_both_dead && result_BlackPoint.found &&
+                                 g_launch_grace == 0u &&
+                                 PID_GetNavOverride() == NAV_OVERRIDE_NONE)
+                        {
+                            if (++g_escape_arm_run >= STALL_ESCAPE_ARM_TICKS)
+                            {
+                                g_escape_arm_run = 0;
+                                g_escape_budget = STALL_ESCAPE_BUDGET_TICKS;
+                                OLED_ShowString(1, 1, "ESC BOOST       ");
+                            }
+                        }
+                        else { g_escape_arm_run = 0; }
+                    }
+#endif
+                    if (g_stall_boost_l > sm_boost_cap) g_stall_boost_l = sm_boost_cap;
+                    if (g_stall_boost_r > sm_boost_cap) g_stall_boost_r = sm_boost_cap;
                 }
                 /* F6a(06-07 03:28 实测): 发车踢腿封顶——首个速度窗样本(≤250ms)到来前读数恒 0,
                  * boost 无脑涨到 255~340(窗口相位彩票)→ START+boost≈1200/1300 弹射起步即丢线。
