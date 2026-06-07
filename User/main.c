@@ -228,7 +228,11 @@ static uint8_t  g_fan_step = 0u;
  * K1 发车自动起扇(免 K4 人因漏开),StopRun 全路径灭扇(收口 RunArch点1:
  * 丢线自停/FINISH/RD_FAIL/LORA_STOP 此前残留 50 常吹)。K4 保留=台架手动开关。 */
 #ifndef FAN_AUTO_ON_RACE
-#define FAN_AUTO_ON_RACE        1
+#define FAN_AUTO_ON_RACE        0   /* F30a(备用场地A/B): 关——场地垫面未贴死有气泡,风机抽底
+                                     * 部空气=把松垫吸拱到底盘下,气泡越跑越大阻力递增(用户
+                                     * 23:1X实测观察);三组卡死(23:04/06/08)均 fn=1。先做无风机
+                                     * A/B 验证气泡-托底因果。⚠回真实场地(贴死垫)改回 1,
+                                     * 比赛=风机常开构型(下压力抓地)。 */
 #endif
 #define FAN_RACE_KICK_DUTY      150u     /* 仅走 KickDiag 专用入口(独立钳 150) */
 #define FAN_RACE_KICK_TICKS     100u     /* 200ms @ 2ms tick,kick 暴露上限不变 */
@@ -407,6 +411,9 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #endif
 #if TEST_SEGMENT == 0 && !RADAR_SEGMENT_ENABLE
 #error "RACE BUILD GUARD(F28b): TEST_SEGMENT=0(比赛构型)必须 RADAR_SEGMENT_ENABLE=1——F28 备用场地关断禁止带进比赛固件"
+#endif
+#if TEST_SEGMENT == 0 && !FAN_AUTO_ON_RACE
+#error "RACE BUILD GUARD(F30a): TEST_SEGMENT=0(比赛构型)必须 FAN_AUTO_ON_RACE=1——风机常开构型(下压力)是比赛定版,备用场地关断禁止带进比赛固件"
 #endif
 #if TEST_SEGMENT == 1
 /* F24a(06-07晚 12-agent议会): SEG1 测试自停门守卫(逻辑见出口自停处);比赛构型(=0)零字节影响 */
