@@ -517,6 +517,9 @@ static uint16_t g_seg3_wide_run    = 0; /* F47: 宽黑横杠连续 tick(去抖:�
 static uint8_t  g_seg3_seen_center = 0; /* F47: 已见≥1帧干净居中线(入口死区:之前不计路口) */
 static uint16_t g_seg3_straight_run= 0; /* F47: 直穿动作持续 tick(预算兜底防卡死) */
 static float    g_seg3_turn_start  = 0.0f; /* F47: 本次转弯起始航向(rad),Δyaw 预算基准 */
+/* F47b 用户写死6步序列(坐标级): (775,50)左 (750,50)右 (750,100)直 (750,150)直 (750,200)右 (775,200)左。
+ * +1=左转(yaw增) -1=右转(yaw减) 0=直穿。净航向回正北。按宽黑横杠检测计数索引。 */
+static const int8_t g_seg3_act_seq[6] = {1, -1, 0, 0, -1, 1};
 #ifndef SEG3_STOP_YAW_DEG
 #define SEG3_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前收口(同 SEG1 150/180 比例) */
 #endif
@@ -1743,12 +1746,12 @@ int main(void)
                  * 持续窗滤岔口漏检甩头(瞬时摆头难以 0.5s 稳持±75°且全程见线);
                  * 盲旋凑角被 lost 守卫滤除。锚=g_yaw_zero(K1 清零,种子不动它)。 */
                 {
-                    /* F46/F47: 出口门仅在末个写死左转完成后武装(jct>=4 且 act==0)。基准=
+                    /* F46/F47: 出口门仅在末(第6)个写死动作完成后武装(jct>=6 且 act==0)。基准=
                      * g_seg3_exitref(末转弯完成时航向≈北,在动作完成帧才更新);此后顶部左转
                      * (上段尽头 775,473→745,473) |Δyaw|≥75°持续0.5s+见线→停。
                      * F47 必加 act==0 守卫:jct 在第4路口"计数时"即++到4(此时第4转弯还在转、
                      * g_seg3_exitref 仍是发车旧值),不加守卫会在第4转弯中途用旧基准误触发 StopRun。 */
-                    if (g_seg3_jct >= 4u && g_seg3_act == 0u)
+                    if (g_seg3_jct >= 6u && g_seg3_act == 0u)
                     {
                         float seg3_dyaw = (add_angle - g_seg3_exitref) * 57.2957795f;
                         if (seg3_dyaw < 0.0f) seg3_dyaw = -seg3_dyaw;
@@ -1798,7 +1801,8 @@ int main(void)
 #if TEST_SEGMENT == 3
             /* F47(替换F46,25-agent验证spec): 方块区 ZIGZAG 写死转向序列状态机。
              * §3 纯坐标:黑线=下段(775,0→50)/上段(775,200→473)/三方块轮廓;入口(775,50)向北→
-             * 出口(775,200)。沿 y 自下而上 4 决策横杠=动作表[左,直,直,左](y=50/100/150/200);
+             * 出口(775,200)。用户写死6步(坐标级)=动作表[左,右,直,直,右,左]:(775,50)左→西/(750,50)右→北/
+             * (750,100)直/(750,150)直/(750,200)右→东/(775,200)左→北,净航向回正北;
              * 中间(750,50/750,200)两个90°拐角=线跟随自然过(不计数)。
              * F46三跑全败死因→F47四修: ①SeedOnStart去 sm(g_s_mode≡0)→路口间不再A2±320/deep1.5/
              * 内轮硬停垃圾pivot(deep_enter回1.9/min_inner回20); ②计数+边沿复位移块顶每tick算(卡死动作
@@ -1844,7 +1848,8 @@ int main(void)
                         {
                             PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                             g_seg3_act = 0u;
-                            if (g_seg3_jct >= 4u) g_seg3_exitref = add_angle;  /* 末转弯完成→立出口基准 */
+                            g_seg3_line_yaw = add_angle;        /* F47b: 转完锚=新航向(地基/直穿不再回旧向,治转后冲出) */
+                            if (g_seg3_jct >= 6u) g_seg3_exitref = add_angle;  /* 末(第6)转弯完成→立出口基准 */
                         }
                         else
                         {
@@ -1869,20 +1874,21 @@ int main(void)
                 else
                 {   /* act==0: 去抖+死区计路口 → 否则地基(丢线走直)/ 还权常规巡线 */
                     if (g_seg3_wide_run >= SEG3_JCT_DEBOUNCE_TICKS && !g_seg3_inj &&
-                        g_seg3_seen_center && g_seg3_jct < 4u)
+                        g_seg3_seen_center && g_seg3_jct < 6u)
                     {
                         uint8_t seg3_i = (uint8_t)g_seg3_jct;
+                        int8_t  seg3_dir = g_seg3_act_seq[seg3_i];   /* 用户写死6步: L,R,直,直,R,L */
                         g_seg3_inj = 1u;
                         g_seg3_jct++;
-                        if (seg3_i == 0u || seg3_i == 3u)   /* 动作表[L,S,S,L]:路口0,3=左转 */
+                        if (seg3_dir != 0)                  /* 转弯(左=+1 / 右=-1) */
                         {
                             g_seg3_act_turn   = 1u;
                             g_seg3_turn_start = add_angle;
-                            g_seg3_act_tgt    = add_angle + SEG3_TURN_RAD;   /* +90°左转 */
-                            PID_SetTurnDir(+1);
+                            g_seg3_act_tgt    = add_angle + (seg3_dir > 0 ? SEG3_TURN_RAD : -SEG3_TURN_RAD);
+                            PID_SetTurnDir(seg3_dir);       /* +1左(yaw增) / -1右(yaw减) */
                             PID_SetNavOverride(NAV_OVERRIDE_TURN, 0.0f, SEG3_TURN_CPS);
                         }
-                        else                                 /* 路口1,2=直穿 */
+                        else                                 /* 直穿 */
                         {
                             g_seg3_act_turn     = 0u;
                             g_seg3_straight_run = 0u;
