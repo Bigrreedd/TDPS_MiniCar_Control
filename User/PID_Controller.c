@@ -469,6 +469,13 @@ static uint8_t g_deep_turn_mode = 0;
                                        * U 入弯若变宽(内轮先爬行致半径偏大)回 50u 或折中 100u。 */
 #endif
 static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈值),非 deep 即清零 */
+/* F25a(06-07 19:2X 三组实测): 盲 coast 旁路——F24c 的 300ms 确认护住直线(三组直线零
+ * coast)但 U 入弯付出 ~600ms 爬行档代价(19:22:44 sent=790,1208 连续两帧),弧变宽线更早
+ * 出视场。鉴别量=lost:直线乒乓瞬态 deep="线在视场内的量化抖动"(lost=0);真弯深陷=
+ * "线甩出视场"(lost 爬升)。deep 且盲>100ms → 立即授 coast;线可见仍走 150 确认。 */
+#ifndef DEEP_BLIND_COAST_LOST_TICKS
+#define DEEP_BLIND_COAST_LOST_TICKS 50u   /* 100ms @ 500Hz */
+#endif
 #ifndef CORR_SLEW_PER_TICK
 #define CORR_SLEW_PER_TICK 999.0f /* F23: 999=关断(corr∈±320,单tick最大Δ640<999 永不钳)。
                                    * F22c 原值 15.0f:10:59/11:00 两轮实测满幅乒乓如旧(0↔60 对穿,
@@ -565,6 +572,21 @@ void PID_Control_Update(void)
 	    if (g_a2_episode_cool > 0u) g_a2_episode_cool--;   /* H2': 跨段窗口倒计时(2ms/tick) */
     // 1. 获取当前位置（从你的position变量）
 	    current_position = (float)position_get / 10.0f;
+	    /* F25b(06-07 19:27 G3 实锤): 非 sm 盲走承诺转向——U 入口线从 pos=15 滑出视场
+	     * (未及边缘),冻结质心 raw_err=1.5<1.9 deep 永不点火,corr 冻在温和左修 ≈-90,
+	     * 车近直线盲走到黑区/375。旧"冻结质心全增益PID"只有恰冻在边缘才像样(G1/G2)。
+	     * 改:深丢线(>250ms,与去抖/A2 同门槛)把冻结质心收敛到其所在侧边缘(±3 格)→
+	     * deep 判据必点火 + corr 满幅(320)朝最后所见侧找线;配 F25a 盲 coast 成净 pivot。
+	     * 方向来自小车自己的质心历史(红线b合规);junction 冻结/sm A2 锁向/NAV 覆盖各有
+	     * 自己的分支不进此路;冻在正中(raw_err≈0,全黑改判类)不承诺保持直行;375 自停
+	     * 兜底不变;重见线即走 F18a 去抖解除,回正常位置环。 */
+	    if (!result_BlackPoint.found && g_line_lost_ticks > 125u &&
+	        !result_BlackPoint.is_junction && !g_s_mode &&
+	        g_nav_override == NAV_OVERRIDE_NONE) {
+		float blind_err = current_position - g_position_pid.param.target_position;
+		if (blind_err > 0.05f)       current_position = g_position_pid.param.target_position + 3.0f;
+		else if (blind_err < -0.05f) current_position = g_position_pid.param.target_position - 3.0f;
+	    }
 	// 误差增益曲线（二次型，三点定标）：0/5路大幅加猛、中心保持
 	// gain = 1.232 - 0.686*|e| + 0.564*e²
 	// 中心(e=0.5)→corr≈21；1/4(e=1.5)→corr≈90；0/5(e=2.5)→corr≈310（外侧轮420）
@@ -870,8 +892,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 60° 翻边,R-L≈7cps)。持续 deep ≥DEEP_COAST_CONFIRM_TICKS 恢复 coast 资格,
 		 * 瞬态(悬空扫边/量化抖动)仍走爬行档 20;coast 期 cmd=0 → ApplyDeadzone 干净停,
 		 * 不产生负值,反向钳语义不变。 */
-		float min_inner = (g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS)
-		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;
+		float min_inner = (g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS ||
+		                   (g_deep_turn_mode && g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS))
+		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;   /* F25a: 深陷盲走即授 coast */
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
 		float decel_cap = g_deep_turn_mode ? speed_output : shallow_cap;
 		if (decel_cap < shallow_cap) decel_cap = shallow_cap;   /* 浅弯下限：S-mode 30/正常50，随floor对偶保持失速裕度20不变 */
