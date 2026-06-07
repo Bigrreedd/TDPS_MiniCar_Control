@@ -1803,11 +1803,12 @@ int main(void)
                  * ang=角度环差速×10 ye=航向误差0.1° 其余字段与LHX口径一致;
                  * S= 尾段及0x07帧路径沿用,小程序/SSCOM 采集方式不变。 */
                 int n = snprintf(dbg, sizeof(dbg),
-                    "HJY st=%d vt=%d,%d v=%d,%d pwm=%d,%d ang=%d ye=%d pos=%d lost=%d yw=%d u=%d fn=%d bv=%d el=%ld er=%ld",
+                    "HJY st=%d vt=%d,%d v=%d,%d pwm=%d,%d e=%d,%d ang=%d ye=%d pos=%d lost=%d yw=%d u=%d fn=%d bv=%d el=%ld er=%ld",
                     (int)g_hjy_state,
                     (int)g_hjy_vt_l, (int)g_hjy_vt_r,
                     (int)g_hjy_v_l, (int)g_hjy_v_r,
                     (int)g_hjy_pwm_l, (int)g_hjy_pwm_r,
+                    (int)g_hjy_err_l, (int)g_hjy_err_r,        /* HJY2: 速度环实吃误差 */
                     (int)g_hjy_ang_corr,
                     (int)g_hjy_yaw_err_d10,
                     (int)position_get,

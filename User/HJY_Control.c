@@ -28,6 +28,7 @@ volatile int16_t  g_hjy_v_l = 0,  g_hjy_v_r = 0;
 volatile int16_t  g_hjy_pwm_l = 0, g_hjy_pwm_r = 0;
 volatile int16_t  g_hjy_ang_corr = 0;
 volatile int16_t  g_hjy_yaw_err_d10 = 0;
+volatile int16_t  g_hjy_err_l = 0, g_hjy_err_r = 0;
 
 /* ===== 三套 PID 实例 ===== */
 static SpeedPID_Controller_t s_spd_l;   /* 左轮速度环(独立 Kp/Ki/Kd) */
@@ -175,6 +176,14 @@ void HJY_Control_Update(void)
         Motor_Disable();
         g_hjy_pwm_l = g_hjy_pwm_r = 0;
         g_hjy_vt_l = g_hjy_vt_r = 0;
+        /* HJY2(16:12 架空轮): 停车后 v=35,35/ang=12 陈旧值挂死 6s+——本分支
+         * 提前 return,窗口/角度环不再跑,显示全员清零防误读;窗口快照作废,
+         * 下次发车(K1→ResetRun)或恢复 racing 时重新初始化。 */
+        g_hjy_v_l = g_hjy_v_r = 0;
+        g_hjy_ang_corr = 0;
+        g_hjy_yaw_err_d10 = 0;
+        g_hjy_err_l = g_hjy_err_r = 0;
+        s_win_inited = 0u;
         return;
     }
     Motor_Enable();
@@ -266,6 +275,8 @@ void HJY_Control_Update(void)
             s_win_t0 = now;
 
             /* 5) 左右独立速度环(增量式,内部带 Δ200/步 与输出钳位) */
+            g_hjy_err_l = (int16_t)(vt_l - (float)g_hjy_v_l);   /* HJY2: PID 实吃误差遥测 */
+            g_hjy_err_r = (int16_t)(vt_r - (float)g_hjy_v_r);
             pwm_l = SpeedPID_Calculate(&s_spd_l, vt_l, (float)g_hjy_v_l);
             pwm_r = SpeedPID_Calculate(&s_spd_r, vt_r, (float)g_hjy_v_r);
 

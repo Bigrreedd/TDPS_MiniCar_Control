@@ -37,8 +37,10 @@ typedef enum
 
 /* ===== 初始参数(第一步"合理大区间"配置,串口实测迭代收敛) ===== */
 #define HJY_BLACK_THRESH      2048    /* ADC < 阈值判黑(0/1365 黑,2730/4095 白) */
-#define HJY_SPEED_WIN_MS      100u    /* 轮速窗口:44cnt/m 下 100ms≈2.5cnt 量化,
-                                       * 比旧 250ms 快 2.5 倍,噪声换响应,可调 */
+#define HJY_SPEED_WIN_MS      200u    /* 轮速窗口。HJY2(16:12 架空轮实测): 100ms 窗
+                                       * 每窗仅 2.5cnt → v 分辨率 10cnt/s,PID 全程追
+                                       * 量化噪声(pwm_L 510~800 来回);200ms 分辨率
+                                       * 5cnt/s,响应仍快旧核 250ms 一档 */
 #define HJY_BASE_SPEED        25.0f   /* 直行基速 cnt/s(沿用 E1 验证档) */
 #define HJY_BASE_SPEED_MID    22.0f   /* 中偏转基速 */
 #define HJY_BASE_SPEED_SLOW   18.0f   /* 大偏转/全黑基速 */
@@ -70,5 +72,8 @@ extern volatile int16_t  g_hjy_pwm_l;        /* 左轮最终 PWM(带符号) */
 extern volatile int16_t  g_hjy_pwm_r;        /* 右轮最终 PWM */
 extern volatile int16_t  g_hjy_ang_corr;     /* 角度环输出差速 cnt/s(×10 存) */
 extern volatile int16_t  g_hjy_yaw_err_d10;  /* 角度环误差 0.1° 单位 */
+extern volatile int16_t  g_hjy_err_l;        /* HJY2: 左速度环本窗实际误差(vt−v) */
+extern volatile int16_t  g_hjy_err_r;        /* HJY2: 右速度环本窗实际误差——
+                                              * 判"pwm_R 863 冻结"是混叠假象还是真死环 */
 
 #endif /* __HJY_CONTROL_H__ */
