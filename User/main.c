@@ -163,11 +163,14 @@ static float ClampMotorDuty(float duty)
  * 不对称 30 保持;T=14/帽 100/A1/A2 全不动。代价预期:S 巡线底速 14→~16,弯径略宽,留观;
  * 过冲征兆=S 弧外甩丢线 → 回 750/780 折中。 */
 #ifndef S_MODE_HOLD_DEADZONE_L
-#define S_MODE_HOLD_DEADZONE_L  1025.0f  /* F39: 932×1.1(用户:"此次占空比还可以增加10%左右")
-                                          * | F38:847→932 | F35:770→847 | F33:730→770 */
+#define S_MODE_HOLD_DEADZONE_L  1076.0f  /* F43: 1025×1.05(用户02:5X方块区"占空比可进一步加大5%";
+                                          * ⚠治G2空转/褶皱托底,非治脱轨——脱轨根因=岔口导航不确定,见日志)
+                                          * | F39:932→1025 | F38:847→932 | F35:770→847 | F33:730→770 */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_R
-#define S_MODE_HOLD_DEADZONE_R  1065.0f  /* F39: 968×1.1(同上,+10% 对称) | F38:880→968 | F35:800→880 */
+#define S_MODE_HOLD_DEADZONE_R  1118.0f  /* F43: 1065×1.05(+5%,差42≈对称) ⚠R 1118>START R 1089:
+                                          * 发车走 seed_start_win 锁 START 不受影响;运行域 S>START 属预期
+                                          * | F39:968→1065 | F38:880→968 | F35:800→880 */
 #endif
 /* F10(06-07 04:29 第三组实测): U 弯回归应验——F9 850/880 把非 sm 深弯外轮一并加热
  * (pivot 外轮 sent≈880+290=1170,03:30 清洁过 U 档为 800+pid≈1090):U 中段单帧翻边
