@@ -434,6 +434,10 @@ static uint8_t g_deep_turn_mode = 0;
 #define DEEP_COAST_CONFIRM_TICKS 50u  /* 100ms @ 500Hz */
 #endif
 static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈值),非 deep 即清零 */
+#ifndef CORR_SLEW_PER_TICK
+#define CORR_SLEW_PER_TICK 15.0f  /* F22c: corr 斜率限制(±/tick),满幅 0→320 约 21tick=42ms;回退=设 999 */
+#endif
+static float g_corr_slew_prev = 0.0f;  /* F22c: 斜率限制记忆(F11 纪律:停车/路口冻结同清) */
 #ifndef PID_LINE_LOST_STOP_TICKS
 #define PID_LINE_LOST_STOP_TICKS 375u  /* 750ms @ 500Hz control tick */
 #endif
@@ -464,6 +468,7 @@ void PID_Control_Update(void)
 			PositionPID_Reset(&g_position_pid);
 			g_deep_turn_mode = 0;   /* 停车清深弯模式,避免重启残留 */
 			g_deep_hold_ticks = 0;  /* F16 coast 资格计数同清(F11 教训:新增 static 必入本清单) */
+			g_corr_slew_prev = 0.0f; /* F22c 斜率记忆同清 */
 			g_reacq_run = 0;        /* A2 去抖状态同清 */
 			g_last_edge_side = 0;   /* A2b 边缘记忆同清 */
 			g_reacq_grace = 0;      /* A2c 宽限同清 */
@@ -558,6 +563,7 @@ void PID_Control_Update(void)
          * 旧误差 ≠0（旧注释"d_raw≈0"过度承诺，06-05 审查 I7）——由下方 R5 软启动消除。
          * 深弯滞回在下方按 !is_junction 冻结(路口宽黑会把 raw_abs_err 顶到~2.5+误触发内侧停转)。 */
         position_correction = 0.0f;
+        g_corr_slew_prev = 0.0f;   /* F22c: 冻结期 corr=0,记忆同步置 0,出口从 0 起坡 */
         s_prev_junction = 1;
     } else if (g_s_mode && g_line_lost_ticks > 125u) {
         /* A2(06-06 用户批准): sm 区深丢线/再捕获确认期——锁向:按最后所见侧持续修正
@@ -599,6 +605,11 @@ void PID_Control_Update(void)
             /* R5(06-05 审查): 路口/A2锁向退出首帧 D 软启动——对齐 last_error 使本帧 d_raw=0，
              * 消除冻结期线位移造成的一次性 D 踢(原本有界但无谓,α=0.4 衰 3~4 帧)。 */
             g_position_pid.last_error = current_position - g_position_pid.param.target_position;
+            /* F22a(10:35 [47.477] 实锤,F20 引入的回归): R5 只对齐 last_error 消 d_raw,
+             * 漏清 d_filtered——α=0.2 后(0.8 保持率)冻结期残留 d_filtered 跨冻结存活,
+             * 解冻首帧 Kd700×残值打出反向大踢(+271 级,盖过 pos=5 应有左修→pid=263,0
+             * 右转异常帧,U 出口被推向支线)。last_error/d_filtered 必须成对复位。 */
+            g_position_pid.d_filtered = 0.0f;
             s_prev_junction = 0;
             if (s_prev_a2hold) {
                 g_reacq_grace = 50u;        /* A2c: 锁向找回后给 100ms 滚上线宽限 */
@@ -750,6 +761,18 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			if (position_correction > pc_max) position_correction = pc_max;
 			else if (position_correction < -pc_max) position_correction = -pc_max;
 		}
+		/* F22c(策略评审裁决,10:35 三 agent 合议): corr 斜率限制 ±15/tick——
+		 * "死区两档律继电器+0.5格量化+coast bang-bang"构成固有极限环(描述函数有解),
+		 * 调 Kp/Kd/gyro 数学上只能改幅度不能消环;削"瞬时满舵冲量"是当天可落地止血:
+		 * 满幅 0→320 改 ~42ms 斜坡(U 入弯 1200ms 量级无感,量化跳格 ±76 级冲量被摊平)。
+		 * 记忆在停车/路口冻结同清(出口从 0 起坡,与 F22a 协同);sm 域 A2 锁向同被限速,
+		 * S 复验时关注。根治路线=质心 ADC 内插(BlackPoint 二值化丢幅度),另议。 */
+		{
+			float dc = position_correction - g_corr_slew_prev;
+			if (dc > CORR_SLEW_PER_TICK)       position_correction = g_corr_slew_prev + CORR_SLEW_PER_TICK;
+			else if (dc < -CORR_SLEW_PER_TICK) position_correction = g_corr_slew_prev - CORR_SLEW_PER_TICK;
+			g_corr_slew_prev = position_correction;
+		}
 	    }
 
 	    /* 内外侧拆分差速 + 自适应内侧减速：
@@ -822,8 +845,11 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			outer_accel = position_correction;  /* 外侧全额加速 */
 			left_output  = speed_output + outer_accel + wheel_balance;
 			right_output = speed_output - inner_decel - wheel_balance;
-			/* 深弯双保险：内侧轮硬下限(A1/U1: 深弯内轮=0 干净停转,全弯型) */
-			if (g_deep_turn_mode && right_output < min_inner) {
+			/* 深弯双保险：内侧轮硬下限(A1/U1: 深弯内轮=0 干净停转,全弯型)
+			 * F22b(10:35 [48.978] pid=0 sent=870 实锤): 钳口加 0.5 凑整带——coast 资格
+			 * (min_inner=0)下 (0,0.5) 浮点残差越过 EPS=0.1 触发死区前馈+boost(770+100),
+			 * 破坏干净 coast;亚整数残差一并落底。 */
+			if (g_deep_turn_mode && right_output < min_inner + 0.5f) {
 				right_output = min_inner;
 			}
 		} else {
@@ -832,8 +858,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 			outer_accel = -position_correction;
 			left_output  = speed_output - inner_decel + wheel_balance;
 			right_output = speed_output + outer_accel - wheel_balance;
-			/* 深弯双保险：内侧轮硬下限(A1/U1: 深弯内轮=0 干净停转,全弯型) */
-			if (g_deep_turn_mode && left_output < min_inner) {
+			/* 深弯双保险：内侧轮硬下限(F22b 同右轮:钳口+0.5 凑整带防亚整数残差) */
+			if (g_deep_turn_mode && left_output < min_inner + 0.5f) {
 				left_output = min_inner;
 			}
 		}
