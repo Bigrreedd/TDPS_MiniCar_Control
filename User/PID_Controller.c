@@ -594,9 +594,11 @@ void PID_Control_Update(void)
 	    /* F26a: 标记深陷盲走episode——重捕首帧做 R5 同款 D 软启动。19:44:22 实锤:
 	     * pid=252,33(pos=20 应左修却打右满舵)=盲走期 d_filtered 残值反向踢,刚捞到的
 	     * 线被当帧甩掉 → U 弯"震荡卡顿"(盲转-捞线-踢丢-再盲转循环)的根因。 */
-	    if (!result_BlackPoint.found && g_deep_turn_mode &&
+	    if (!result_BlackPoint.found && g_deep_turn_mode && !g_s_mode &&
 	        g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS) {
-		g_blind_reacq_pending = 1u;
+		g_blind_reacq_pending = 1u;   /* F28a: 加 !g_s_mode——S 配方(19:49 验证)域内
+		                               * 重捕行为保持字节级原样,A2c 宽限自管;本机制只
+		                               * 服务非 sm 的 U/普通弯盲走 episode。 */
 	    }
 	// 误差增益曲线（二次型，三点定标）：0/5路大幅加猛、中心保持
 	// gain = 1.232 - 0.686*|e| + 0.564*e²

@@ -405,6 +405,9 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
 #endif
+#if TEST_SEGMENT == 0 && !RADAR_SEGMENT_ENABLE
+#error "RACE BUILD GUARD(F28b): TEST_SEGMENT=0(比赛构型)必须 RADAR_SEGMENT_ENABLE=1——F28 备用场地关断禁止带进比赛固件"
+#endif
 #if TEST_SEGMENT == 1
 /* F24a(06-07晚 12-agent议会): SEG1 测试自停门守卫(逻辑见出口自停处);比赛构型(=0)零字节影响 */
 #ifndef SEG1_GUARD_MAX_LOST_TICKS
