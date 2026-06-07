@@ -231,7 +231,11 @@ float PositionPID_Calculate(PositionPID_Controller_t *controller, float current_
 	// Kd保持固定(值见PID_Init)——动态Kd对"直线微偏vs入弯"区分不可靠，改用误差变化率本身
 	// 微分项天然就是阻尼：慢漂(直线)de/dt小、快变(入弯)de/dt大，滤波后线性Kd已自适应
 	float d_raw = error - controller->last_error;
-	controller->d_filtered = 0.4f * d_raw + 0.6f * controller->d_filtered;
+	/* F20(06-07 10:02): α 0.4→0.2(τ 3.9→9ms)——Kd 550→700 实测乒乓无改善(用户"仍然
+	 * 很抖动"),根因=量化 D 是跳格脉冲(α0.4 下 140PWM 仅持续 ~8ms,电机机电时间常数
+	 * ~30ms 接不住);摊宽脉冲电机才吃得到,等效阻尼 ↑30~50%。这是量化 D 通道最后一档,
+	 * 再不够转 gyro 内环(gyro_kd,下方 238 行现成钩子,需先台架定符号)。 */
+	controller->d_filtered = 0.2f * d_raw + 0.8f * controller->d_filtered;
 	float d_term = controller->param.kd * controller->d_filtered;
 	float gyro_term = 0.0f;
 #if PID_GYRO_ENABLE
