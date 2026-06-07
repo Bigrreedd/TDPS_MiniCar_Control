@@ -290,7 +290,11 @@ static float    g_sm_stable_yaw0 = 0.0f; /* 稳线窗起点 yaw(rad) */
  *     中心≈箱中线偏 35cm),THRU 28cnt≈70cm(板深),REJOIN 40cnt≈100cm 余量。
  * 合规:决策与重捕全传感器驱动,盲走仅短段(禁预编程约束)。 */
 #ifndef RADAR_SEGMENT_ENABLE
-#define RADAR_SEGMENT_ENABLE   1
+#define RADAR_SEGMENT_ENABLE   0   /* F28(备用场地轮): 关——①场地无雷达箱,误武装→RD_QUERY
+                                    * 无应答→RD_FAIL 白停;②RD_ZONE_MIN_CNT=380 vs 圆区出口
+                                    * ≈371(注释自证"裕量薄"),备用场地矩形→圆区段还差±20cm
+                                    * (±8cnt)+编码器幻速±3~6,圆区尾部贴门误武装风险实在。
+                                    * ⚠回真实场地(雷达箱在位)必须改回 1。 */
 #endif
 #define FINISH_STOP_TICKS      1000u   /* 2s @2ms */
 #define RD_ZONE_MIN_CNT        380     /* sm锁存→箱前 ~989cm/2.47≈400;四圆出口≈371,裕量薄,P0a 后必校 */
