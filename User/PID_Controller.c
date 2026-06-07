@@ -372,7 +372,16 @@ void PID_Init(void)
     //   被控对象增益再次上移;08:51 带扇首跑直线复现"逐摆增长型发散"全指纹(pos 15→0/55
     //   全幅乒乓且幅值随 out 爬升递增→丢线冻结自旋90°→楔死),与 06-05 48→40 同病同药,
     //   降20%对冲;Kd 550 不动(Kp 降本身即增大阻尼比,且加Kd会放大±0.5台阶量化踢)。
-    PositionPID_Init(&g_position_pid, 32.0f, 0.0f, 700.0f, 0.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    /* F21(06-07 10:21 纯电池构型首轮): 启用 gyro 角速度内环 gyro_kd=-80——量化 D 通道
+     * 三连档(Kd550→700/α0.4→0.2)对乒乓收效有限,gz_rads 是唯一连续(500Hz 无量化)阻尼源。
+     * 符号推导(免台架定号,全链实测锁死): U 左转实测 yw=+176(本轮) + add_angle=∫gz_rads
+     * ×(+1.0)(it.c:107-111) ⇒ gz 左转为正;实测 corr>0=右转(pos=0 需左转时恒 pid_R>pid_L);
+     * 阻尼=左转动给右回正 ⇒ output 须随 gz 增 ⇒ 代码 output-=gyro_kd*gz ⇒ kd 取负。
+     * 量级: 摆动 1.2rad/s→96PWM 连续阻尼;U pivot 1.6rad/s→128PWM 反扭(corr 饱和 320+coast
+     * 裕度内,U 半径须复验,变宽先回 -50);gyro 零偏 ~0.03rad/s→2.4PWM 可忽略。
+     * 限幅 ±output_max×0.4(PC:242)既有;junction 冻结/深丢线(>125tick)期 corr 冻结,内环
+     * 同步失效(既有边界,F18a 已兜自旋)。 */
+    PositionPID_Init(&g_position_pid, 32.0f, 0.0f, 700.0f, -80.0f, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
