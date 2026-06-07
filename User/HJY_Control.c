@@ -93,6 +93,8 @@ static uint8_t  s_went = 0u;
 static uint8_t  s_creep_done = 0u;
 static int32_t  s_go_cnt_l = 0, s_go_cnt_r = 0;
 static uint32_t s_creep_deadline = 0u;
+/* HJY5b: 破粘一次性突降标志(每轮一次) */
+static uint8_t  s_broke_l = 0u, s_broke_r = 0u;
 /* HJY4c: 丢线保持方向防抖——瞬时分类照常驱动,但"丢线记忆"须同态连续 25 tick
  * 才更新;16:58 实测横穿线时右缘残影 1 帧把记忆从 L 改成 R3,反向旋 250°。 */
 static uint8_t  s_hold_st = (uint8_t)HJY_ST_STRAIGHT;
@@ -178,6 +180,8 @@ void HJY_ResetRun(void)
     s_st_prev = 255u;
     s_st_run  = 0u;
     s_prev_vt_l = s_prev_vt_r = 0.0f;
+    /* HJY5: 破粘标志同清 */
+    s_broke_l = s_broke_r = 0u;
     HJY_AnglePID_Reset();
     s_win_inited = 0u;
     g_hjy_state = (uint8_t)HJY_ST_STRAIGHT;
@@ -246,10 +250,13 @@ void HJY_Control_Update(void)
          * 右缘 1 帧残影把保持方向从 L 族改写成 R3,反向旋 250° 触安全网。
          * 超时停车仍由 main 主环 lose_time(375)兜底,本核不重复判停。 */
         st = (HJY_LineState_t)s_hold_st;
+        /* HJY5c: 盲走降档——L3/R3 速率(差速±16≈300°/s)扫线必过头(17:20 实测
+         * yw 71→166 一路旋过线触安全网);盲走只许 L2/R2 档,慢扫等线回视。 */
+        if (st == HJY_ST_L3)      st = HJY_ST_L2;
+        else if (st == HJY_ST_R3) st = HJY_ST_R2;
     }
     else
     {
-        g_hjy_state = (uint8_t)st;
         /* 防抖记忆:同态连续 HJY_ST_DEBOUNCE_TICKS(~50ms)才有资格当丢线锚 */
         if ((uint8_t)st == s_st_prev)
         {
@@ -262,6 +269,9 @@ void HJY_Control_Update(void)
         }
         if (s_st_run >= HJY_ST_DEBOUNCE_TICKS) s_hold_st = (uint8_t)st;
     }
+    /* HJY5: 遥测 st 改记"实际驱动态"(丢线时=降档后的记忆态)——17:20 出现过
+     * st=3 vt=12,32 表观矛盾(st 显瞬时残影,驱动用防抖记忆),统一成驱动态防误读 */
+    g_hjy_state = (uint8_t)st;
 
     base = k_base[st];
     diff = k_diff[st];
@@ -320,6 +330,39 @@ void HJY_Control_Update(void)
             vt_l = HJY_CREEP_SPEED;
             vt_r = HJY_CREEP_SPEED;
             HJY_AnglePID_Reset();
+            /* HJY5a/b: 破粘检测与突降都在 tick 级(2ms),不等 200ms 窗——
+             * 17:20 实测静摩擦阈(1170/1290@12.34V)≫动摩擦需求,窗级响应下
+             * 破粘瞬间 40+cnt/s 暴冲 30cm。死轮 tick 爬坡加速破粘;首计数
+             * 瞬间把积分一次性压回 FF−100,突奔掐在 2ms 内。 */
+            if (!s_broke_l)
+            {
+                if (left_encoder_cnt - s_go_cnt_l >= 1)
+                {
+                    s_broke_l = 1u;
+                    s_spd_l.last_output = HJY_LAUNCH_FF_L - HJY_BREAK_DROP_OFFSET;
+                }
+                else
+                {
+                    s_spd_l.last_output += HJY_CREEP_RAMP_PER_TICK;
+                    if (s_spd_l.last_output > 1500.0f) s_spd_l.last_output = 1500.0f;
+                }
+            }
+            if (!s_broke_r)
+            {
+                if (right_encoder_cnt - s_go_cnt_r >= 1)
+                {
+                    s_broke_r = 1u;
+                    s_spd_r.last_output = HJY_LAUNCH_FF_R - HJY_BREAK_DROP_OFFSET;
+                }
+                else
+                {
+                    s_spd_r.last_output += HJY_CREEP_RAMP_PER_TICK;
+                    if (s_spd_r.last_output > 1500.0f) s_spd_r.last_output = 1500.0f;
+                }
+            }
+            /* 爬行期 tick 级直驱:窗间也跟随积分(爬坡/突降即时入电机) */
+            g_hjy_pwm_l = (int16_t)s_spd_l.last_output;
+            g_hjy_pwm_r = (int16_t)s_spd_r.last_output;
         }
     }
     g_hjy_vt_l = (int16_t)vt_l;
