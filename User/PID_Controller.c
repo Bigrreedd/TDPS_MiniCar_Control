@@ -877,8 +877,13 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 否则交叉/T字宽黑会把 g_raw_abs_err 顶到~2.5+(过1.9)误触发内侧停转→车头窜向支线。 */
 		/* 阶梯②(06-06): sm 区深弯滞回提前 1.9/1.5→1.7/1.2(06-05 既定阶梯第②级)——
 		 * 交替 S 拐反应更早,减少过渡处线滑出视场;sm 限定,U 弯/常规弯滞回不变。 */
+		/* F39b(06-08 01:42-46 三组,F38 后 sm 实际车速 20~46cps): 高速 understeer 模式
+		 * (01:44 G2: corr 满幅 322 仍掰不弯,pos 冻 20 切线滑出 S① 1/4)——误差增长率∝v,
+		 * 1.7 咬合点在 40cps 下已晚半个车位。sm enter 1.7→1.5(pivot 提前),exit 1.2 不动
+		 * (滞回带 0.5→0.3,仍 > 量化抖幅 0.35 的工程余量边缘,留观颤振)。
+		 * 这是"占空比连升三级后 PID 链的配套刻度",非 S 配方回退。 */
 		{
-		float deep_enter = g_s_mode ? 1.7f : 1.9f;
+		float deep_enter = g_s_mode ? 1.5f : 1.9f;
 		float deep_exit  = g_s_mode ? 1.2f : 1.5f;
 		if (g_nav_override != NAV_OVERRIDE_NONE) {
 			g_deep_turn_mode = 0;   /* P2 覆盖:航向保持用温和差速,禁深弯 pivot(raw_err 是噪声) */
