@@ -218,7 +218,8 @@ static uint8_t  g_fan_step = 0u;
 #endif
 #define FAN_RACE_KICK_DUTY      150u     /* 仅走 KickDiag 专用入口(独立钳 150) */
 #define FAN_RACE_KICK_TICKS     100u     /* 200ms @ 2ms tick,kick 暴露上限不变 */
-#define FAN_RACE_HOLD_DUTY      50u      /* 定版保持档 = FAN_DUTY_ABS_CAP,经常规入口 */
+#define FAN_RACE_HOLD_DUTY      100u     /* G3: 50→100 升一档(=ABS_CAP,板级堵转全额定内),
+                                          * 台架温升+上图过测后锁死,再不动;不过测回 50 */
 static uint16_t g_fan_spot_ticks = 0u;   /* >0=kick/点动进行中,2ms tick 递减 */
 static uint8_t  g_fan_on = 0u;           /* G1: 风扇锁存运行态(G2 起 K1 自动置位,StopRun/K4/K2 清) */
 #define FAN_TELEM_VAL  g_fan_on
@@ -1630,7 +1631,7 @@ int main(void)
                     g_fan_on = 1u;
                     M3PWM_SetDutyCycleKickDiag(FAN_RACE_KICK_DUTY);
                     g_fan_spot_ticks = FAN_RACE_KICK_TICKS;  /* kick 相位 200ms,倒计时毕回落 50 保持 */
-                    OLED_ShowString(1, 1, "FAN ON 150>50   ");
+                    OLED_ShowString(1, 1, "FAN ON 150>100  ");
                 }
                 else if (g_fan_on && g_fan_spot_ticks == 0u)
                 {
