@@ -163,10 +163,11 @@ static float ClampMotorDuty(float duty)
  * 不对称 30 保持;T=14/帽 100/A1/A2 全不动。代价预期:S 巡线底速 14→~16,弯径略宽,留观;
  * 过冲征兆=S 弧外甩丢线 → 回 750/780 折中。 */
 #ifndef S_MODE_HOLD_DEADZONE_L
-#define S_MODE_HOLD_DEADZONE_L  847.0f   /* F35: 770×1.1(用户拍板+10%) | F33: 730→770 */
+#define S_MODE_HOLD_DEADZONE_L  932.0f   /* F38: 847×1.1(用户惯性论二次加注,sm 域定向;
+                                          * 凹凸点=弧间近直段判读修正后采纳) | F35:770→847 | F33:730→770 */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_R
-#define S_MODE_HOLD_DEADZONE_R  880.0f   /* F35: 800×1.1(用户拍板+10%) | F33: 760→800 */
+#define S_MODE_HOLD_DEADZONE_R  968.0f   /* F38: 880×1.1(同上,+10% 对称) | F35:800→880 | F33:760→800 */
 #endif
 /* F10(06-07 04:29 第三组实测): U 弯回归应验——F9 850/880 把非 sm 深弯外轮一并加热
  * (pivot 外轮 sent≈880+290=1170,03:30 清洁过 U 档为 800+pid≈1090):U 中段单帧翻边
