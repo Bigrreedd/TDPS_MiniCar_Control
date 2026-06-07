@@ -46,8 +46,15 @@ typedef enum
 #define HJY_BASE_SPEED_SLOW   18.0f   /* 大偏转/全黑基速 */
 #define HJY_PWM_MAX           1800.0f /* 单轮 PWM 上限(SAFE_MAX 2000 内留 200) */
 #define HJY_PWM_REV_MAX       400.0f  /* 反转钳位(允许轻刹,禁暴力倒转) */
-#define HJY_LAUNCH_FF         900.0f  /* 发车初值前馈(死区邻域,双轮同值=刻意
-                                       * 对称;置 0 即纯积分爬升纯净试验) */
+/* HJY3(16:46 地面首跑事故): 对称前馈 900,900→首窗跳 1100,1100,左电机先破死区
+ * 右轮未动→开局右甩→丢线左旋→|yaw|170 安全网停。两电机实测不对称(架空同速
+ * 右多吃 ~108PWM;LHX 旧核 START 870/990 同源),发车初值按轮分开——这是"初始
+ * 条件标定"非稳态死区补偿,起步后仍全动态闭环,不违反方案第三条。 */
+#define HJY_LAUNCH_FF_L       870.0f  /* 左轮发车前馈(=左电机实测起动邻域) */
+#define HJY_LAUNCH_FF_R       990.0f  /* 右轮发车前馈(=右电机实测起动邻域) */
+#define HJY_LAUNCH_HOLD_MS    1500u   /* HJY3(用户提议): K1 后静置窗——电机保持 0,
+                                       * 去手扰/等风机起转;GO 瞬间才锁航向基准+
+                                       * 开轮速窗+打前馈脉冲 */
 /* 速度环(左右独立,初值同,标定后允许分道扬镳) */
 #define HJY_SPD_KP            2.0f
 #define HJY_SPD_KI            14.0f

@@ -85,6 +85,9 @@ static int32_t  s_last_cnt_l = 0, s_last_cnt_r = 0;
 static int32_t  s_acc_l = 0, s_acc_r = 0;
 static uint32_t s_win_t0 = 0;
 static uint8_t  s_win_inited = 0u;
+/* HJY3: K1 静置窗——s_go_at 前电机保持 0;到点一次性打不对称前馈脉冲后进闭环 */
+static uint32_t s_go_at = 0u;
+static uint8_t  s_went = 0u;
 
 /* ============================================================ */
 /* 光路穷举分区:任意 7 位黑白组合 → 唯一状态。
@@ -150,10 +153,13 @@ void HJY_ResetRun(void)
 {
     SpeedPID_Reset(&s_spd_l);
     SpeedPID_Reset(&s_spd_r);
-    /* 发车前馈:把增量式速度环"上次输出"播种到死区邻域,等价一次性起步
-     * 前馈(双轮刻意同值,不继承 LHX 的 L/R 不对称死区);置 0 即纯积分爬升。 */
-    s_spd_l.last_output = HJY_LAUNCH_FF;
-    s_spd_r.last_output = HJY_LAUNCH_FF;
+    /* HJY3: 发车前馈按轮分开(870/990,实测电机起动邻域)。16:46 事故根因=
+     * 对称 900 种子在不对称电机上,首窗 1100,1100 左先动右不动→开局右甩。 */
+    s_spd_l.last_output = HJY_LAUNCH_FF_L;
+    s_spd_r.last_output = HJY_LAUNCH_FF_R;
+    /* HJY3: K1 静置窗计时起点 */
+    s_go_at = Millis_Get() + HJY_LAUNCH_HOLD_MS;
+    s_went  = 0u;
     HJY_AnglePID_Reset();
     s_win_inited = 0u;
     g_hjy_state = (uint8_t)HJY_ST_STRAIGHT;
@@ -187,6 +193,28 @@ void HJY_Control_Update(void)
         return;
     }
     Motor_Enable();
+
+    /* HJY3: K1 静置窗——电机压 0(车不动,人手撤离/风机起转/MPU 安定),
+     * 航向锁存与轮速窗一律延后到 GO 瞬间初始化;遥测可辨签名=vt 0,0 + fn=1。 */
+    if (!s_went)
+    {
+        if (Millis_Get() < s_go_at)
+        {
+            Motor_StopAll();
+            g_hjy_pwm_l = g_hjy_pwm_r = 0;
+            g_hjy_vt_l = g_hjy_vt_r = 0;
+            g_hjy_v_l = g_hjy_v_r = 0;
+            g_hjy_err_l = g_hjy_err_r = 0;
+            s_win_inited = 0u;
+            HJY_AnglePID_Reset();
+            return;
+        }
+        s_went = 1u;
+        /* GO 脉冲:首个速度窗闭合(~200ms)前电机就吃到各自前馈,起步即对称
+         * 破粘——替代旧"首窗 0→1100,1100 对称跳变"(16:46 右甩根因)。 */
+        g_hjy_pwm_l = (int16_t)HJY_LAUNCH_FF_L;
+        g_hjy_pwm_r = (int16_t)HJY_LAUNCH_FF_R;
+    }
 
     /* 1) 光路分区 */
     st = HJY_Classify(g_line_sensor_values);
