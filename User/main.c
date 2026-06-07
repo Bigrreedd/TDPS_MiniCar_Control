@@ -214,6 +214,23 @@ static uint16_t g_f10_deep_off_run = 0;   /* deep 退出连续 tick 计数 */
 #ifndef MOTOR_STALL_BOOST_SAFE_CAP
 #define MOTOR_STALL_BOOST_SAFE_CAP  100.0f
 #endif
+/* F31(06-07 深夜 气泡议会): 全图卡死看门狗——23:04-08 三跑实锤:线在视场卡死时(found=1,
+ * lost 恒 0)双 375/1s 丢线杀手永不计数,车无声全力推到人工 K2(比赛=C-2 无远程停挂科级)。
+ * 议会穷举:仅有的合法长双轮 0cps 场景=发车 grace(500ms)/FINISH 倒计时/NAV 覆盖(RD 刹停
+ * 与盲走自有 2~5s 相预算),全部排除后取 3s 触发=宁长勿误停(G1/G2 自然卡死实测 ~3s)。
+ * 纯 StopRun,不写任何 boost/死区/占空比 → 零红线。junction 冻结期(found 强制 1,第二
+ * 无声域)同被本看门狗覆盖。计数器自清(else 每 tick 清零),免入 K1/StopRun 清单。 */
+#ifndef STALL_WATCHDOG_ENABLE
+#define STALL_WATCHDOG_ENABLE       1       /* 默认开:纯停车兜底 */
+#endif
+#ifndef STALL_WD_CPS_THRESH
+#define STALL_WD_CPS_THRESH         2       /* 双轮 |v| 同时 < 此值视为卡死 */
+#endif
+#ifndef STALL_WD_TRIGGER_TICKS
+#define STALL_WD_TRIGGER_TICKS      1500u   /* 3.0s @ 2ms tick;若日后开逃生 boost(arm 1s+
+                                             * 预算 1s),3s 仍留 1s 余量不抢逃生窗 */
+#endif
+static uint16_t g_stall_wd_run = 0;         /* 双轮停滞连续 tick 计数(自清) */
 #if SINGLE_BOARD_LOCAL_DRIVE && !FAN_KICK_DIAG_ENABLE
 /* C1(06-06 用户批准): 风扇起转阶梯点动——K4 每按推进 20/35/50 档,点动 2s 自动归零;
  * K2 强停同时灭风扇。全程受 M3PWM 底层 FAN_DUTY_ABS_CAP=50 硬钳兜底(C0)。
@@ -1543,6 +1560,32 @@ int main(void)
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
             //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
             {
+#if STALL_WATCHDOG_ENABLE
+                /* F31: 全图卡死看门狗(机理/排除清单见宏定义处)。speed_* 此处已是本窗 cnt/s。 */
+                {
+                    uint8_t wd_both_dead =
+                        (speed_left  > -STALL_WD_CPS_THRESH && speed_left  < STALL_WD_CPS_THRESH &&
+                         speed_right > -STALL_WD_CPS_THRESH && speed_right < STALL_WD_CPS_THRESH) ? 1u : 0u;
+                    uint8_t wd_intentional =
+                        (g_launch_grace > 0u) || (g_finish_ticks > 0u) ||
+                        (PID_GetNavOverride() != NAV_OVERRIDE_NONE);   /* RD 刹停/盲走自有相预算 */
+                    if (is_racing && wd_both_dead && !wd_intentional)
+                    {
+                        if (g_stall_wd_run < 0xFFFFu) g_stall_wd_run++;
+                        if (g_stall_wd_run >= STALL_WD_TRIGGER_TICKS)
+                        {
+                            StopRun();
+                            RGB_SetColor(RGB_COLOR_R);
+                            OLED_ShowString(1, 1, "STALL WD STOP   ");
+                            g_stall_wd_run = 0;
+                        }
+                    }
+                    else
+                    {
+                        g_stall_wd_run = 0;   /* 任一轮在动/故意停车态/未发车:每 tick 自清 */
+                    }
+                }
+#endif
                 /* R3: 带滞回的死区档选择（替代旧单阈值 10cps 比较） */
                 if (g_dz_hold_l) { if (speed_left  < MOTOR_HOLD_EXIT_CPS)  g_dz_hold_l = 0; }
                 else             { if (speed_left  > MOTOR_HOLD_ENTER_CPS) g_dz_hold_l = 1; }
