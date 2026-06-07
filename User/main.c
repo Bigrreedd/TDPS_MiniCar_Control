@@ -17,6 +17,7 @@
 #include "Battery.h"
 #include "ABEncoder.h"
 #include "PID_Controller.h"
+#include "HJY_Control.h"    /* HJY 三环重构核(角度环+左右独立速度环),主开关在其头文件 */
 #include "Path.h"
 #include "Motor_ctr.h"
 #include "stm32f10x_it.h"
@@ -924,6 +925,9 @@ int main(void)
 #endif
     TelemetryScreen_Init();
     PID_Init();
+#if HJY_CORE_ENABLE
+    HJY_Init();             /* HJY 核:三套 PID(角度+左/右速度)与光路分区表初始化 */
+#endif
     Path_Init();
 
     (void)g_imu_init_ok;
@@ -1442,8 +1446,16 @@ int main(void)
                 }
             }
 
+#if HJY_CORE_ENABLE && !OPENLOOP_TEST_ENABLE
+            /* HJY 核:光路分区→角度环→左右独立速度环→PWM 直驱(无死区前馈级)。
+             * 丢线 375 自停由上方主环 lose_time 兜底;is_racing=0 时核内停车下电。
+             * 原 LHX 核整段编译旁路(含下方死区输出级),HJY_CORE_ENABLE=0 即还原;
+             * 开环测试(OPENLOOP)优先级最高,HJY 核让位防双写电机。 */
+            HJY_Control_Update();
+#else
             // 双环 PID 控制（is_racing=0 时内部自动停车并复位 g_motor_target=0）
             PID_Control_Update();
+#endif
 
 #if OPENLOOP_TEST_ENABLE
             // 开环测试：跳过 PID 输出，直接下发固定占空比，观察编码器原始响应。
@@ -1473,7 +1485,7 @@ int main(void)
                 Proto_SendMotorCmd(duty, duty, g_openloop_active);
 #endif
             }
-#else
+#elif !HJY_CORE_ENABLE
             // 下发电机指令到下板执行器（带符号占空比 + 使能）
             // 顺序：先对 PID 输出限幅(约束调节量) -> 加左右死区前馈(抬到电机能动区间)
             //      -> 总量再限到下板安全上限。这样 PID 的有效调节范围完整保留，死区只是平移。
@@ -1645,6 +1657,9 @@ int main(void)
                 is_racing = 1;
                 lose_time = 0;
                 BlackPoint_Finder_ResetLastPosition();
+#if HJY_CORE_ENABLE
+                HJY_ResetRun();             /* HJY 核:三套 PID/航向锁存/轮速窗全清+种发车前馈 */
+#endif
                 g_yaw_zero = add_angle;     /* 航向基准清零：U 弯判定从发车起算 */
                 g_u_turn_passed = 0;
                 g_jc_at_u = 0;              /* S1 基线同清 */
@@ -1704,6 +1719,9 @@ int main(void)
                 ESP32_ResetStartupHandshake();
 #endif
                 BlackPoint_Finder_ResetLastPosition();
+#if HJY_CORE_ENABLE
+                HJY_ResetRun();             /* K3 复位语义对称:HJY 核状态同清 */
+#endif
                 /* R4(06-05 审查): 复位语义补全——旧 K3 清 jc 不清 yaw/u/sm(半清不一致) */
                 g_yaw_zero = add_angle;
                 g_u_turn_passed = 0;
@@ -1779,6 +1797,27 @@ int main(void)
                 float dyaw_deg = (add_angle - g_yaw_zero) * 57.2957795f;
                 if (dyaw_deg > 9999.0f) dyaw_deg = 9999.0f;
                 else if (dyaw_deg < -9999.0f) dyaw_deg = -9999.0f;
+#if HJY_CORE_ENABLE
+                /* HJY 标定遥测(方案第四步"串口监采"):st=光路状态(0直行/1-3左小中大/
+                 * 4-6右小中大/7全黑/8全白) vt=左右目标cnt/s v=实测cnt/s pwm=左右输出
+                 * ang=角度环差速×10 ye=航向误差0.1° 其余字段与LHX口径一致;
+                 * S= 尾段及0x07帧路径沿用,小程序/SSCOM 采集方式不变。 */
+                int n = snprintf(dbg, sizeof(dbg),
+                    "HJY st=%d vt=%d,%d v=%d,%d pwm=%d,%d ang=%d ye=%d pos=%d lost=%d yw=%d u=%d fn=%d bv=%d el=%ld er=%ld",
+                    (int)g_hjy_state,
+                    (int)g_hjy_vt_l, (int)g_hjy_vt_r,
+                    (int)g_hjy_v_l, (int)g_hjy_v_r,
+                    (int)g_hjy_pwm_l, (int)g_hjy_pwm_r,
+                    (int)g_hjy_ang_corr,
+                    (int)g_hjy_yaw_err_d10,
+                    (int)position_get,
+                    (int)lose_time,
+                    (int)dyaw_deg,
+                    (int)g_u_turn_passed,
+                    (int)FAN_TELEM_VAL,
+                    (int)(BDI_V * 10.0f),
+                    (long)g_link_cnt_l, (long)g_link_cnt_r);
+#else
                 int n = snprintf(dbg, sizeof(dbg),
                     /* F1(06-06): 加 bv=电池电压×10(整数,如124=12.4V)——19:55 无串口轮 S 弯复挂,
                      * 嫌疑人之一=3小时跑量电池压降(死区/floor 满电整定,battery-debt 老账)。
@@ -1817,6 +1856,7 @@ int main(void)
                     (int)FAN_TELEM_VAL,                  /* G2: 风机锁存态 */
                     (int)(BDI_V * 10.0f),              /* F1: 电池电压×10(压降排查) */
                     (long)g_link_cnt_l, (long)g_link_cnt_r);  /* 下板绝对累计计数(编码器CPR标定用) */
+#endif /* HJY_CORE_ENABLE 遥测行分叉 */
                 /* S= 尾段按 SENSOR_COUNT 循环拼接：6/7 路构建通用（修复旧版7路只发6路） */
                 if (n > 0 && n < (int)sizeof(dbg))
                 {

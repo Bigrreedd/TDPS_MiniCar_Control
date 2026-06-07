@@ -826,6 +826,16 @@
               <FilePath>.\User\PID_Controller.c</FilePath>
             </File>
             <File>
+              <FileName>HJY_Control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\User\HJY_Control.c</FilePath>
+            </File>
+            <File>
+              <FileName>HJY_Control.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\User\HJY_Control.h</FilePath>
+            </File>
+            <File>
               <FileName>PID_Controller.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\User\PID_Controller.h</FilePath>
