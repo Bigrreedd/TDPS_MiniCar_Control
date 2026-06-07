@@ -494,6 +494,15 @@ static uint8_t g_seed_rolling = 0;  /* F32b: 双轮均≥6cps 一次后置 1,发
 #if TEST_SEGMENT == 0 && !FAN_AUTO_ON_RACE
 #error "RACE BUILD GUARD(F30a): TEST_SEGMENT=0(比赛构型)必须 FAN_AUTO_ON_RACE=1——风机常开构型(下压力)是比赛定版,备用场地关断禁止带进比赛固件"
 #endif
+/* F37(06-08 用户拍板"先把lora对巡线的影响关闭,容易被影响"): 0=拱门 0x30 事件遥测只读
+ * (ar 照报链路监测不断),不释放 sm/不武装 FINISH——备用场地拱门摆位在 S② 之前,释放即
+ * 提速 25 必甩 S②(00:58 G1 实证);sm 释放走 P9 后备门(rs=3)/T3 强释。⚠回真实场地改回 1。 */
+#ifndef ARCH_CONTROL_ENABLE
+#define ARCH_CONTROL_ENABLE 0
+#endif
+#if TEST_SEGMENT == 0 && !ARCH_CONTROL_ENABLE
+#error "RACE BUILD GUARD(F37): TEST_SEGMENT=0(比赛构型)必须 ARCH_CONTROL_ENABLE=1——拱门主锚释放+终点判定都在 0x30 消费块,备用场地只读降级禁止带进比赛固件"
+#endif
 #if TEST_SEGMENT == 1
 /* F24a(06-07晚 12-agent议会): SEG1 测试自停门守卫(逻辑见出口自停处);比赛构型(=0)零字节影响 */
 #ifndef SEG1_GUARD_MAX_LOST_TICKS
@@ -1285,7 +1294,12 @@ int main(void)
 
             /* ===== 0x30 拱门事件统一消费(P9 主锚 / P1 终点) =====
              * 每 tick 至多取一次;冷却窗(3s)吸收队友同事件连发(2~3帧,≥50ms 间隔)——
-             * 防 sm 释放后的残帧被终点逻辑误食(空 payload 时 id 无法区分两拱门)。 */
+             * 防 sm 释放后的残帧被终点逻辑误食(空 payload 时 id 无法区分两拱门)。
+             * F37(06-08 用户拍板"先把lora对巡线的影响关闭,容易被影响"): ARCH_CONTROL_ENABLE=0
+             * 时本块降级为遥测只读——事件照取照记 ar(链路监测不断),但不释放 sm/不武装
+             * FINISH。备用场地拱门摆位在 S② 之前,释放即提速 25 必甩 S②(00:58 G1 实证)。
+             * sm 释放改走 P9 后备门(rs=3,S 段后直线自然放行,01:04 之前多轮已验活)/T3 强释。
+             * ⚠回真实场地必须改回 1(主锚释放+终点判定都在此块),比赛护栏 #error 兜底。 */
             {
                 uint8_t arch_id = 0;
                 uint8_t arch_evt = ESP32_GetArchPassed(&arch_id);
@@ -1293,6 +1307,7 @@ int main(void)
                 if (arch_evt && is_racing)
                 {
                     g_last_arch_id = arch_id;
+#if ARCH_CONTROL_ENABLE
                     /* R5(06-07 评审): S② 域(g_s2_active)对释放支路关闭——此时已过拱门2.1,
                      * 任何拱门事件只可能是拱门2.2,落到下方终点支路(id=2 或空payload+done)。 */
                     if (g_s_mode && arch_id <= 1u && !g_s2_active)
@@ -1312,6 +1327,7 @@ int main(void)
                         g_arch_cool = 1500u;
                         OLED_ShowString(1, 1, "FINISH IN 2S    ");
                     }
+#endif /* ARCH_CONTROL_ENABLE */
                 }
             }
 
