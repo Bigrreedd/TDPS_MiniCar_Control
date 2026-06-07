@@ -312,7 +312,15 @@ float BlackPoint_Finder_Search(volatile uint16_t *adc_values, BlackPointResult_t
 	 * 6路构建 ≡5(83%,旧行为逐位不变)；7路=6(86%)。动机:7路下 5/7=71%，深弯外侧 5 连管
 	 * 压线即误判路口强制走直(枚举实证 {0..4}/{1..5}/{2..6} 三个连续5掩码)，重蹈U弯冲出死因；
 	 * 真T/十字近满覆盖(6~7管)仍必中。jc 深弯误+1 同步消失。上路第15轮必验项。 */
-	uint8_t junction = ((black_count >= (uint8_t)(SENSOR_COUNT - 1u)) || ((span >= 5u) && (run_count == 1u))) && (black_count < SENSOR_COUNT);
+	/* F44(06-08 方块区首测三跑实证,3独立分析师): 散布型宽黑补判——`black_count≥5 且 run_count≥2`
+	 * = 垂直交叉/方块横边骑斜入(质心被拆成两段算花,如 S=1365,0,4095,1365,0,0,0=6黑两段,pos跳5/40)。
+	 * 旧判据只认"单段宽黑(6黑/span5单段)",这类散布交叉漏网→质心垃圾→乱打舵脱轨(G1左/G3右随机)。
+	 * 深弯外侧5连黑=单段(run_count==1)不触发,U腿双段但 black_count 仅2~4(<5)不触发——既有防误触行为不变。
+	 * 红线安全:只决定"宽黑交叉时冻结直穿",不写死转向方向(方向仍由质心,红线b)。 */
+	uint8_t junction = ((black_count >= (uint8_t)(SENSOR_COUNT - 1u))
+	                    || ((span >= 5u) && (run_count == 1u))
+	                    || ((black_count >= 5u) && (run_count >= 2u)))
+	                   && (black_count < SENSOR_COUNT);
 	JunctionPassUpdate(junction);   /* 穿越计数用未截断条件：超时长路口仍只计1次 */
 
 	if(junction && g_junction_ticks < JUNCTION_FREEZE_MAX_TICKS)
