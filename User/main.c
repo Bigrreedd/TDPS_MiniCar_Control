@@ -376,7 +376,8 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
  * OLED 开机/发车常显 SEG-TEST n 防误烧。 */
 #ifndef TEST_SEGMENT
-#define TEST_SEGMENT 0
+#define TEST_SEGMENT 1   /* 09:5X 用户拍板:一关一关过,先专测段1(START→U出口);
+                          * 过关后推进 2,3,...;比赛/全图回 0 */
 #endif
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
