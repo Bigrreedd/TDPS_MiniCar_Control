@@ -383,8 +383,14 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
  * OLED 开机/发车常显 SEG-TEST n 防误烧。 */
 #ifndef TEST_SEGMENT
-#define TEST_SEGMENT 1   /* 09:5X 用户拍板:一关一关过,先专测段1(START→U出口);
-                          * 过关后推进 2,3,...;比赛/全图回 0 */
+#define TEST_SEGMENT 2   /* F26c(19:5X 用户拍板"把第一二区域合起来测"): 段1已两连过
+                          * (19:42 yw=159 / 19:44 yw=174 真U完成),推进段2出口门;
+                          * 配 SEGTEST_SEED_DISABLE=1 = 从起跑线自然链连跑段1+段2,
+                          * S①完成(sm_done)自停。比赛/全图回 0。 */
+#endif
+#ifndef SEGTEST_SEED_DISABLE
+#define SEGTEST_SEED_DISABLE 1  /* F26c: 1=K1不播种任何锁存,u/sm 全链自然触发(合段连测,
+                                 * 从起跑线摆位);0=原语义(摆上段出口,播种前段锁存单测本段)。 */
 #endif
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
@@ -616,6 +622,9 @@ static void StopRun(void)
  * 段6 的 S②re-arm 逐行镜像 R5 边沿动作(main RD_REJOIN 重捕分支)。 */
 static void SegTest_SeedOnStart(void)
 {
+#if SEGTEST_SEED_DISABLE
+    return;   /* F26c: 合段连测——不播种,从 START 起 u/sm/rd 全链自然触发,只保留本段出口自停 */
+#endif
 #if TEST_SEGMENT >= 2
     int32_t avg = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
     g_u_turn_passed = 1;            /* U 段视为已完成(PID 经 extern 自动切 POST_U 速度档) */

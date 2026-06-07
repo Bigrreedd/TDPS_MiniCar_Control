@@ -476,6 +476,7 @@ static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈�
 #ifndef DEEP_BLIND_COAST_LOST_TICKS
 #define DEEP_BLIND_COAST_LOST_TICKS 50u   /* 100ms @ 500Hz */
 #endif
+static uint8_t g_blind_reacq_pending = 0; /* F26a: 深陷盲走episode标记——重捕首帧 D 软启动 */
 #ifndef CORR_SLEW_PER_TICK
 #define CORR_SLEW_PER_TICK 999.0f /* F23: 999=关断(corr∈±320,单tick最大Δ640<999 永不钳)。
                                    * F22c 原值 15.0f:10:59/11:00 两轮实测满幅乒乓如旧(0↔60 对穿,
@@ -581,11 +582,21 @@ void PID_Control_Update(void)
 	     * 自己的分支不进此路;冻在正中(raw_err≈0,全黑改判类)不承诺保持直行;375 自停
 	     * 兜底不变;重见线即走 F18a 去抖解除,回正常位置环。 */
 	    if (!result_BlackPoint.found && g_line_lost_ticks > 125u &&
+	        result_BlackPoint.black_count == 0u &&
 	        !result_BlackPoint.is_junction && !g_s_mode &&
 	        g_nav_override == NAV_OVERRIDE_NONE) {
+		/* F26b(红队4b): 加 black_count==0 守卫——只对"全白盲"(线甩出视场=真弯)承诺;
+		 * "全黑盲"(C4-blind,方块阵/全黑区/压宽黑)保持旧直穿语义,不许 pivot 拐进黑区。 */
 		float blind_err = current_position - g_position_pid.param.target_position;
 		if (blind_err > 0.05f)       current_position = g_position_pid.param.target_position + 3.0f;
 		else if (blind_err < -0.05f) current_position = g_position_pid.param.target_position - 3.0f;
+	    }
+	    /* F26a: 标记深陷盲走episode——重捕首帧做 R5 同款 D 软启动。19:44:22 实锤:
+	     * pid=252,33(pos=20 应左修却打右满舵)=盲走期 d_filtered 残值反向踢,刚捞到的
+	     * 线被当帧甩掉 → U 弯"震荡卡顿"(盲转-捞线-踢丢-再盲转循环)的根因。 */
+	    if (!result_BlackPoint.found && g_deep_turn_mode &&
+	        g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS) {
+		g_blind_reacq_pending = 1u;
 	    }
 	// 误差增益曲线（二次型，三点定标）：0/5路大幅加猛、中心保持
 	// gain = 1.232 - 0.686*|e| + 0.564*e²
@@ -677,6 +688,13 @@ void PID_Control_Update(void)
                 g_a2_episode_cool = 250u;   /* H2': 开 500ms 跨段窗口(乒乓重锁不重置预算) */
             }
             s_prev_a2hold = 0;
+        }
+        /* F26a: 盲走episode重捕首帧 D 软启动(R5 同款语义):对齐 last_error+清 d_filtered,
+         * 消盲走期残值的反向 D 踢;P 项保留(重捕质心的真实修正不动)。 */
+        if (g_blind_reacq_pending && result_BlackPoint.found) {
+            g_position_pid.last_error = current_position - g_position_pid.param.target_position;
+            g_position_pid.d_filtered = 0.0f;
+            g_blind_reacq_pending = 0u;
         }
         // 2. 位置环计算（输出偏差值）
         position_correction = PositionPID_Calculate(&g_position_pid, current_position);

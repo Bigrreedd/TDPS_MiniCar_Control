@@ -1,0 +1,69 @@
+# 串口原始归档 2026-06-07 19:42/19:44 两组(用户微信粘贴,全量无删节)
+# 测试输入固件: 34dbafd (F25) TEST_SEGMENT=1 段1专测
+# 硬件: bv=107~110(实际≈12.2~12.5V); 风机fn=1; 练习场
+# 用户描述: "u弯感觉不是很顺，有点震荡卡顿"
+# 判读: 🏁段1两连过(G1 yw=159 / G2 yw=174,真左U完成,u=1自停,F24a守卫放行均在见线时刻);
+#       直线保持痊愈(pos 5~35,lost=0,yw±6);F25a生效(lost=64即coast,对照F24的600ms爬行);
+#       卡顿根因实锤=重捕D踢:19:44:22 pid=252,33(pos=20应左修却右满舵)=盲走期d_filtered残值,
+#       刚捞线即被甩→盲转-捞线-踢丢循环;F25b未参与(U区lost峰值64<125,bursts均被自然重捕);
+#       两组停车后yw漂移+S全黑=人手拿车。19:42:42全黑单帧(jc 0→1)=起跑线/场地黑标,直线无扰通过。
+
+===== 第一组 (19:42:38起) =====
+[19:42:38] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[19:42:38] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[19:42:38] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=108 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[19:42:39] L=0 R=0 T=28 out=0 pid=70,70 sent=1024,1144 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[19:42:39] L=3 R=3 T=28 out=70 pid=52,87 sent=1022,1177 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=4 er=5 S=4095,4095,0,0,4095,4095,4095
+[19:42:39] L=26 R=26 T=28 out=70 pid=20,282 sent=870,1222 pos=15 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=14 er=14 S=4095,0,0,2730,4095,4095,4095
+[19:42:40] L=30 R=33 T=28 out=76 pid=58,93 sent=908,1033 pos=25 lost=0 deep=0 junc=0 jc=0 yw=1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=24 er=24 S=4095,4095,0,0,4095,4095,4095
+[19:42:40] L=33 R=30 T=28 out=78 pid=60,95 sent=910,1035 pos=25 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=32 er=33 S=4095,4095,0,0,4095,4095,4095
+[19:42:40] L=30 R=30 T=28 out=78 pid=28,159 sent=878,1099 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=41 er=41 S=4095,0,0,4095,4095,4095,4095
+[19:42:40] L=26 R=26 T=28 out=84 pid=34,159 sent=884,1099 pos=15 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=50 er=50 S=4095,0,0,4095,4095,4095,4095
+[19:42:41] L=33 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=60 er=60 S=4095,0,0,0,4095,4095,4095
+[19:42:41] L=30 R=33 T=28 out=74 pid=37,112 sent=887,1052 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=69 er=69 S=4095,0,0,0,4095,4095,4095
+[19:42:41] L=29 R=26 T=28 out=79 pid=42,117 sent=892,1057 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=77 er=77 S=4095,0,0,0,4095,4095,4095
+[19:42:42] L=27 R=27 T=28 out=78 pid=64,92 sent=914,1032 pos=25 lost=5 deep=0 junc=0 jc=1 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=86 er=86 S=0,0,0,0,0,0,0
+[19:42:42] L=30 R=30 T=28 out=72 pid=20,284 sent=790,1084 pos=5 lost=0 deep=1 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=96 er=96 S=0,0,4095,4095,4095,4095,4095
+[19:42:42] L=29 R=32 T=28 out=72 pid=34,110 sent=884,1050 pos=20 lost=0 deep=0 junc=0 jc=1 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=104 er=104 S=4095,0,0,0,4095,4095,4095
+[19:42:43] L=30 R=26 T=28 out=76 pid=38,113 sent=888,1053 pos=20 lost=0 deep=0 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=113 er=113 S=4095,0,0,0,4095,4095,4095
+[19:42:43] L=30 R=30 T=28 out=70 pid=32,108 sent=882,1048 pos=20 lost=0 deep=0 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=122 er=122 S=4095,0,0,0,4095,4095,4095
+[19:42:43] L=33 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=132 er=132 S=4095,0,0,0,4095,4095,4095
+[19:42:43] L=30 R=33 T=28 out=72 pid=34,109 sent=884,1049 pos=20 lost=0 deep=0 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=141 er=141 S=4095,0,0,0,4095,4095,4095
+[19:42:44] L=30 R=26 T=28 out=75 pid=38,113 sent=888,1053 pos=20 lost=0 deep=0 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=150 er=150 S=4095,0,0,0,4095,4095,4095
+[19:42:44] L=33 R=33 T=28 out=70 pid=20,282 sent=790,1082 pos=5 lost=0 deep=1 junc=0 jc=1 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=160 er=160 S=0,0,4095,4095,4095,4095,4095
+[19:42:44] L=30 R=30 T=22 out=76 pid=0,283 sent=0,1083 pos=5 lost=64 deep=1 junc=0 jc=1 yw=32 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=166 er=169 S=4095,4095,4095,4095,4095,4095,4095
+[19:42:45] L=6 R=26 T=28 out=86 pid=83,89 sent=853,889 pos=25 lost=0 deep=0 junc=0 jc=1 yw=66 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=168 er=176 S=4095,4095,0,0,4095,4095,4095
+[19:42:45] L=13 R=20 T=28 out=95 pid=20,308 sent=790,1108 pos=5 lost=0 deep=1 junc=0 jc=1 yw=64 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=175 er=182 S=0,0,4095,4095,4095,4095,4095
+[19:42:45] L=26 R=26 T=22 out=79 pid=0,286 sent=0,1086 pos=5 lost=64 deep=1 junc=0 jc=1 yw=94 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=182 er=192 S=4095,4095,4095,4095,4095,4095,4095
+[19:42:46] L=16 R=33 T=28 out=78 pid=20,291 sent=790,1091 pos=5 lost=0 deep=1 junc=0 jc=1 yw=148 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=183 er=200 S=0,0,4095,4095,4095,4095,4095
+[19:42:46] L=6 R=23 T=0 out=0 pid=0,0 sent=0,0 pos=60 lost=0 deep=0 junc=0 jc=1 yw=159 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=110 el=185 er=205 S=4095,4095,4095,4095,4095,4095,0
+[19:42:46~53 停车后帧略——yw 159保持,19:42:49起S全黑+yw 162→271=人手拿车,完整帧在用户消息原文]
+
+===== 第二组 (19:44:15起) =====
+[19:44:15] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[19:44:16] L=0 R=0 T=28 out=0 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=1 er=0 S=4095,4095,4095,0,0,4095,4095
+[19:44:17] L=9 R=9 T=28 out=70 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=8 er=7 S=4095,4095,4095,0,0,4095,4095
+[19:44:17] L=36 R=29 T=28 out=70 pid=20,282 sent=790,1082 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-6 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=20 er=17 S=0,0,4095,4095,4095,4095,4095
+[19:44:17] L=33 R=36 T=28 out=79 pid=20,292 sent=790,1092 pos=5 lost=0 deep=1 junc=0 jc=0 yw=5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=28 er=28 S=0,0,4095,4095,4095,4095,4095
+[19:44:18] L=26 R=30 T=28 out=90 pid=107,72 sent=957,1012 pos=35 lost=0 deep=0 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=36 er=36 S=4095,4095,4095,0,0,4095,4095
+[19:44:18] L=26 R=23 T=28 out=92 pid=110,75 sent=960,1015 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=44 er=43 S=4095,4095,4095,0,0,4095,4095
+[19:44:18] L=30 R=26 T=28 out=85 pid=20,297 sent=790,1097 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-6 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=55 er=52 S=0,0,4095,4095,4095,4095,4095
+[19:44:19] L=33 R=33 T=28 out=77 pid=20,290 sent=790,1090 pos=5 lost=0 deep=1 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=63 er=62 S=0,0,4095,4095,4095,4095,4095
+[19:44:19] L=26 R=30 T=28 out=88 pid=105,70 sent=955,1010 pos=35 lost=0 deep=0 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=71 er=71 S=4095,4095,4095,0,0,4095,4095
+[19:44:19] L=26 R=26 T=28 out=88 pid=71,106 sent=921,1046 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=80 er=79 S=4095,4095,0,0,4095,4095,4095
+[19:44:19] L=33 R=30 T=28 out=77 pid=20,290 sent=790,1090 pos=5 lost=0 deep=1 junc=0 jc=1 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=90 er=88 S=0,0,4095,4095,4095,4095,0
+[19:44:20] L=30 R=30 T=28 out=82 pid=20,294 sent=790,1094 pos=5 lost=0 deep=1 junc=0 jc=1 yw=5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=97 er=96 S=0,0,4095,4095,4095,4095,4095
+[19:44:20] L=23 R=26 T=28 out=91 pid=108,73 sent=958,1013 pos=35 lost=0 deep=0 junc=0 jc=1 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=105 er=104 S=4095,4095,4095,0,0,4095,4095
+[19:44:20] L=26 R=26 T=28 out=86 pid=61,111 sent=911,1051 pos=25 lost=0 deep=0 junc=0 jc=1 yw=-5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=115 er=113 S=4095,4095,0,0,4095,4095,4095
+[19:44:21] L=36 R=30 T=28 out=74 pid=20,287 sent=790,1087 pos=5 lost=0 deep=1 junc=0 jc=1 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=124 er=123 S=0,0,4095,4095,4095,4095,4095
+[19:44:21] L=30 R=36 T=28 out=76 pid=26,151 sent=876,1091 pos=15 lost=0 deep=0 junc=0 jc=1 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=133 er=132 S=4095,0,0,4095,4095,4095,4095
+[19:44:21] L=26 R=26 T=28 out=87 pid=49,125 sent=899,1065 pos=20 lost=0 deep=0 junc=0 jc=1 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=143 er=141 S=4095,1365,0,0,4095,4095,4095
+[19:44:22] L=33 R=33 T=28 out=70 pid=70,70 sent=920,1010 pos=30 lost=0 deep=0 junc=0 jc=1 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=152 er=151 S=4095,4095,0,0,0,4095,4095
+[19:44:22] L=30 R=30 T=28 out=77 pid=20,290 sent=790,1090 pos=5 lost=0 deep=1 junc=0 jc=1 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=161 er=160 S=0,0,4095,4095,4095,4095,4095
+[19:44:22] L=30 R=30 T=22 out=74 pid=0,281 sent=0,1081 pos=5 lost=64 deep=1 junc=0 jc=1 yw=26 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=168 er=168 S=4095,4095,4095,4095,4095,4095,4095
+[19:44:22] L=10 R=26 T=28 out=83 pid=252,33 sent=1022,833 pos=20 lost=0 deep=0 junc=0 jc=1 yw=68 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=169 er=176 S=4095,0,0,1365,4095,4095,4095
+[19:44:23] L=13 R=23 T=28 out=93 pid=20,306 sent=790,1106 pos=5 lost=0 deep=1 junc=0 jc=1 yw=61 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=177 er=183 S=0,0,4095,4095,4095,4095,4095
+[19:44:23] L=26 R=26 T=22 out=79 pid=0,286 sent=0,1086 pos=5 lost=64 deep=1 junc=0 jc=1 yw=90 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=184 er=192 S=4095,4095,4095,4095,4095,4095,4095
+[19:44:23] L=16 R=30 T=28 out=80 pid=0,292 sent=0,1092 pos=5 lost=0 deep=1 junc=0 jc=1 yw=153 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=185 er=201 S=0,0,4095,4095,4095,4095,4095
+[19:44:24] L=0 R=26 T=0 out=0 pid=0,0 sent=0,0 pos=60 lost=0 deep=0 junc=0 jc=1 yw=174 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=108 el=185 er=205 S=4095,4095,4095,4095,4095,4095,4095
+[19:44:24~28 停车后帧略——yw 174保持,19:44:27起S全黑+pos跳变=人手拿车,完整帧在用户消息原文]
