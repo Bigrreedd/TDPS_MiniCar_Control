@@ -86,10 +86,10 @@ static float ClampMotorDuty(float duty)
  * 仍拉不动,直到差速尖峰 1284 才破粘。+50 是缓解;若再现 >1s 双轮停转,下一级=停转踢腿逻辑(待批)。
  * 不对称 120 保持。 */
 #ifndef MOTOR_START_DEADZONE_L
-#define MOTOR_START_DEADZONE_L  870.0f
+#define MOTOR_START_DEADZONE_L  957.0f   /* F35: 870×1.1(用户拍板"占空比加当前基础上的10%,必须加") */
 #endif
 #ifndef MOTOR_START_DEADZONE_R
-#define MOTOR_START_DEADZONE_R  990.0f
+#define MOTOR_START_DEADZONE_R  1089.0f  /* F35: 990×1.1(同上) */
 #endif
 /* HOLD 760/880→640/760(06-05 第10轮): 旧值标定于亏电电池，满电下该前馈自身
  * 即推车到~38cps，速度环(floor=70)只能上行无法下调，T=20物理不可达。
@@ -140,7 +140,7 @@ static float ClampMotorDuty(float duty)
  * 协议 HOLD 对称上抬(+30:120 档吸力≈100 档预估×1.44),不对称 90(F16b)不动。
  * 看护(上方 F9 警告同源):若直线出现"out 钉 70 地板 + L/R>28 慢蛇摆"=自驱超 T,回退本档。 */
 #ifndef MOTOR_HOLD_DEADZONE_L
-#define MOTOR_HOLD_DEADZONE_L   850.0f   /* F18b: F17b(+30)回退——其自带回退条款命中:
+#define MOTOR_HOLD_DEADZONE_L   935.0f   /* F35: 850×1.1(用户拍板+10%) | F18b: F17b(+30)回退——其自带回退条款命中:
                                           * 09:16 盲走帧 L/R 33~36cps > T=28/22 且 out 沿
                                           * 地板下行 = F9"自驱超 T"征兆实锤(带扇 880+floor70
                                           * =950 PWM 自驱 ≈33cps,速度环压不下来→直线蛇摆助燃) */
@@ -154,7 +154,7 @@ static float ClampMotorDuty(float duty)
  * 半步 +60: 880→940(不对称 30→90);预期 pos 稳态 15→约 22~28。
  * 过补偿征兆=pos 坐 >35(06-05 第11轮 +120 过补偿同症)→回 910 折中。 */
 #ifndef MOTOR_HOLD_DEADZONE_R
-#define MOTOR_HOLD_DEADZONE_R   940.0f   /* F18b: 与 L 同步回退,不对称 90(F16b)不动 */
+#define MOTOR_HOLD_DEADZONE_R   1034.0f  /* F35: 940×1.1(用户拍板+10%) | F18b: 与 L 同步回退 */
 #endif
 /* F33(06-08 00:07-14 三组,用户拍板"你先只加占空比,试试情况,因为之前都是惯性不够被卡住"):
  * S 配方冻结解除(冻结方=用户,拍板生效)。730/760 在褶皱备用场地三轮全卡:卡点 sent 钉
@@ -163,10 +163,10 @@ static float ClampMotorDuty(float duty)
  * 不对称 30 保持;T=14/帽 100/A1/A2 全不动。代价预期:S 巡线底速 14→~16,弯径略宽,留观;
  * 过冲征兆=S 弧外甩丢线 → 回 750/780 折中。 */
 #ifndef S_MODE_HOLD_DEADZONE_L
-#define S_MODE_HOLD_DEADZONE_L  770.0f   /* F33: 730→770(用户拍板加占空比) */
+#define S_MODE_HOLD_DEADZONE_L  847.0f   /* F35: 770×1.1(用户拍板+10%) | F33: 730→770 */
 #endif
 #ifndef S_MODE_HOLD_DEADZONE_R
-#define S_MODE_HOLD_DEADZONE_R  800.0f   /* F33: 760→800(同上,+40 对称) */
+#define S_MODE_HOLD_DEADZONE_R  880.0f   /* F35: 800×1.1(用户拍板+10%) | F33: 760→800 */
 #endif
 /* F10(06-07 04:29 第三组实测): U 弯回归应验——F9 850/880 把非 sm 深弯外轮一并加热
  * (pivot 外轮 sent≈880+290=1170,03:30 清洁过 U 档为 800+pid≈1090):U 中段单帧翻边
@@ -184,10 +184,10 @@ static float ClampMotorDuty(float duty)
  * 本底座回 770 对齐 03:30 验证锚:爬行只剩 coast 资格期前 100ms,底座差 40 影响可忽略;
  * 右深弯外轮(L 侧)扭矩回满。 */
 #ifndef U_DEEP_HOLD_DEADZONE_L
-#define U_DEEP_HOLD_DEADZONE_L  770.0f
+#define U_DEEP_HOLD_DEADZONE_L  847.0f   /* F35: 770×1.1(用户拍板+10%) */
 #endif
 #ifndef U_DEEP_HOLD_DEADZONE_R
-#define U_DEEP_HOLD_DEADZONE_R  800.0f
+#define U_DEEP_HOLD_DEADZONE_R  880.0f   /* F35: 800×1.1(用户拍板+10%) */
 #endif
 #ifndef MOTOR_HOLD_SPEED_CPS
 #define MOTOR_HOLD_SPEED_CPS    10
