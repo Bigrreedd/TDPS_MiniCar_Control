@@ -410,7 +410,13 @@ void PID_Init(void)
      * 披露窗内,且有 F9"太慢一直卡住"史——亏电下照搬=赌卡滞)。 */
     /* G1(06-07 晚): gyro_kd 改由 PID_GYRO_KD_INIT 跟随编译门(PC:头部)——门=0 时仍为
      * 0.0f(F23/F24 字节级等价),门=1 时 -80;不再出现"死字段写实值"的 F21 式误导。 */
-    PositionPID_Init(&g_position_pid, 40.0f, 0.0f, 550.0f, PID_GYRO_KD_INIT, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f);
+    /* R4备码(06-07 晚议会): 中线偏置宏——直线稳态质心压 S2/S3(偏左1~1.5格,右弱108PWM+
+     * Ki=0 常驻P误差),吃左弯裕量。默认 0.0f=字节等价;R4 单变量轮置 -0.15f 左右试探,
+     * 验收=直线 pos 稳态回 28~30。偏置是改循迹目标非写死方向(红线b合规但敏感,故默认关)。 */
+#ifndef PID_CENTER_TARGET_BIAS
+#define PID_CENTER_TARGET_BIAS 0.0f
+#endif
+    PositionPID_Init(&g_position_pid, 40.0f, 0.0f, 550.0f, PID_GYRO_KD_INIT, 9000.0f, -9000.0f, (float)(SENSOR_COUNT - 1u) / 2.0f + PID_CENTER_TARGET_BIAS);
     g_position_pid.param.integral_max = 300.0f;  // 积分限幅降低
 }
 extern volatile uint8_t is_racing;
@@ -515,6 +521,7 @@ void PID_Control_Update(void)
 			PositionPID_Reset(&g_position_pid);
 			g_deep_turn_mode = 0;   /* 停车清深弯模式,避免重启残留 */
 			g_deep_hold_ticks = 0;  /* F16 coast 资格计数同清(F11 教训:新增 static 必入本清单) */
+			g_blind_reacq_pending = 0u;  /* F26a episode 标记同清(F11 纪律:防跨运行残留误清 d_filtered) */
 			g_corr_slew_prev = 0.0f; /* F22c 斜率记忆同清 */
 			g_reacq_run = 0;        /* A2 去抖状态同清 */
 			g_last_edge_side = 0;   /* A2b 边缘记忆同清 */
