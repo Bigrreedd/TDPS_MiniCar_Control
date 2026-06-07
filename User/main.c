@@ -199,6 +199,13 @@ static uint8_t g_dz_hold_l = 0;   /* 1=左轮处于 HOLD 死区档 */
 static uint8_t g_dz_hold_r = 0;
 static float g_stall_boost_l = 0.0f;  /* D3(06-06): 皱褶停转踢腿——按轮自适应死区上浮量 */
 static float g_stall_boost_r = 0.0f;
+/* F24b(06-07晚 12-agent议会Q3实证): deep 死区档退出确认锁存——逻辑层滞回,
+ * 不改 770/800/850/940 任何数值(红线a)。声明在此,逻辑在死区四档选择器处。 */
+#ifndef F10_DEEP_EXIT_CONFIRM_TICKS
+#define F10_DEEP_EXIT_CONFIRM_TICKS 30u   /* 60ms @ 500Hz tick */
+#endif
+static uint8_t  g_f10_deep_latch = 0;     /* 1=死区档锁在 U_DEEP(770/800) */
+static uint16_t g_f10_deep_off_run = 0;   /* deep 退出连续 tick 计数 */
 /* 06-07 01:50 粗糙地图/底盘托底:只放大非 sm/deep/NAV 覆盖段脱困档。
  * S/U 深弯和雷达盲走仍封 100,防乒乓锤/弹射/盲走过冲。 */
 #ifndef MOTOR_STALL_BOOST_MAX
@@ -381,6 +388,13 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
 #endif
 #if TEST_SEGMENT < 0 || TEST_SEGMENT > 6
 #error "TEST_SEGMENT must be 0..6"
+#endif
+#if TEST_SEGMENT == 1
+/* F24a(06-07晚 12-agent议会): SEG1 测试自停门守卫(逻辑见出口自停处);比赛构型(=0)零字节影响 */
+#ifndef SEG1_GUARD_MAX_LOST_TICKS
+#define SEG1_GUARD_MAX_LOST_TICKS 125u   /* 越150°时 lost<250ms(近期见过线)才认段1完成 */
+#endif
+static uint8_t g_seg1_done_latch = 0;    /* 守卫后的段1完成锁存(停车态自清,免动 K1/K3) */
 #endif
 static uint16_t g_u3_deep_run = 0;     /* U3: u后(里程门内)deep 连续 tick 计数 */
 static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250tick=500ms) */
@@ -1406,13 +1420,34 @@ int main(void)
             if (is_racing)
             {
 #if TEST_SEGMENT == 1
-                if (g_u_turn_passed)        { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG1 DONE u=1   "); }
+                /* F24a(06-07晚 12-agent议会): 自停门换守卫锁存——g_u_turn_passed 的 |yaw|≥150
+                 * 无符号锁存被丢线自旋假触发(18:25:03 yw=-173+er冻结,累计第6次实锤):乒乓发散
+                 * →盲旋也凑满 150°。守卫=越 150° 当刻近期见过线(lost<SEG1_GUARD_MAX_LOST_TICKS)
+                 * 才认段1完成;盲旋越线时 lost≈200+ 永不武装→跑到 375 丢线自停=真实失败信号。
+                 * 真 U 弯过后 |Δyaw| 保持~180,重捕线后下一 tick 即武装,不漏停。方向不写死(红线b);
+                 * 比赛侧 u 锁存(上方 dyaw_latch 块)与 sm/里程锚消费链零改动。 */
+                {
+                    float seg1_dyaw = (add_angle - g_yaw_zero) * 57.2957795f;
+                    if (seg1_dyaw < 0.0f) seg1_dyaw = -seg1_dyaw;
+                    if (!g_seg1_done_latch && seg1_dyaw >= U_TURN_YAW_LATCH_DEG &&
+                        PID_GetLineLostTicks() < SEG1_GUARD_MAX_LOST_TICKS)
+                    {
+                        g_seg1_done_latch = 1u;
+                    }
+                }
+                if (g_seg1_done_latch)      { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG1 DONE u=1   "); }
 #elif TEST_SEGMENT == 2
                 if (g_s_mode_done)          { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 DONE smdone"); }
 #elif TEST_SEGMENT == 5
                 if (g_rd_state == RD_DONE)  { StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG5 DONE rd=8  "); }
 #endif
             }
+#if TEST_SEGMENT == 1
+            else
+            {
+                g_seg1_done_latch = 0u;   /* F24a: 停车态自清,下次 K1 重新起算 */
+            }
+#endif
 #endif
 
 #if NAVSEG_FINISH_DIST_BACKUP
@@ -1490,7 +1525,22 @@ int main(void)
                 /* F5: sm 域独立 HOLD 档——S 配方与直线档解耦;H1 语义保持(sm 永不回 START)。 */
                 /* F10: 第三域——非 sm 深弯(U 族 pivot)外轮回 770/800(03:30 清洁过 U 档);
                  * 优先级 sm > deep > R3(START/HOLD);deep 滞回 1.9/1.5 防档位抖动。 */
-                uint8_t f10_deep = (PID_GetDeepTurnMode() != 0) ? 1u : 0u;
+                /* F24b(06-07晚 议会Q3实证): deep 档退出确认 60ms——原 f10_deep 直读瞬时
+                 * deep,乒乓期 deep 逐帧 0↔1 → 死区档在 HOLD(850/940)↔U_DEEP(770/800)
+                 * 间跳 80/140PWM 纯扰动脉冲(R3 选择器有滞回 1482-1485,deep 档此前没有)。
+                 * 进 deep 立即(U 几何需要),退 deep 连续 30tick=60ms 才切回 HOLD,
+                 * 吸收量化抖动;18:23-25 三组实测 deep 翻转≥4次/轮。四档死区数值不动。 */
+                {
+                    uint8_t deep_now = (PID_GetDeepTurnMode() != 0) ? 1u : 0u;
+                    if (!is_racing)      { g_f10_deep_latch = 0u; g_f10_deep_off_run = 0u; }
+                    else if (deep_now)   { g_f10_deep_latch = 1u; g_f10_deep_off_run = 0u; }
+                    else if (g_f10_deep_latch)
+                    {
+                        if (g_f10_deep_off_run < F10_DEEP_EXIT_CONFIRM_TICKS) { g_f10_deep_off_run++; }
+                        else { g_f10_deep_latch = 0u; g_f10_deep_off_run = 0u; }
+                    }
+                }
+                uint8_t f10_deep = g_f10_deep_latch;
                 float deadzone_l = g_s_mode ? S_MODE_HOLD_DEADZONE_L
                                  : (f10_deep ? U_DEEP_HOLD_DEADZONE_L
                                  : (g_dz_hold_l ? MOTOR_HOLD_DEADZONE_L : MOTOR_START_DEADZONE_L));

@@ -1,0 +1,87 @@
+# 串口原始归档 2026-06-07 18:23-18:25 三组(用户微信粘贴,全量无删节)
+# 测试输入固件: 3a06988 (F23, 历史重置后重烧) TEST_SEGMENT=1 段1专测
+# 硬件条件: 重装整车+补焊后, 地面整平; 电池 bv=107~110(遥测偏低~1.5V → 实际≈12.2~12.5V, 17:30 手测 12.34V); 风机 fn=1 常开
+# 用户描述: "主要表现为沿着黑线震荡"
+# 终局: G1=冲入黑区2秒+丢线(lost涨到347后停); G2=数据截断(末帧仍在跑); G3=yw=-173 假触发 u=1 自停(|yaw|无符号bug 第6次实锤)
+
+===== group1 (18:23:56起, K1发车) =====
+[18:23:56] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-29 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=108 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:23:56] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-29 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:23:57] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-29 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:23:57] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-29 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:23:57] L=0 R=0 T=28 out=0 pid=70,70 sent=1040,1160 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:23:58] L=6 R=3 T=28 out=70 pid=20,150 sent=990,1240 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-8 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=5 er=4 S=4095,0,0,4095,4095,4095,4095
+[18:23:58] L=23 R=23 T=28 out=70 pid=0,282 sent=0,1082 pos=0 lost=0 deep=1 junc=0 jc=0 yw=11 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=13 er=12 S=0,4095,4095,4095,4095,4095,4095
+[18:23:58] L=16 R=26 T=28 out=89 pid=302,0 sent=1072,0 pos=60 lost=0 deep=1 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=16 er=19 S=4095,4095,4095,4095,4095,4095,0
+[18:23:58] L=20 R=10 T=22 out=104 pid=20,424 sent=790,1224 pos=0 lost=19 deep=1 junc=0 jc=0 yw=-33 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=24 er=20 S=4095,4095,4095,4095,4095,4095,4095
+[18:23:59] L=20 R=13 T=22 out=94 pid=0,414 sent=0,1214 pos=0 lost=84 deep=1 junc=0 jc=0 yw=18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=27 er=27 S=4095,4095,4095,4095,4095,4095,4095
+[18:23:59] L=3 R=26 T=28 out=103 pid=316,20 sent=1186,820 pos=60 lost=0 deep=1 junc=0 jc=0 yw=14 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=30 er=33 S=4095,4095,4095,4095,4095,4095,0
+[18:23:59] L=23 R=13 T=28 out=112 pid=20,324 sent=790,1124 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=39 er=37 S=0,0,4095,4095,4095,4095,4095
+[18:24:00] L=30 R=20 T=22 out=102 pid=0,422 sent=0,1222 pos=0 lost=60 deep=1 junc=0 jc=0 yw=19 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=46 er=45 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:00] L=10 R=30 T=22 out=106 pid=426,0 sent=1196,0 pos=60 lost=41 deep=1 junc=0 jc=0 yw=9 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=49 er=53 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:00] L=26 R=13 T=28 out=108 pid=20,428 sent=790,1228 pos=0 lost=4 deep=1 junc=0 jc=0 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=60 er=56 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:01] L=30 R=16 T=22 out=114 pid=0,434 sent=0,1234 pos=0 lost=69 deep=1 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=65 er=64 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:01] L=6 R=30 T=28 out=113 pid=89,137 sent=959,1077 pos=20 lost=0 deep=0 junc=0 jc=0 yw=52 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=66 er=72 S=4095,0,0,0,2730,4095,4095
+[18:24:01] L=10 R=23 T=22 out=131 pid=101,161 sent=971,1101 pos=20 lost=64 deep=0 junc=0 jc=0 yw=38 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=72 er=79 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:01] L=29 R=23 T=22 out=106 pid=68,144 sent=918,1084 pos=20 lost=129 deep=0 junc=0 jc=0 yw=19 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=82 er=86 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:02] L=30 R=26 T=22 out=111 pid=73,149 sent=923,1089 pos=20 lost=193 deep=0 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=91 er=94 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:02] L=33 R=26 T=28 out=107 pid=320,20 sent=1090,820 pos=60 lost=256 deep=1 junc=0 jc=0 yw=-17 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=101 er=102 S=4095,4095,4095,4095,4095,2730,0
+[18:24:02] L=33 R=23 T=22 out=119 pid=331,0 sent=1101,0 pos=60 lost=319 deep=1 junc=0 jc=0 yw=-89 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=113 er=108 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:03] L=40 R=10 T=28 out=110 pid=0,322 sent=0,1122 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-136 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=120 er=113 S=0,0,4095,4095,4095,4095,4095
+[18:24:03] L=6 R=30 T=28 out=136 pid=0,348 sent=0,1148 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-135 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=120 er=122 S=0,0,4095,4095,4095,4095,4095
+[18:24:03] L=0 R=33 T=28 out=136 pid=86,193 sent=984,1133 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-133 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=120 er=135 S=4095,0,0,2730,4095,4095,4095
+[18:24:04] L=23 R=50 T=28 out=102 pid=151,52 sent=1001,992 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-122 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=135 er=149 S=4095,0,0,0,0,4095,4095
+[18:24:04] L=50 R=46 T=22 out=88 pid=74,102 sent=924,1042 pos=25 lost=17 deep=0 junc=0 jc=1 yw=-96 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=150 er=163 S=0,0,0,0,0,0,0
+[18:24:04] L=50 R=40 T=22 out=82 pid=68,96 sent=918,1036 pos=25 lost=83 deep=0 junc=0 jc=1 yw=-92 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=165 er=175 S=0,0,0,0,0,0,0
+[18:24:04] L=46 R=43 T=22 out=76 pid=59,94 sent=909,1034 pos=25 lost=149 deep=0 junc=0 jc=1 yw=-85 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=178 er=188 S=0,0,0,0,0,0,0
+[18:24:05] L=46 R=46 T=22 out=70 pid=52,87 sent=902,1027 pos=25 lost=215 deep=0 junc=0 jc=1 yw=-84 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=192 er=202 S=0,0,0,0,0,0,0
+[18:24:05] L=43 R=43 T=22 out=70 pid=52,87 sent=902,1027 pos=25 lost=281 deep=0 junc=0 jc=1 yw=-94 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=206 er=215 S=0,0,0,0,0,0,0
+[18:24:05] L=50 R=43 T=22 out=70 pid=52,87 sent=902,1027 pos=25 lost=347 deep=0 junc=0 jc=1 yw=-114 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=220 er=228 S=0,0,0,0,0,0,0
+[18:24:06] L=43 R=46 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=1 yw=-120 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=228 er=236 S=0,0,0,0,0,0,0
+[18:24:06] L=6 R=3 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=1 yw=-125 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=107 el=228 er=236 S=0,0,0,0,0,0,0
+
+===== group2 (18:24:31起) =====
+[18:24:31] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:24:32] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:24:32] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:24:32] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:24:32] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+[18:24:33] L=0 R=0 T=28 out=0 pid=70,70 sent=1024,1144 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=0 er=0 S=4095,4095,1365,0,0,4095,4095
+[18:24:33] L=3 R=0 T=28 out=70 pid=32,107 sent=1002,1197 pos=20 lost=0 deep=0 junc=0 jc=0 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=3 er=4 S=4095,0,0,0,4095,4095,4095
+[18:24:33] L=20 R=23 T=28 out=70 pid=20,145 sent=870,1085 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=11 er=11 S=4095,0,0,4095,4095,4095,4095
+[18:24:34] L=26 R=26 T=28 out=78 pid=276,28 sent=1126,968 pos=15 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=19 er=20 S=4095,0,0,4095,4095,4095,4095
+[18:24:34] L=26 R=30 T=28 out=79 pid=0,291 sent=0,1091 pos=5 lost=0 deep=1 junc=0 jc=0 yw=13 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=27 er=28 S=0,0,4095,4095,4095,4095,4095
+[18:24:34] L=16 R=23 T=28 out=97 pid=310,0 sent=1080,0 pos=60 lost=0 deep=1 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=30 er=33 S=4095,4095,4095,4095,4095,4095,0
+[18:24:35] L=20 R=6 T=22 out=109 pid=0,429 sent=0,1229 pos=0 lost=24 deep=1 junc=0 jc=0 yw=-13 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=38 er=36 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:35] L=13 R=20 T=28 out=96 pid=221,46 sent=1071,986 pos=45 lost=0 deep=0 junc=0 jc=0 yw=19 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=39 er=43 S=4095,4095,4095,4095,0,0,4095
+[18:24:35] L=13 R=20 T=28 out=118 pid=189,68 sent=1039,1008 pos=45 lost=0 deep=0 junc=0 jc=0 yw=-17 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=48 er=48 S=4095,4095,4095,4095,0,1365,4095
+[18:24:36] L=36 R=20 T=22 out=98 pid=0,418 sent=0,1218 pos=0 lost=44 deep=1 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=57 er=55 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:36] L=13 R=30 T=28 out=105 pid=318,20 sent=1088,820 pos=55 lost=0 deep=1 junc=0 jc=0 yw=21 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=59 er=64 S=4095,4095,4095,4095,4095,0,0
+[18:24:36] L=20 R=20 T=28 out=120 pid=138,103 sent=988,1043 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-16 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=69 er=68 S=4095,4095,4095,0,0,4095,4095
+[18:24:36] L=33 R=20 T=22 out=107 pid=0,427 sent=0,1227 pos=0 lost=39 deep=1 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=77 er=76 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:37] L=16 R=30 T=28 out=107 pid=320,20 sent=1090,820 pos=55 lost=0 deep=1 junc=0 jc=0 yw=20 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=80 er=85 S=4095,4095,4095,4095,4095,1365,0
+[18:24:37] L=23 R=23 T=28 out=121 pid=71,206 sent=921,1146 pos=20 lost=0 deep=0 junc=0 jc=0 yw=-28 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=90 er=89 S=2730,0,0,0,4095,4095,4095
+[18:24:37] L=30 R=13 T=28 out=122 pid=140,105 sent=990,1045 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-45 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=99 er=96 S=4095,4095,4095,0,0,4095,4095
+[18:24:38] L=33 R=26 T=22 out=109 pid=123,95 sent=973,1035 pos=35 lost=64 deep=0 junc=0 jc=0 yw=-58 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=110 er=104 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:38] L=33 R=26 T=22 out=104 pid=122,87 sent=972,1027 pos=35 lost=128 deep=0 junc=0 jc=0 yw=-72 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=120 er=113 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:38] L=36 R=30 T=28 out=99 pid=20,312 sent=790,1112 pos=5 lost=187 deep=1 junc=0 jc=0 yw=-78 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=131 er=123 S=1365,0,4095,4095,4095,4095,4095
+[18:24:39] L=30 R=33 T=22 out=110 pid=0,254 sent=0,1054 pos=10 lost=251 deep=1 junc=0 jc=0 yw=-80 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=137 er=133 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:39] L=10 R=43 T=22 out=103 pid=0,247 sent=0,1047 pos=10 lost=316 deep=1 junc=0 jc=0 yw=-76 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=137 er=147 S=4095,4095,4095,4095,4095,4095,4095
+[18:24:39] L=0 R=46 T=28 out=107 pid=0,320 sent=0,1120 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-71 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=137 er=161 S=0,0,4095,4095,4095,4095,4095
+
+===== group3 (18:24:59起) =====
+[18:24:59] L=0 R=0 T=28 out=0 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=11 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=1 er=1 S=4095,4095,4095,0,0,4095,4095
+[18:25:00] L=6 R=13 T=28 out=70 pid=140,20 sent=1102,960 pos=45 lost=0 deep=0 junc=0 jc=0 yw=-16 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=6 er=7 S=4095,4095,4095,4095,0,0,4095
+[18:25:00] L=32 R=16 T=22 out=70 pid=0,390 sent=0,1190 pos=0 lost=46 deep=1 junc=0 jc=0 yw=-4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=16 er=13 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:00] L=16 R=30 T=28 out=72 pid=152,22 sent=1002,962 pos=40 lost=0 deep=0 junc=0 jc=0 yw=32 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=17 er=22 S=4095,4095,4095,0,0,0,4095
+[18:25:01] L=10 R=20 T=28 out=103 pid=237,0 sent=1007,0 pos=55 lost=0 deep=1 junc=0 jc=0 yw=-15 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=25 er=26 S=4095,4095,4095,4095,4095,0,0
+[18:25:01] L=30 R=6 T=28 out=95 pid=0,307 sent=0,1107 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-12 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=30 er=28 S=0,4095,4095,4095,4095,4095,4095
+[18:25:01] L=3 R=16 T=28 out=120 pid=137,102 sent=1260,1042 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-11 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=33 er=33 S=4095,4095,4095,0,0,4095,4095
+[18:25:02] L=26 R=16 T=22 out=102 pid=0,422 sent=0,1222 pos=0 lost=44 deep=1 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=43 er=41 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:02] L=16 R=33 T=28 out=97 pid=309,20 sent=1079,820 pos=55 lost=0 deep=1 junc=0 jc=0 yw=28 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=45 er=51 S=4095,4095,4095,4095,4095,1365,0
+[18:25:02] L=20 R=23 T=28 out=120 pid=332,0 sent=1102,0 pos=55 lost=0 deep=1 junc=0 jc=0 yw=-40 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=55 er=54 S=4095,4095,4095,4095,2730,0,1365
+[18:25:02] L=36 R=3 T=22 out=121 pid=236,6 sent=1006,906 pos=50 lost=64 deep=1 junc=0 jc=0 yw=-120 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=65 er=54 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:03] L=30 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=50 lost=0 deep=0 junc=0 jc=0 yw=-173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=73 er=54 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:03] L=16 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=50 lost=0 deep=0 junc=0 jc=0 yw=-172 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=108 el=74 er=54 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:03] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=50 lost=0 deep=0 junc=0 jc=0 yw=-172 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=74 er=54 S=4095,4095,4095,4095,4095,4095,4095
+[18:25:04] L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=50 lost=0 deep=0 junc=0 jc=0 yw=-172 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=74 er=54 S=4095,4095,4095,4095,4095,4095,4095

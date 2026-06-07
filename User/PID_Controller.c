@@ -447,7 +447,13 @@ static uint8_t g_deep_turn_mode = 0;
  * ≥900 tick),质心量化抖动(deep 隔帧 0↔1)永远到不了。
  * 注意:悬空把传感器按住边路 >100ms 内轮仍会停——这是 U pivot 的必要几何行为,非故障。 */
 #ifndef DEEP_COAST_CONFIRM_TICKS
-#define DEEP_COAST_CONFIRM_TICKS 50u  /* 100ms @ 500Hz */
+#define DEEP_COAST_CONFIRM_TICKS 150u /* F24c(06-07晚 12-agent议会): 50(100ms)→150(300ms)。
+                                       * 18:23-25 三组实测:直线乒乓每个满幅换边帧都伴随单轮
+                                       * sent=0(coast)无一例外=主功放;摆动半周 deep 连续
+                                       * 数百 ms 也能拿到 100ms coast 资格。300ms 确认显著
+                                       * 缩短直线段 coast 占空(瞬态 deep 只走爬行档 20);
+                                       * 真 U 弯 deep 连续≥900tick(07:30 实测)不受影响。
+                                       * U 入弯若变宽(内轮先爬行致半径偏大)回 50u 或折中 100u。 */
 #endif
 static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈值),非 deep 即清零 */
 #ifndef CORR_SLEW_PER_TICK
