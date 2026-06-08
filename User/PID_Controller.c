@@ -958,18 +958,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		} else if (g_s_mode && g_reacq_grace > 0u) {
 			g_deep_turn_mode = 0;   /* A2c: S 锁向重捕宽限禁深弯 pivot,缓差速滚上线 */
 		} else if (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed) {
-			g_deep_turn_mode = 0u;
-			/* F57(8体议会合议): 盲转保持期全程退 deep——内轮走 crawl(min_inner=20)滚动弧,
-			 * 不再 coast(0)原地 pivot。修 F56 残留:全白帧仍 deep=1→内轮 coast→R≈19cm 原地
-			 * 切内角(F56 实测 Δ左13/Δ右32 比2.46,航向 166°领先位置="转到一半就转完")。
-			 * F53-F56 一直只调外轮旋钮(HOLD_CORR/TICKS)从未动内轮二态,故软↔硬震荡不收敛;
-			 * 内轮二态(coast R≈19 / crawl R≈37)无中间档,本改把全白帧从 coast 端切到 crawl 端,
-			 * 半径由差速可控(估 R≈25~35)。crawl 命令 cmd=20>EPS 经死区+stall_boost(main.c
-			 * 2076-2138 抗堵转斜坡)实际转动,非空操作(877PWM 单帧不转=boost 未起+coast 旁路所致)。
-			 * 方向仍由 g_blind_turn_corr 左锁(yaw 单调不反向);入弯首帧 hook 由 pos5 hysteresis
-			 * deep=1 保留(此刻 hold 尚未武装)。S域/turn_arc/一般深弯滞回各走自己分支(A1 r15 coast
-			 * 铁律不动)。外轮 corr=160、完成门=150 本轮冻结(单变量收敛);若 maxLost>300 外甩,
-			 * 下轮 corr→145 而非再动 min_inner。 */
+			g_deep_turn_mode = (!result_BlackPoint.found &&
+			                    g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS)
+			                   ? 1u : 0u;   /* F56: 只在真全白盲转时 coast;重捕帧走中等弧线 */
 		} else if (!result_BlackPoint.is_junction) {
 			if (g_raw_abs_err >= deep_enter) {
 				g_deep_turn_mode = 1;   /* 进入深弯:内侧轮停转 */
