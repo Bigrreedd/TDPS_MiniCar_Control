@@ -523,7 +523,9 @@ static float    g_seg3_turn_start  = 0.0f; /* F47: 本次转弯起始航向(rad)
  * (775,50)左 / (750,100)直 / (750,150)直 / (775,200)左。-1=左偏置 0=直穿(原生路口冻结) +1=右偏置。 */
 static const int8_t g_seg3_branch[4] = {-1, 0, 0, -1};
 static int8_t   g_seg3_bias_dir   = 0;    /* F48: 当前分叉偏置方向(-1左/+1右/0无);非0=偏置中 */
-static float    g_seg3_bias_start  = 0.0f; /* F48: 偏置起始航向(rad),Δyaw 预算基准 */
+static float    g_seg3_bias_start  = 0.0f; /* F48: 偏置起始航向(rad),预算兜底基准 */
+static float    g_seg3_bias_tgt    = 0.0f; /* F49: 偏置绝对目标航向(rad);到角(±tol)释放=IMU控角不过转 */
+static uint8_t  g_seg3_jog_phase   = 0u;   /* F49: 底部左-右 jog 相(0无/1左到西/2右回北) */
 #ifndef SEG3_STOP_YAW_DEG
 #define SEG3_STOP_YAW_DEG        75.0f  /* 90°弯按 5/6 提前收口(同 SEG1 150/180 比例) */
 #endif
@@ -538,7 +540,13 @@ static float    g_seg3_bias_start  = 0.0f; /* F48: 偏置起始航向(rad),Δyaw
                                   * 兼杀离线自旋时的5黑误计(F47b Run2 spurious j3)。 */
 #endif
 #ifndef SEG3_BIAS_BUDGET_RAD
-#define SEG3_BIAS_BUDGET_RAD 0.7f /* F48: 分叉偏置 Δyaw 上限(~40°)——超此仍未重捕也释放(防卡死) */
+#define SEG3_BIAS_BUDGET_RAD 2.5f /* F49: 偏置 Δyaw 兜底上限(~143°,防到不了角卡死);主释放=到绝对目标角 */
+#endif
+#ifndef SEG3_JOG_WEST_RAD
+#define SEG3_JOG_WEST_RAD 1.40f   /* F49: 底部 jog 相1 左转目标偏移≈80°(略欠90留过冲余量),相2回正北 */
+#endif
+#ifndef SEG3_BIAS_TOL
+#define SEG3_BIAS_TOL 0.17f       /* F49: 到角容差≈10°(|add_angle-目标|≤此=该相完成) */
 #endif
 #ifndef SEG3_TURN_RAD
 #define SEG3_TURN_RAD    1.5708f /* F46: 写死左转目标≈90°(yaw增=左,数据实证右转 yw 为负) */
@@ -553,7 +561,7 @@ static float    g_seg3_bias_start  = 0.0f; /* F48: 偏置起始航向(rad),Δyaw
 #define SEG3_HOLD_CENTER_BAND 1.2f /* F46: |precise-3|≤此=在线居中,才刷新直穿航向锚 */
 #endif
 #ifndef SEG3_JCT_DEBOUNCE_TICKS
-#define SEG3_JCT_DEBOUNCE_TICKS 8u /* F47: 宽黑须连续≥8tick(16ms)才计路口=滤斜拐角尖峰/6→7→6抖 */
+#define SEG3_JCT_DEBOUNCE_TICKS 5u /* F49: 8→5(检测②修):~25cps下横杠 bk≥6 窗口偏短,降去抖防漏检首横杠 */
 #endif
 #ifndef SEG3_TURN_BUDGET_RAD
 #define SEG3_TURN_BUDGET_RAD 2.0f /* F47: 转弯 Δyaw 强制完成上限(~115°),全黑横杠下永不卡死 */
@@ -567,8 +575,8 @@ static float    g_seg3_bias_start  = 0.0f; /* F48: 偏置起始航向(rad),Δyaw
 #ifndef SEG3_TURN_CPS
 #define SEG3_TURN_CPS    20.0f   /* F47: NAV_OVERRIDE_TURN 锐弧速(外轮=speed+差速,内轮coast) */
 #endif
-#define SEG3_TELEM_FMT  " s3w=%d j3=%d bk=%d"   /* F42 s3w;F46 j3=过路口数,bk=当前黑数(调路口阈) */
-#define SEG3_TELEM_ARG  , (int)g_seg3_stop_run, (int)g_seg3_jct, (int)result_BlackPoint.black_count
+#define SEG3_TELEM_FMT  " s3w=%d j3=%d bk=%d bd=%d"   /* F42 s3w;F46 j3=过路口数,bk=黑数;F49 bd=偏置(-1左/+1右/0无) */
+#define SEG3_TELEM_ARG  , (int)g_seg3_stop_run, (int)g_seg3_jct, (int)result_BlackPoint.black_count, (int)g_seg3_bias_dir
 #else
 #define SEG3_TELEM_FMT  ""              /* 非 seg3: 帧格式字节级不变 */
 #define SEG3_TELEM_ARG
@@ -1804,6 +1812,7 @@ int main(void)
                 g_seg3_straight_run= 0u;
                 g_seg3_bias_dir    = 0;   /* F48: 分叉偏置停车态自清 */
                 PID_SetBranchBias(0);
+                g_seg3_jog_phase   = 0u;  /* F49 */
             }
 #endif
 #endif
@@ -1843,36 +1852,57 @@ int main(void)
                 }
 
                 if (g_seg3_bias_dir != 0)
-                {   /* —— 分叉偏置中:全程留在巡线域(NONE),由 PID 注入固定偏置把车拐上目标支线 —— */
+                {   /* —— 偏置中:留巡线域(NONE),PID 注固定偏置把车转到"绝对目标航向"(IMU控角=不过转,治F48过转) —— */
+                    float seg3_err  = add_angle - g_seg3_bias_tgt;   if (seg3_err  < 0.0f) seg3_err  = -seg3_err;
                     float seg3_prog = add_angle - g_seg3_bias_start; if (seg3_prog < 0.0f) seg3_prog = -seg3_prog;
-                    uint8_t seg3_clean = result_BlackPoint.found &&
-                                         (seg3_bc <= 4u) && (result_BlackPoint.run_count == 1u);
-                    if (seg3_clean || seg3_prog >= SEG3_BIAS_BUDGET_RAD)
-                    {   /* 重捕到干净单线 或 Δyaw 预算到 → 释放偏置,交回纯巡线 */
-                        PID_SetBranchBias(0);
-                        g_seg3_bias_dir = 0;
-                        if (g_seg3_jct >= 4u) g_seg3_exitref = add_angle;  /* 末(第4)横杠偏置完成→立出口基准 */
+                    if (seg3_err <= SEG3_BIAS_TOL || seg3_prog >= SEG3_BIAS_BUDGET_RAD)
+                    {
+                        if (g_seg3_jog_phase == 1u)
+                        {   /* 底部 jog:相1(到西)完成 → 相2 右偏回正北,落到 x=750 线 */
+                            g_seg3_jog_phase  = 2u;
+                            g_seg3_bias_dir   = 1;             /* 右偏(yaw 减) */
+                            g_seg3_bias_start = add_angle;
+                            g_seg3_bias_tgt   = g_yaw_zero;   /* 目标=正北 */
+                            PID_SetBranchBias(1);
+                        }
+                        else
+                        {   /* 单偏置 或 jog 相2 完成 → 释放,交回纯巡线 */
+                            PID_SetBranchBias(0);
+                            g_seg3_bias_dir  = 0;
+                            g_seg3_jog_phase = 0u;
+                            if (g_seg3_jct >= 4u) g_seg3_exitref = add_angle;  /* 末(第4)横杠完成→立出口基准 */
+                        }
                     }
-                    PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);     /* 偏置=巡线域,非 override */
+                    PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);        /* 偏置=巡线域,非 override */
                 }
                 else if (g_seg3_wide_run >= SEG3_JCT_DEBOUNCE_TICKS && !g_seg3_inj &&
                          g_seg3_seen_center && g_seg3_jct < 4u)
-                {   /* —— 确认真 T/+ 横杠:按 4 横杠分叉表写死方向 —— */
-                    uint8_t seg3_i  = (uint8_t)g_seg3_jct;
-                    int8_t  seg3_br = g_seg3_branch[seg3_i];   /* -1左 / 0直 / +1右 */
+                {   /* —— 确认真 T/+ 横杠:按位置武装写死偏置(转到绝对目标航向) —— */
+                    uint8_t seg3_i = (uint8_t)g_seg3_jct;
                     g_seg3_inj = 1u;
                     g_seg3_jct++;
-                    if (seg3_br != 0)
-                    {   /* 分叉(本区两个真路口都=左):武装偏置 episode,车不离线,巡线域内 PID 偏向支线 */
-                        g_seg3_bias_dir   = seg3_br;
+                    if (seg3_i == 0u)
+                    {   /* 底部(775,50):左-右 jog。相1 左偏到西(yaw_zero+80°);相2(右回北)由上方完成时接力 */
+                        g_seg3_jog_phase  = 1u;
+                        g_seg3_bias_dir   = -1;               /* 左偏(yaw 增) */
                         g_seg3_bias_start = add_angle;
-                        PID_SetBranchBias(seg3_br);
+                        g_seg3_bias_tgt   = g_yaw_zero + SEG3_JOG_WEST_RAD;
+                        PID_SetBranchBias(-1);
                     }
-                    /* 直穿(br==0):不武装偏置,由原生 is_junction 冻结(corr=0)走直过杆。 */
+                    else if (seg3_i == 3u)
+                    {   /* 顶部(775,200)T:车经(750,200)拐角后朝东,左偏回正北(yaw_zero) */
+                        g_seg3_jog_phase  = 0u;
+                        g_seg3_bias_dir   = -1;               /* 左偏(yaw 增,东→北) */
+                        g_seg3_bias_start = add_angle;
+                        g_seg3_bias_tgt   = g_yaw_zero;
+                        PID_SetBranchBias(-1);
+                    }
+                    /* 横杠1,2(750,100/150)=直穿:不武装偏置,原生 is_junction 冻结走直过杆。
+                     * (750,50)拐角=底部 jog 相2 完成;(750,200)拐角=巡线跟弯,均不在此处写死。 */
                     PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 }
                 else
-                {   /* —— 默认:纯巡线(NONE)。直线/两个90°拐角/丢线重捕全交质心环(同 U 弯) —— */
+                {   /* —— 默认:纯巡线(NONE)。直线/(750,200)拐角/丢线重捕交质心环(同 U 弯) —— */
                     PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 }
             }
@@ -2261,6 +2291,8 @@ int main(void)
                 g_seg3_turn_start  = add_angle;
                 g_seg3_bias_dir    = 0;    /* F48: 分叉偏置复位 */
                 PID_SetBranchBias(0);
+                g_seg3_jog_phase   = 0u;   /* F49 */
+                g_seg3_bias_tgt    = add_angle;
 #endif
 #if SINGLE_BOARD_LOCAL_DRIVE && FAN_KICK_DIAG_ENABLE && FAN_AUTO_ON_RACE
                 /* G2: 发车自动起扇——常开构型免 K4 人因漏开。已在转(K4 预热)不重 kick;
@@ -2335,6 +2367,8 @@ int main(void)
                 g_seg3_turn_start  = add_angle;
                 g_seg3_bias_dir    = 0;    /* F48: 分叉偏置复位 */
                 PID_SetBranchBias(0);
+                g_seg3_jog_phase   = 0u;   /* F49 */
+                g_seg3_bias_tgt    = add_angle;
 #endif
                 PID_SetNavOverride(NAV_OVERRIDE_NONE, 0.0f, 0.0f);
                 OLED_ShowString(1, 1, "KEY=K3 RESET    ");
