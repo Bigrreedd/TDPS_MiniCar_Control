@@ -496,10 +496,10 @@ static uint8_t g_blind_reacq_pending = 0; /* F26a: 深陷盲走episode标记—�
 #define BLIND_EDGE_COMMIT_TICKS 60u /* F54: U 后半段 lost69 已是全白弯内,提前承诺边缘找线,避免两段 pivot 中间直走 */
 #endif
 #ifndef U_BLIND_TURN_HOLD_TICKS
-#define U_BLIND_TURN_HOLD_TICKS 120u /* F54: 非 sm 盲转后保持同向约240ms,桥接重捕中间帧 */
+#define U_BLIND_TURN_HOLD_TICKS 80u /* F55: 120(240ms)→80(160ms),F54 差速过猛 */
 #endif
 #ifndef U_BLIND_TURN_HOLD_CORR
-#define U_BLIND_TURN_HOLD_CORR 220.0f /* F54: 同向保持幅度,低于满幅320,但足够避免退成直线 */
+#define U_BLIND_TURN_HOLD_CORR 180.0f /* F55: 220→180,保连续转但降低 U 后半段差速 */
 #endif
 static uint16_t g_blind_turn_hold = 0;
 static float g_blind_turn_corr = 0.0f;
@@ -764,10 +764,7 @@ void PID_Control_Update(void)
         if (g_blind_turn_hold > 0u) {
             if (!g_s_mode && !g_u_turn_passed && g_blind_turn_corr != 0.0f) {
                 g_blind_turn_hold--;
-                if ((position_correction * g_blind_turn_corr) <= 0.0f ||
-                    fabsf(position_correction) < U_BLIND_TURN_HOLD_CORR) {
-                    position_correction = g_blind_turn_corr;
-                }
+                position_correction = g_blind_turn_corr;
             } else {
                 g_blind_turn_hold = 0;
                 g_blind_turn_corr = 0.0f;
@@ -997,7 +994,6 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 不产生负值,反向钳语义不变。 */
 		uint8_t turn_arc = (g_nav_override == NAV_OVERRIDE_TURN);   /* F47: 写死锐弧=内轮 coast(R≈6.5cm) */
 		float min_inner = (turn_arc || g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS ||
-		                   (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed) ||
 		                   (g_deep_turn_mode && g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS))
 		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;   /* F25a: 深陷盲走即授 coast;F47: TURN 同授 coast */
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
