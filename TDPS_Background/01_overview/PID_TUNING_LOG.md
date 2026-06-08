@@ -8962,3 +8962,142 @@ L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=179 u=1 sm
    - `yw` 不应再出现 `81→92→63` 或 `52→88→67` 这种明显回跳。
    - 自停仍应在 `u=1 sg=1`,停车 yaw 目标维持约 150~200。
 4. 若测试中出现机械卡住,按硬件链记录 `sent/L/R/el/er/bv/fn` 判定;不要把托底误判为 PID 差速不足。
+
+---
+
+## 2026-06-08 09:47-09:48 | F54: U弯连续转向保持 - 修正 F53 两段式转弯/可烧待测
+
+### 用户原话/现场
+> "再次仔细分析，可以和历史中的相关调整一起分析"
+
+> "也不顺吧，我观察到的现象每次都是在u弯只转了两次向，两次转向之间是直线，根本不是连续的变化"
+
+前置硬规则继续执行:串口数据、对应代码版本、代码改动、当前表现、硬件条件/困难和用户信息都写入本日志;代码/参数改动后提交并 push GitHub。
+
+现场表现:继续 `TEST_SEGMENT=1` U 弯单测。地图仍有褶皱/低底盘风险;电池遥测 `bv=108~110`,风机 `fn=1`;Run1 ESP 状态多为 `es=1`,Run2 K1 后为 `es=3`。当前阶段不使用里程作导航门,编码器仅作为速度闭环/遥测/看门狗。
+
+### 串口对应代码版本
+- 串口对应版本: `5e9e898` / F53 (`tune: smooth U-turn blind reacquisition`)。
+- 串口时关键参数: `TEST_SEGMENT=1`, `Kp=40 Ki=0 Kd=550`, `START=870/990`, `HOLD=850/940`, `U_DEEP=770/800`, `DEEP_COAST_CONFIRM_TICKS=100`, `DEEP_BLIND_COAST_LOST_TICKS=35`,F53 `g_reacq_grace=50u` 全域限幅+全域禁 deep pivot。
+- 本条改动版本: F54,父版本 `5e9e898`。
+- 原始串口归档: `TDPS_Background/01_overview/serial_raw_20260608_0947_0948_uturn_F53_5e9e898_oversoft_reacq.txt`
+- 解析 CSV 归档: `TDPS_Background/01_overview/serial_parsed_20260608_0947_0948_uturn_F53_5e9e898_oversoft_reacq.csv`
+
+### 串口完整原文
+```text
+第1次数据（2026-06-08 09:47:14，持续 00:11.4）
+现象：过了U弯的1/2冲的过猛
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=25 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,1365,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=547 u=1 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=108 el=0 er=0 S=4095,4095,4095,0,0,4095,4095
+L=9 R=9 T=28 out=70 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=8 er=8 S=4095,4095,4095,0,0,4095,4095
+L=29 R=29 T=28 out=70 pid=23,116 sent=873,1056 pos=20 lost=0 deep=0 junc=0 jc=0 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=19 er=18 S=4095,0,0,0,4095,4095,4095
+L=36 R=33 T=28 out=72 pid=34,110 sent=884,1050 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=28 er=28 S=4095,0,0,0,4095,4095,4095
+L=30 R=33 T=28 out=78 pid=60,95 sent=910,1035 pos=25 lost=0 deep=0 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=36 er=36 S=4095,4095,0,0,4095,4095,4095
+L=26 R=26 T=28 out=85 pid=66,103 sent=916,1043 pos=25 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=108 el=46 er=45 S=4095,4095,0,0,4095,4095,4095
+L=33 R=30 T=28 out=71 pid=33,109 sent=883,1049 pos=20 lost=0 deep=0 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=56 er=55 S=4095,0,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=110 el=65 er=64 S=4095,0,0,0,4095,4095,4095
+L=30 R=30 T=28 out=74 pid=56,91 sent=906,1031 pos=25 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=108 el=75 er=74 S=4095,4095,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=84 er=84 S=4095,0,0,0,4095,4095,4095
+L=30 R=33 T=28 out=72 pid=34,109 sent=884,1049 pos=20 lost=0 deep=0 junc=0 jc=0 yw=1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=94 er=93 S=4095,0,0,0,4095,4095,4095
+L=33 R=30 T=28 out=70 pid=70,69 sent=920,1009 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=103 er=102 S=4095,4095,0,0,0,4095,4095
+L=30 R=30 T=28 out=70 pid=53,88 sent=903,1028 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=113 er=112 S=4095,4095,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=20,145 sent=870,1085 pos=15 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=123 er=121 S=4095,0,0,4095,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=133 er=132 S=4095,0,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=87,52 sent=937,992 pos=35 lost=0 deep=0 junc=0 jc=0 yw=1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=143 er=142 S=4095,4095,4095,0,0,4095,4095
+L=33 R=30 T=28 out=70 pid=52,87 sent=902,1027 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=152 er=151 S=4095,4095,0,0,4095,4095,4095
+L=30 R=30 T=28 out=70 pid=20,282 sent=790,1082 pos=5 lost=0 deep=1 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=161 er=160 S=0,0,4095,4095,4095,4095,4095
+L=30 R=33 T=22 out=70 pid=0,276 sent=0,1076 pos=5 lost=69 deep=1 junc=0 jc=0 yw=42 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=168 er=169 S=4095,4095,4095,4095,4095,4095,4095
+L=10 R=30 T=28 out=78 pid=164,28 sent=1014,968 pos=45 lost=0 deep=0 junc=0 jc=0 yw=73 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=169 er=177 S=4095,4095,4095,4095,0,0,4095
+L=16 R=23 T=28 out=88 pid=20,301 sent=790,1101 pos=10 lost=0 deep=1 junc=0 jc=0 yw=64 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=179 er=185 S=0,0,0,4095,4095,4095,4095
+L=33 R=30 T=22 out=70 pid=0,185 sent=0,985 pos=10 lost=69 deep=1 junc=0 jc=0 yw=99 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=110 el=187 er=196 S=4095,4095,4095,4095,4095,4095,4095
+L=13 R=33 T=22 out=79 pid=0,292 sent=0,1092 pos=10 lost=139 deep=1 junc=0 jc=0 yw=147 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=1 bv=109 el=187 er=202 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=19 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+L=0 R=6 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=110 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=1 fn=0 bv=109 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=173 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=187 er=207 S=4095,4095,0,0,0,4095,4095
+
+第2次数据（2026-06-08 09:48:05，持续 00:11.4）
+现象：一样，过了U弯的1/2冲的过猛或转向不及时
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=108 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=110 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=87,52 sent=1057,1142 pos=35 lost=0 deep=0 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=0 er=1 S=4095,4095,4095,0,0,4095,4095
+L=9 R=13 T=28 out=70 pid=20,166 sent=990,1106 pos=30 lost=0 deep=0 junc=0 jc=0 yw=-7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=8 er=8 S=4095,4095,1365,0,0,4095,4095
+L=33 R=26 T=28 out=70 pid=20,282 sent=790,1082 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=19 er=18 S=0,0,4095,4095,4095,4095,4095
+L=30 R=33 T=28 out=78 pid=42,113 sent=892,1053 pos=20 lost=0 deep=0 junc=0 jc=0 yw=8 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=27 er=28 S=4095,0,0,0,4095,4095,4095
+L=26 R=33 T=28 out=81 pid=98,63 sent=948,1003 pos=35 lost=0 deep=0 junc=0 jc=0 yw=5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=35 er=36 S=4095,4095,4095,0,0,4095,4095
+L=30 R=26 T=28 out=82 pid=99,64 sent=949,1004 pos=35 lost=0 deep=0 junc=0 jc=0 yw=-4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=45 er=45 S=4095,4095,4095,0,0,4095,4095
+L=33 R=30 T=28 out=73 pid=20,286 sent=790,1086 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=55 er=54 S=0,0,4095,4095,4095,4095,4095
+L=33 R=33 T=28 out=71 pid=21,146 sent=871,1086 pos=15 lost=0 deep=0 junc=0 jc=0 yw=5 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=64 er=65 S=4095,0,0,4095,4095,4095,4095
+L=30 R=33 T=28 out=72 pid=89,54 sent=939,994 pos=35 lost=0 deep=0 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=73 er=74 S=4095,4095,4095,0,0,4095,4095
+L=33 R=30 T=28 out=70 pid=52,87 sent=902,1027 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=84 er=83 S=4095,4095,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=20,145 sent=870,1085 pos=15 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=93 er=93 S=4095,0,0,4095,4095,4095,4095
+L=30 R=30 T=28 out=74 pid=80,67 sent=930,1007 pos=25 lost=0 deep=0 junc=0 jc=0 yw=4 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=103 er=103 S=4095,4095,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=20,120 sent=870,1060 pos=25 lost=0 deep=0 junc=0 jc=0 yw=1 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=113 er=113 S=4095,4095,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=69,70 sent=919,1010 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=123 er=123 S=4095,4095,0,0,0,4095,4095
+L=36 R=33 T=28 out=70 pid=32,107 sent=882,1047 pos=20 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=133 er=133 S=4095,0,0,0,4095,4095,4095
+L=30 R=33 T=28 out=73 pid=35,110 sent=885,1050 pos=20 lost=0 deep=0 junc=0 jc=0 yw=2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=143 er=143 S=4095,1365,0,0,4095,4095,4095
+L=33 R=33 T=28 out=70 pid=87,52 sent=937,992 pos=35 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=153 er=153 S=4095,4095,4095,0,0,4095,4095
+L=33 R=33 T=28 out=70 pid=20,282 sent=790,1082 pos=5 lost=0 deep=1 junc=0 jc=0 yw=3 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=162 er=162 S=0,0,4095,4095,4095,4095,4095
+L=30 R=30 T=22 out=72 pid=0,279 sent=0,1079 pos=5 lost=69 deep=1 junc=0 jc=0 yw=47 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=110 el=169 er=172 S=4095,4095,4095,4095,4095,4095,4095
+L=10 R=33 T=28 out=74 pid=93,55 sent=943,995 pos=35 lost=0 deep=0 junc=0 jc=0 yw=84 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=171 er=181 S=4095,4095,4095,0,0,4095,4095
+L=16 R=26 T=28 out=85 pid=35,195 sent=885,1135 pos=20 lost=0 deep=0 junc=0 jc=0 yw=74 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=180 er=189 S=4095,0,0,0,4095,4095,4095
+L=33 R=30 T=22 out=70 pid=39,100 sent=889,1040 pos=20 lost=69 deep=0 junc=0 jc=0 yw=78 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=190 er=199 S=4095,4095,4095,4095,4095,4095,4095
+L=32 R=32 T=22 out=70 pid=0,282 sent=0,1082 pos=20 lost=138 deep=1 junc=0 jc=0 yw=94 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=200 er=209 S=4095,4095,4095,4095,4095,4095,4095
+L=20 R=33 T=22 out=78 pid=0,291 sent=0,1091 pos=20 lost=208 deep=1 junc=0 jc=0 yw=172 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=200 er=218 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=29 T=22 out=92 pid=0,305 sent=0,1105 pos=20 lost=277 deep=1 junc=0 jc=0 yw=241 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=200 er=227 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=27 T=22 out=89 pid=0,302 sent=0,1102 pos=20 lost=347 deep=1 junc=0 jc=0 yw=312 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=200 er=236 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=30 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=200 er=242 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=10 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=200 er=242 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=200 er=242 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=110 el=200 er=242 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=110 el=200 er=242 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=349 u=1 sm=0 rd=0 sg=1 ar=255
+```
+
+### 解析摘要/历史对照
+- F53 不是根治,用户现场观察更准确:U 弯不是连续曲线,而是"pivot 两次,中间走直线/弱弯"。
+- Run1 指标表面较好:`maxLost=139`,最终停 `yw=173`;但中间仍有 `lost69 sent=0,1076` 后接 `pos45 sent=1014,968` 的反向/弱化段,再接第二次 `lost69/139 sent=0,985/1092`。这正是用户说的两段式转弯。
+- Run2 明确失败/回退到长盲转:第一段 `lost69 sent=0,1079 yw=47` 后,中间三帧变成 `sent=943,995`、`885,1135`、`889,1040`,其中 `lost69 deep=0 sent=889,1040 yw=78` 基本就是弱弯/近直线;随后才第二次 `lost138/208/277/347 sent=0,1082/1091/1105/1102`,最终电机停在 `yw=349`。
+- 与历史相似处:
+  - F51 的 `DEEP_COAST_CONFIRM_TICKS=100`、`DEEP_BLIND_COAST_LOST_TICKS=35` 让 U 完成角从 09:11 的 `263/368` 收敛到 09:34 的 `179/188`;不应回退。
+  - F53 把重捕宽限全域化并禁 deep pivot,确实抑制了反向满舵,但副作用是 U 后半段重捕时直接退成弱弯/直线,命中先前日志中的"U 末端变宽"风险。
+  - F50 回到历史最佳死区 `START=870/990,HOLD=850/940,U_DEEP=770/800` 仍正确;本轮不是整体占空比偏低,外轮 `sent` 多在 `985~1135`,且不是双轮停。
+- 结论:不改 `Kp/Kd/Ki`,不整体提 T;修连续性。让非 sm U 进入全白 pivot 后保持同一转向意图一小段时间,桥接"重捕中间帧",避免退成直线。
+
+### 代码改动 F54 (`User/PID_Controller.c`)
+- 保留参数: `Kp=40 Ki=0 Kd=550`, `DEEP_COAST_CONFIRM_TICKS=100`, `DEEP_BLIND_COAST_LOST_TICKS=35`, `START/HOLD/U_DEEP=870/990,850/940,770/800`。
+- 新增 `BLIND_EDGE_COMMIT_TICKS=60u`:非 sm 全白丢线超过约 120ms 即把冻结质心承诺到所在侧边缘,覆盖本轮典型 `lost=69` 中间直线帧。
+- 新增 `U_BLIND_TURN_HOLD_TICKS=120u`, `U_BLIND_TURN_HOLD_CORR=220.0f`, `g_blind_turn_hold/g_blind_turn_corr`:
+  - 非 sm 深弯全白且 `lost>35` 时,按当前质心/last_valid 锁定同一转向方向。
+  - 后续约 240ms 内若重捕到中间帧,不允许 `position_correction` 反向或低于 220。
+  - 保持期强制 `g_deep_turn_mode=1` 并允许 `min_inner=0`,让 U 弯连续 pivot,不退回浅弯/直线。
+  - 若 `g_u_turn_passed=1` 或进入 S-mode/导航覆盖,保持立刻清退。
+- 修正 F53 副作用:
+  - `g_blind_reacq_pending` 触发的非 sm `g_reacq_grace` 从 `50u` 缩为 `25u`。
+  - `g_reacq_grace` 不再全域禁 deep pivot;只有 `g_s_mode && g_reacq_grace>0` 才禁 deep。
+  - F54 同向保持优先于非 sm 重捕限幅,避免 220 又被钳到 150。
+
+### F54 测试协议
+1. 烧录后确认仍为 `RUN SEG-TEST 1`。
+2. 连跑 2~3 次 U 单测,保存完整串口。
+3. 肉眼重点看:U 弯应从"两次转向+中间直线"变成连续左转,不应在 U 弯 1/2 后明显走直。
+4. 串口重点看:
+   - `lost69` 后的重捕帧不应再出现 `sent=943,995`、`889,1040` 这类近直线/弱弯。
+   - U 后半 `lost` 峰值应回到 `<150~200`,不要再出现 `277/347`。
+   - 自停 yaw 目标仍约 `150~210`;若连续转过猛导致 `yw<140` 或提前切内,再把 `U_BLIND_TURN_HOLD_CORR 220->190` 或 `HOLD_TICKS 120->80`。
+   - 若仍出现两段式直线,下一步不是动 PID,而是把 `U_BLIND_TURN_HOLD_TICKS 120->160` 或提高保持 corr 到 250。

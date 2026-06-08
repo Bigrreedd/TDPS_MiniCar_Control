@@ -435,8 +435,8 @@ static uint16_t g_reacq_run = 0;
 /* A2b(06-06): 最近一次"线在边缘"的方向记忆(+1=右缘/-1=左缘/0=无)——sm 丢线找回用。
  * 19:21 实测:S 拐换边瞬间丢线时修正恰好过零,A2 锁 last_valid≈14 形同直行白丢。 */
 static int8_t g_last_edge_side = 0;
-/* A2c/F53: 再捕获宽限计数——sm 锁向或非 sm 盲转刚找回线的 ~100ms 内限幅修正+禁深弯,
- * 让车"滚上线"。19:30/F52 实测乒乓极限环:catch→边缘大误差立即反向全幅 pivot→冲过线再丢。 */
+/* A2c/F54: 再捕获宽限计数——sm 锁向或非 sm 盲转刚找回线后限幅修正;
+ * S 域禁深弯滚上线,非 sm U 域交给 g_blind_turn_hold 保持连续同向转。 */
 static uint16_t g_reacq_grace = 0;
 /* A2b-limit(06-06 用户拍板): 锁向旋转预算——进入锁向时的 yaw 基准(rad)与翻转计数。
  * 20:07 实测锁向连转 200°+ 未捞线(扫穿线后边缘记忆指向身后,pivot 绕圈追不上)。 */
@@ -492,6 +492,17 @@ static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈�
 #define DEEP_BLIND_COAST_LOST_TICKS 35u   /* F51: 50(100ms)→35(70ms),卡 09:11 lost42/43 首个全白 U 帧 */
 #endif
 static uint8_t g_blind_reacq_pending = 0; /* F26a: 深陷盲走episode标记——重捕首帧 D 软启动 */
+#ifndef BLIND_EDGE_COMMIT_TICKS
+#define BLIND_EDGE_COMMIT_TICKS 60u /* F54: U 后半段 lost69 已是全白弯内,提前承诺边缘找线,避免两段 pivot 中间直走 */
+#endif
+#ifndef U_BLIND_TURN_HOLD_TICKS
+#define U_BLIND_TURN_HOLD_TICKS 120u /* F54: 非 sm 盲转后保持同向约240ms,桥接重捕中间帧 */
+#endif
+#ifndef U_BLIND_TURN_HOLD_CORR
+#define U_BLIND_TURN_HOLD_CORR 220.0f /* F54: 同向保持幅度,低于满幅320,但足够避免退成直线 */
+#endif
+static uint16_t g_blind_turn_hold = 0;
+static float g_blind_turn_corr = 0.0f;
 #ifndef CORR_SLEW_PER_TICK
 #define CORR_SLEW_PER_TICK 999.0f /* F23: 999=关断(corr∈±320,单tick最大Δ640<999 永不钳)。
                                    * F22c 原值 15.0f:10:59/11:00 两轮实测满幅乒乓如旧(0↔60 对穿,
@@ -535,6 +546,8 @@ void PID_Control_Update(void)
 			g_reacq_run = 0;        /* A2 去抖状态同清 */
 			g_last_edge_side = 0;   /* A2b 边缘记忆同清 */
 			g_reacq_grace = 0;      /* A2c 宽限同清 */
+			g_blind_turn_hold = 0;  /* F54 非 sm 盲转同向保持同清 */
+			g_blind_turn_corr = 0.0f;
 			g_a2_flips = 0;         /* A2b-limit 同清 */
 			g_a2_episode_cool = 0;  /* H2' 跨段窗口同清 */
 			g_line_lost_ticks = 0;  /* F11(06-07 红队): 原清单漏此项——停车后冻结残留(实测 lost=266
@@ -591,15 +604,15 @@ void PID_Control_Update(void)
 	    if (g_a2_episode_cool > 0u) g_a2_episode_cool--;   /* H2': 跨段窗口倒计时(2ms/tick) */
     // 1. 获取当前位置（从你的position变量）
 	    current_position = (float)position_get / 10.0f;
-	    /* F25b(06-07 19:27 G3 实锤): 非 sm 盲走承诺转向——U 入口线从 pos=15 滑出视场
+	    /* F25b/F54: 非 sm 盲走承诺转向——U 入口线从 pos=15 滑出视场
 	     * (未及边缘),冻结质心 raw_err=1.5<1.9 deep 永不点火,corr 冻在温和左修 ≈-90,
 	     * 车近直线盲走到黑区/375。旧"冻结质心全增益PID"只有恰冻在边缘才像样(G1/G2)。
-	     * 改:深丢线(>250ms,与去抖/A2 同门槛)把冻结质心收敛到其所在侧边缘(±3 格)→
+	     * 改:深丢线达到 BLIND_EDGE_COMMIT_TICKS 后把冻结质心收敛到其所在侧边缘(±3 格)→
 	     * deep 判据必点火 + corr 满幅(320)朝最后所见侧找线;配 F25a 盲 coast 成净 pivot。
 	     * 方向来自小车自己的质心历史(红线b合规);junction 冻结/sm A2 锁向/NAV 覆盖各有
 	     * 自己的分支不进此路;冻在正中(raw_err≈0,全黑改判类)不承诺保持直行;375 自停
 	     * 兜底不变;重见线即走 F18a 去抖解除,回正常位置环。 */
-	    if (!result_BlackPoint.found && g_line_lost_ticks > 125u &&
+	    if (!result_BlackPoint.found && g_line_lost_ticks > BLIND_EDGE_COMMIT_TICKS &&
 	        result_BlackPoint.black_count == 0u &&
 	        !result_BlackPoint.is_junction && !g_s_mode &&
 	        g_nav_override == NAV_OVERRIDE_NONE) {
@@ -617,6 +630,21 @@ void PID_Control_Update(void)
 		g_blind_reacq_pending = 1u;   /* F28a: 加 !g_s_mode——S 配方(19:49 验证)域内
 		                               * 重捕行为保持字节级原样,A2c 宽限自管;本机制只
 		                               * 服务非 sm 的 U/普通弯盲走 episode。 */
+		if (!g_u_turn_passed) {
+		    float blind_err = current_position - g_position_pid.param.target_position;
+		    if (blind_err > 0.05f) {
+			g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
+		    } else if (blind_err < -0.05f) {
+			g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
+		    } else if (g_last_valid_correction > 0.0f) {
+			g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
+		    } else if (g_last_valid_correction < 0.0f) {
+			g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
+		    }
+		    if (g_blind_turn_corr != 0.0f) {
+			g_blind_turn_hold = U_BLIND_TURN_HOLD_TICKS;
+		    }
+		}
 	    }
 	// 误差增益曲线（二次型，三点定标）：0/5路大幅加猛、中心保持
 	// gain = 1.232 - 0.686*|e| + 0.564*e²
@@ -728,20 +756,36 @@ void PID_Control_Update(void)
             g_position_pid.last_error = current_position - g_position_pid.param.target_position;
             g_position_pid.d_filtered = 0.0f;
             g_blind_reacq_pending = 0u;
-            g_reacq_grace = 50u;
+            g_reacq_grace = 25u;
         }
         // 2. 位置环计算（输出偏差值）
         position_correction = PositionPID_Calculate(&g_position_pid, current_position);
 
+        if (g_blind_turn_hold > 0u) {
+            if (!g_s_mode && !g_u_turn_passed && g_blind_turn_corr != 0.0f) {
+                g_blind_turn_hold--;
+                if ((position_correction * g_blind_turn_corr) <= 0.0f ||
+                    fabsf(position_correction) < U_BLIND_TURN_HOLD_CORR) {
+                    position_correction = g_blind_turn_corr;
+                }
+            } else {
+                g_blind_turn_hold = 0;
+                g_blind_turn_corr = 0.0f;
+            }
+        }
+
         // 保存有效修正值（供丢线寻线使用）
         g_last_valid_correction = position_correction;
 
-        /* A2c/F53: 宽限期内修正限幅 ±150——刚从锁向/盲转找回线,边缘大误差不许立即反向全幅,
-         * 先以缓和差速滚上线;last_valid 保存未限幅值(再丢线时锁向仍走边缘记忆)。 */
+        /* A2c/F54: 宽限期内修正限幅 ±150——刚从锁向/盲转找回线,边缘大误差不许立即反向全幅;
+         * 非 sm U 域另由 g_blind_turn_hold 保持同向连续转。last_valid 保存未限幅值。 */
         if (g_reacq_grace > 0u) {
+            uint8_t f54_hold_active = (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed);
             g_reacq_grace--;
-            if (position_correction > 150.0f) position_correction = 150.0f;
-            else if (position_correction < -150.0f) position_correction = -150.0f;
+            if (!f54_hold_active) {
+                if (position_correction > 150.0f) position_correction = 150.0f;
+                else if (position_correction < -150.0f) position_correction = -150.0f;
+            }
         }
 
 #if BENCH_FIXED_SPEED_ENABLE && BENCH_POSITION_TEST_ENABLE
@@ -912,8 +956,10 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		float deep_exit  = g_s_mode ? 1.2f : 1.5f;
 		if (g_nav_override != NAV_OVERRIDE_NONE || g_seg3_bias != 0) {
 			g_deep_turn_mode = 0;   /* P2 覆盖/F48 分叉偏置:禁深弯 pivot,中等差速两轮都驱动不甩离线 */
-		} else if (g_reacq_grace > 0u) {
-			g_deep_turn_mode = 0;   /* A2c/F53 宽限:禁深弯 pivot,缓差速滚上线 */
+		} else if (g_s_mode && g_reacq_grace > 0u) {
+			g_deep_turn_mode = 0;   /* A2c: S 锁向重捕宽限禁深弯 pivot,缓差速滚上线 */
+		} else if (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed) {
+			g_deep_turn_mode = 1;   /* F54: U 盲转保持期不退回直线/浅弯 */
 		} else if (!result_BlackPoint.is_junction) {
 			if (g_raw_abs_err >= deep_enter) {
 				g_deep_turn_mode = 1;   /* 进入深弯:内侧轮停转 */
@@ -951,6 +997,7 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		 * 不产生负值,反向钳语义不变。 */
 		uint8_t turn_arc = (g_nav_override == NAV_OVERRIDE_TURN);   /* F47: 写死锐弧=内轮 coast(R≈6.5cm) */
 		float min_inner = (turn_arc || g_s_mode || g_deep_hold_ticks >= DEEP_COAST_CONFIRM_TICKS ||
+		                   (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed) ||
 		                   (g_deep_turn_mode && g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS))
 		                  ? 0.0f : MIN_INNER_WHEEL_SPEED;   /* F25a: 深陷盲走即授 coast;F47: TURN 同授 coast */
 		float shallow_cap = g_s_mode ? S_MODE_SHALLOW_CAP : 50.0f;
