@@ -8818,6 +8818,14 @@ L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=263 u=1 s
 - 预期效果:除速度环和调试遥测外,默认六区域状态推进不再依赖里程计。Segment 1 U 单测的完成判据本来就是 IMU+lost 守卫,因此 F52 对当前 `TEST_SEGMENT=1` 跑 U 的直接行为影响很小。
 - 主要行为变化会出现在合段/全图:U 后 `sm` 兜底从“里程下界+deep”改为“1s 时间窗+deep”;S-mode 后备释放从“稳线+yaw静默+里程”改为“稳线+yaw静默”;雷达段武装/盲走相位从里程改为 lost/time。
 
+### 编译检查/错误修复
+- 用户反馈当前代码有 error 后检查 `Objects/Project.build_log.htm`。上次 Keil 构建记录:
+  - `User\main.c(1375): error: #20: identifier "SM_DEEP_MIN_CNT" is undefined`
+  - 汇总: `1 Error(s), 13 Warning(s)`。
+- 根因: F52 删除了旧 `SM_DEEP_MIN_CNT` 里程门宏,但 U3 deep 签名锁 `sm` 的条件里仍残留一次引用。
+- 修复:该条件改为 `g_u_post_ticks >= NAVSEG_U3_TIME_GATE_TICKS`,即使用 U 锁存后的时间窗替代旧里程下界。
+- 本机 Codex 环境未找到 `UV4/UV5/armcc/armclang/arm-none-eabi-gcc`,无法重新发起真实 Keil 编译;已做源码级检查:`git diff --check` 通过、`#if/#endif` 平衡通过、大括号平衡通过、`SM_DEEP_MIN_CNT/RD_*_CNT/RD_ZONE_MIN_CNT` 无残留有效引用。
+
 ### 风险/困难
 - 去掉里程门后,RD 若开启且 `g_s_mode_done=1`,任何后段持续深丢线 300ms 都可能武装 RD;真实雷达箱测试前继续保持 `RADAR_SEGMENT_ENABLE=0`。
 - S-mode 后备释放少了里程下界,长直上 500ms 稳线且 yaw 静默会更早释放;上车时必须观察 `lt/rs/sm/sg`。
