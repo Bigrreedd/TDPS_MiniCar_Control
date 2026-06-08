@@ -471,7 +471,12 @@ static uint8_t g_deep_turn_mode = 0;
  * ≥900 tick),质心量化抖动(deep 隔帧 0↔1)永远到不了。
  * 注意:悬空把传感器按住边路 >100ms 内轮仍会停——这是 U pivot 的必要几何行为,非故障。 */
 #ifndef DEEP_COAST_CONFIRM_TICKS
-#define DEEP_COAST_CONFIRM_TICKS 150u /* F24c(06-07晚 12-agent议会): 50(100ms)→150(300ms)。
+#define DEEP_COAST_CONFIRM_TICKS 100u /* F51(06-08 09:11 U单测): 150(300ms)→100(200ms)。
+                                       * F50 回退死区后直线已收口,但 U 入口仍 "拐弯慢/全白后才转":
+                                       * 09:11 Run3 lost43/deep1 仍 sent=790,1191(内轮爬行),下一帧才
+                                       * coast。回 100 取 F16/F25 几何与 F24c 护直线的折中;若直线
+                                       * 单轮 sent=0 乒乓回潮即回 150。 */
+/* F24c(06-07晚 12-agent议会): 50(100ms)→150(300ms)。
                                        * 18:23-25 三组实测:直线乒乓每个满幅换边帧都伴随单轮
                                        * sent=0(coast)无一例外=主功放;摆动半周 deep 连续
                                        * 数百 ms 也能拿到 100ms coast 资格。300ms 确认显著
@@ -485,7 +490,7 @@ static uint16_t g_deep_hold_ticks = 0;  /* deep 连续保持计数(饱和于阈�
  * 出视场。鉴别量=lost:直线乒乓瞬态 deep="线在视场内的量化抖动"(lost=0);真弯深陷=
  * "线甩出视场"(lost 爬升)。deep 且盲>100ms → 立即授 coast;线可见仍走 150 确认。 */
 #ifndef DEEP_BLIND_COAST_LOST_TICKS
-#define DEEP_BLIND_COAST_LOST_TICKS 50u   /* 100ms @ 500Hz */
+#define DEEP_BLIND_COAST_LOST_TICKS 35u   /* F51: 50(100ms)→35(70ms),卡 09:11 lost42/43 首个全白 U 帧 */
 #endif
 static uint8_t g_blind_reacq_pending = 0; /* F26a: 深陷盲走episode标记——重捕首帧 D 软启动 */
 #ifndef CORR_SLEW_PER_TICK
