@@ -8777,3 +8777,56 @@ L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=20 lost=0 deep=0 junc=0 jc=0 yw=263 u=1 s
    - U 首个全白帧若 `lost≈35~50 && deep=1`,应出现内轮 `sent=0` 而不是 `790/820` 爬行档。
    - U 完成时希望 `lost<125` 附近放行 `SEG1 DONE`,而不是 `lost>200` 后盲旋到 `yw>250`。
    - 若直线单轮 `sent=0` 乒乓回潮,立即回退 F51 两项中至少 `DEEP_COAST_CONFIRM_TICKS` 到 150。
+
+---
+
+## 2026-06-08 09:27 | F52: 默认停用里程计状态门 - 代码审计修正/可编译待上车
+
+### 用户原话/约束
+> "现在六个区域的代码都没怎么用里程计吧？里程计不可靠，用了的话代码逻辑需要修改"
+
+> "你分析的应该没错，修改，但是❯记得同步记录日志，日志要包含串口完整调试信息，代码改动，以及串口信息对应的代码版本，以及当前代码的表现情况噢，最后还有小车测试的各种硬件条件以及具体遇到的困难以及我给你发的所有信息。然后我要求每次改完代码都push github"
+
+本条继续执行硬规则:所有代码/参数改动同步写入本日志;日志必须记录串口信息、代码版本、表现、硬件条件、困难和用户信息;代码改完后提交并 push GitHub。
+
+### 串口对应代码版本/完整串口
+- 本条无新增实车串口输入,不能伪造“已跑”结论。
+- 最近一轮完整串口仍为 F51 上条记录,对应代码版本 `c2d1604` / F50,原文已完整粘贴在上一节“2026-06-08 09:11-09:12 | F51”。
+- 完整串口归档文件:
+  - `TDPS_Background/01_overview/serial_raw_20260608_0911_0912_uturn_F50_c2d1604_slowU_startOsc.txt`
+  - `TDPS_Background/01_overview/serial_parsed_20260608_0911_0912_uturn_F50_c2d1604_slowU_startOsc.csv`
+- 本条改动版本: F52,父版本 `13b677e` / F51 (`tune: advance U-turn deep coast thresholds`)。
+
+### 当前硬件/场地条件
+- 已知最新现场:U 弯单测仍为 `TEST_SEGMENT=1`;电池遥测约 `bv=108~111`;风机 `fn=1`;ESP `es=3`。
+- 场地困难:备用/当前地图有褶皱;底盘低,90°/U 弯处容易卡;黑线/传感器在 U 入口出现全白与边缘重捕循环。
+- 编码器困难:用户明确判定里程计不可靠;现象中 `el/er` 仍可作速度闭环/遥测/看门狗辅助,但不应默认作为六区域状态转移依据。
+
+### 代码改动 F52 (`User/main.c`)
+- 保留编码器计数用于速度反馈、遥测、看门狗和 legacy/兼容锚;默认不再用编码器里程做区域状态裁决。
+- `NAVSEG_T2_FORCE_LATCH: 1 -> 0`:关闭 U 后按里程强制锁 `sm`。
+- `NAVSEG_T3_FORCE_RELEASE: 1 -> 0`:关闭 S-mode 按里程强制释放。
+- `NAVSEG_FINISH_DIST_BACKUP: 1 -> 0`:关闭终点里程兜底;终点默认交给 0x30/倒计时链。
+- 新增 `NAVSEG_U3_TIME_GATE_TICKS=500u`:U 锁存后等待约 1s 再允许 deep 签名锁 `sm`,替代旧 `SM_DEEP_MIN_CNT` 里程下界。
+- 新增 `g_u_post_ticks`:K1/K3/播种/U 锁存时清零,运行中作为 U 后时间窗。
+- SEG2:新增 `SEG2_STOP_BACKSTOP_ENABLE=0`,默认关闭拱门丢帧后的里程 backstop;只有显式开宏才编译旧强停。
+- RD:删除默认 `RD_ZONE_MIN_CNT` 武装条件;`RD_OFF` 现在只要求 `g_s_mode_done && lost>=RD_LOST_CONFIRM_TICKS`。`RD_DIAG/THRU/REJOIN` 由 `RD_DIAG_TICKS/RD_THRU_TICKS/RD_REJOIN_TICKS` 时间预算推进,不再看 `RD_*_CNT`。
+- 分段播种:SEG2/SEG5 不再回拨/偏置里程锚;`g_sm_cnt_base/g_rd_cnt_mark/g_u_cnt_base` 注释改为 legacy/兼容用途,默认不裁决。
+
+### 当前表现判断
+- F52 是代码策略修正,尚未上车;不能声明实车改善。
+- 预期效果:除速度环和调试遥测外,默认六区域状态推进不再依赖里程计。Segment 1 U 单测的完成判据本来就是 IMU+lost 守卫,因此 F52 对当前 `TEST_SEGMENT=1` 跑 U 的直接行为影响很小。
+- 主要行为变化会出现在合段/全图:U 后 `sm` 兜底从“里程下界+deep”改为“1s 时间窗+deep”;S-mode 后备释放从“稳线+yaw静默+里程”改为“稳线+yaw静默”;雷达段武装/盲走相位从里程改为 lost/time。
+
+### 风险/困难
+- 去掉里程门后,RD 若开启且 `g_s_mode_done=1`,任何后段持续深丢线 300ms 都可能武装 RD;真实雷达箱测试前继续保持 `RADAR_SEGMENT_ENABLE=0`。
+- S-mode 后备释放少了里程下界,长直上 500ms 稳线且 yaw 静默会更早释放;上车时必须观察 `lt/rs/sm/sg`。
+- 终点默认不再有里程 backup;0x30/id=2 或空 payload+done 链必须确认可用,否则全图终点不会靠编码器自停。
+- RD 时间预算 `850/1000/1400 tick` 只是把旧 24/28/40cnt 按约 14~20cps 粗换算成时间,必须在真实箱位实测后再调。
+
+### F52 测试协议
+1. 当前 U 单测:烧录后仍确认 `RUN SEG-TEST 1`;优先验证 F51 deep/coast 是否改善 U 入口全白,同时确认 F52 没引入编译/遥测异常。
+2. 合段前审查宏:全图/雷达前确认 `TEST_SEGMENT=0`,并按真实场地决定是否打开 `RADAR_SEGMENT_ENABLE` 和 `ARCH_CONTROL_ENABLE`。
+3. S 段/合段重点记录完整串口:`lt` 应能区分 jc/U3/time/T2 legacy 源;`rs=3` 代表无里程后备释放,若在 S 弯内早放,优先提高稳定窗或重新加非编码器门。
+4. 雷达段单测:只在箱体/ESP 决策链到位后开 `RADAR_SEGMENT_ENABLE=1`,观察 `rd=1..8`,确认 `RD_DIAG_TICKS/RD_THRU_TICKS/RD_REJOIN_TICKS` 是否够用。
+5. 任何上车结果都要把完整串口继续追加到本日志,并标注对应 commit/参数版本。

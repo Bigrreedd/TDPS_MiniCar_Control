@@ -346,38 +346,32 @@ static uint8_t g_jc_at_u = 0;           /* S1(06-06): u 锁存时刻的 jc 基�
 volatile uint8_t g_s_mode = 0;
 /* P9 sm 出口门(06-06 三 agent 合议落码)——sm 此前永不释放,S 过后整圈被钉 14cps。
  * 主锚=拱门2.1 的 ESP 0x30 通知(S 出口后 ~30cm;队友部署确认前天然不触发);
- * 后备=三重与门:里程 Δ≥SM_EXIT_MIN_CNT + 连续 500ms 稳线居中 + 窗内航向静默。
- * 里程刻度按 06-06 实测场推算:870cm(START→Y2) ≈ 352cnt → ~2.47cm/cnt;
- * S 段几何 ~188cm ≈ 76cnt;floor 取 120cnt(~296cm)=1.6×S 长,乱甩通胀也不会在 S 内放行。
+ * F52: 编码器不可靠,后备门去掉里程下界;释放只看连续 500ms 稳线居中 + 窗内航向静默。
  * jc 禁用作锚(乱甩通胀 2→5 实测);yw 只用 500ms 短窗相对值(长程漂移未标定)。 */
 #ifndef SM_EXIT_MIN_CNT
 #define SM_EXIT_MIN_CNT  120
 #endif
 static uint8_t  g_s_mode_done = 0;       /* 本次运行 sm 已完整走完(防出门后 jc>基线 立即回锁) */
-static int32_t  g_sm_cnt_base = 0;       /* sm 锁存帧的平均编码器绝对计数 */
+static int32_t  g_sm_cnt_base = 0;       /* legacy/兼容: sm 锚点计数,默认不裁决 */
 static uint16_t g_sm_stable_run = 0;     /* 出口后备:连续"found 且居中"tick 计数 */
 static float    g_sm_stable_yaw0 = 0.0f; /* 稳线窗起点 yaw(rad) */
 
 /* ===== P1 终点 + P2 雷达避障段(06-06 落码 v1,设计:POST_S_STRATEGY_20260606.md) =====
  * P1: 0x30 id=2(拱门2.2)→ 2s 倒计时 → StopRun(队友沟通记录"ARCH(2)后2s停车";
  *     拱门2.2 距终点仅 ~25cm,滚动距离待实测,必要时加降速档)。
- * P2 触发: sm 走完 + 自 sm 锁存里程 Δ≥RD_ZONE_MIN_CNT + 深丢线 300ms(箱前线尽头)。
+ * P2 触发: sm 走完 + 深丢线 300ms(箱前线尽头)。F52 起不再用里程武装。
  *     误触自愈:弯中丢线达不到三门齐满;真误触也只是停车问雷达→盲走→重捕失败→安全停。
  * P2 流程: BRAKE 清洁停 → QUERY 0x03(500ms 重发,2s 超时) → 0x11(0=左过/1=右过/
  *     2=UNKNOWN→默认左,06-06 拍板) → 盲走四相 OUT(转出30°)/DIAG(斜移)/BACK(回正)/
  *     THRU(直穿+扫线) → REJOIN(重捕余量) → 回循迹。每相 tick 预算,超时=RD_FAIL 停车。
- * 几何(2.47cm/cnt 粗标,P0a 标定后回填): DIAG 24cnt≈60cm(横移≈30cm,对准空闲侧走廊
- *     中心≈箱中线偏 35cm),THRU 28cnt≈70cm(板深),REJOIN 40cnt≈100cm 余量。
+ * F52: DIAG/THRU/REJOIN 改时间预算,不再用编码器里程决定相位。
  * 合规:决策与重捕全传感器驱动,盲走仅短段(禁预编程约束)。 */
 #ifndef RADAR_SEGMENT_ENABLE
 #define RADAR_SEGMENT_ENABLE   0   /* F28(备用场地轮): 关——①场地无雷达箱,误武装→RD_QUERY
-                                    * 无应答→RD_FAIL 白停;②RD_ZONE_MIN_CNT=380 vs 圆区出口
-                                    * ≈371(注释自证"裕量薄"),备用场地矩形→圆区段还差±20cm
-                                    * (±8cnt)+编码器幻速±3~6,圆区尾部贴门误武装风险实在。
+                                    * 无应答→RD_FAIL 白停;F52 后 RD 不再用里程武装/相位。
                                     * ⚠回真实场地(雷达箱在位)必须改回 1。 */
 #endif
 #define FINISH_STOP_TICKS      1000u   /* 2s @2ms */
-#define RD_ZONE_MIN_CNT        380     /* sm锁存→箱前 ~989cm/2.47≈400;四圆出口≈371,裕量薄,P0a 后必校 */
 #define RD_LOST_CONFIRM_TICKS  150u    /* 300ms 深丢确认(375 自停前先接管) */
 #define RD_BRAKE_SETTLE_TICKS  50u     /* 双轮 |v|<2cps 持续 100ms = 停稳 */
 #define RD_BRAKE_BUDGET        1000u   /* 2s 停不稳也发问(防滑行卡相) */
@@ -387,9 +381,9 @@ static float    g_sm_stable_yaw0 = 0.0f; /* 稳线窗起点 yaw(rad) */
 #define RD_TURN_TOL            0.10f   /* 航向到位容差 ~5.7° */
 #define RD_TURN_SETTLE         25u     /* 到位保持 50ms */
 #define RD_PHASE_BUDGET        2500u   /* 每相 5s 预算 */
-#define RD_DIAG_CNT            24      /* 斜移段里程 */
-#define RD_THRU_CNT            28      /* 直穿段里程 */
-#define RD_REJOIN_CNT          40      /* 重捕余量里程 */
+#define RD_DIAG_TICKS          850u    /* F52: 约1.7s 斜移时间,替代 RD_DIAG_CNT */
+#define RD_THRU_TICKS          1000u   /* F52: 约2.0s 直穿时间,替代 RD_THRU_CNT */
+#define RD_REJOIN_TICKS        1400u   /* F52: 约2.8s 重捕余量,替代 RD_REJOIN_CNT */
 #define RD_BLIND_CPS           14.0f   /* 盲走目标(实际受 floor 70 托底≈20cps) */
 #define RD_REACQ_TICKS         15u     /* 连续 found 30ms = 重捕成功 */
 enum { RD_OFF = 0, RD_BRAKE, RD_QUERY, RD_OUT, RD_DIAG, RD_BACK, RD_THRU, RD_REJOIN, RD_DONE, RD_FAIL };
@@ -398,7 +392,7 @@ static uint16_t g_rd_tick = 0;         /* 当前相计时 */
 static uint16_t g_rd_settle = 0;       /* 停稳/航向到位连续计数 */
 static int8_t   g_rd_dir = 1;          /* +1=左过(左转出,yaw+), -1=右过 */
 static float    g_rd_yaw_base = 0.0f;  /* 停车时航向 = 箱前行进方向 */
-static int32_t  g_rd_cnt_mark = 0;     /* 相起点里程 */
+static int32_t  g_rd_cnt_mark = 0;     /* legacy/兼容: 相起点计数,默认不裁决 */
 static uint16_t g_rd_found_run = 0;    /* 重捕连续 found 计数 */
 static uint16_t g_arch_cool = 0;       /* 拱门事件连发去重窗(3s) */
 static uint8_t  g_last_arch_id = 255u; /* 遥测:最近一次已消费0x30 id;255=本轮未见 */
@@ -408,35 +402,34 @@ static uint8_t  g_finish_armed = 0;    /* P1 已触发锁存 */
 /* ===== 06-07 post-s-review 团队评审落码(SegmentNavigator v2 增量取向) =====
  * 终裁(skeptic《残余风险裁决》):"需重大改后方可上车"——本块落地其放行检查单。
  * 取向依据: Path.c 即"全量段FSM已试过且废弃"的实物(刻度错15×+旧布局),故走增量:
- * g_navseg=只读诊断游标(由既有锚点推进,不夺转向权);里程只做窗不做锚;
+ * g_navseg=只读诊断游标(由既有锚点推进,不夺转向权);F52 起里程不做状态裁决;
  * ESP 事件=到了就抢占、没到当不存在(ESP32_Tick 此前零调用,IsLinkAlive 恒真=假活,禁读)。
  * 行为改动各带编译开关,置 0 即回退现状。 */
 #ifndef NAVSEG_T2_FORCE_LATCH
-#define NAVSEG_T2_FORCE_LATCH     1   /* T2 兜底:u后里程过上界仍未锁sm→强制锁(治Y2骑岔漏检断粮) */
+#define NAVSEG_T2_FORCE_LATCH     0   /* F52: 关闭 u 后里程强制锁 sm */
 #endif
 #ifndef NAVSEG_U3_DEEP_LATCH
 #define NAVSEG_U3_DEEP_LATCH      1   /* U3(06-07 03:30 实测):Y2漏检时用S弧deep结构签名锁sm,早于T2接管 */
 #endif
+#ifndef NAVSEG_U3_TIME_GATE_TICKS
+#define NAVSEG_U3_TIME_GATE_TICKS 500u /* F52: U 锁存后 1s 才允许 deep 签名锁 sm,替代里程下界 */
+#endif
 #ifndef NAVSEG_T3_FORCE_RELEASE
-#define NAVSEG_T3_FORCE_RELEASE   1   /* T3/P9 兜底:sm里程强制释放(稳线窗死锁/早释放双模通吃) */
+#define NAVSEG_T3_FORCE_RELEASE   0   /* F52: 关闭 sm 里程强制释放 */
 #endif
 #ifndef NAVSEG_S2_REARM
 #define NAVSEG_S2_REARM           1   /* R5:RD_DONE 边沿 re-arm sm 保护 S胶囊②(2×r15) */
 #endif
 #ifndef NAVSEG_FINISH_DIST_BACKUP
-#define NAVSEG_FINISH_DIST_BACKUP 1   /* R2/C-4 挂科级:0x30 未部署时终点里程兜底(防跑完不停冲场);
+#define NAVSEG_FINISH_DIST_BACKUP 0   /* F52: 关闭终点里程兜底;终点交给 0x30/倒计时;
                                        * 依赖 NAVSEG_S2_REARM(用 g_s2_active 作已过箱锚) */
 #endif
 #define RD_DEFAULT_DIR            1   /* 雷达 UNKNOWN/2s超时默认过侧:+1=左过(06-06 拍板)。
                                        * map-route 镜像敏感表:全固件唯一硬编码方向——赛道若镜像只翻此处。 */
-#define DOWN_FORCE_LATCH_CNT    200   /* T2 上界: u锁存后 ~480cm 轮程(03:24 刻度2.4),最终兜底保持 */
-#define SM_DEEP_MIN_CNT          60   /* U3 里程下界: 排除U尾deep(实测Δ<40);S入口实测Δ87~134 */
+#define DOWN_FORCE_LATCH_CNT    200   /* legacy: NAVSEG_T2_FORCE_LATCH=0 时不参编 */
+#define SM_EXIT_FORCE_CNT       240   /* legacy: NAVSEG_T3_FORCE_RELEASE=0 时不参编 */
+#define FINISH_FROM_S2_CNT      110   /* legacy: NAVSEG_FINISH_DIST_BACKUP=0 时不参编 */
 #define SM_DEEP_CONFIRM_TICKS    25   /* U3 持续门: deep 连续50ms,滤褶皱单帧踢 */
-#define SM_EXIT_FORCE_CNT       240   /* T3 上界: sm锁存后 ~593cm(=3.2×S①几何76cnt,<RD下界380不挡T4),P0a 回填 */
-#define FINISH_FROM_S2_CNT      110   /* R2 兜底(06-07 skeptic 验收修正): 出箱重捕(≈1929cm)→终点(≈2178cm)
-                                       * =下行75+S②124+终段50≈249cm≈101cnt@2.47,取110留9cnt余量。
-                                       * 宁小勿大:红区仅100cm深,冲过=出界=Task1循迹分没。
-                                       * 旧值200=494cm会在终点后245cm才arm→冲出赛道尽头,形同虚设。P0a 精标后回填。 */
 #if NAVSEG_FINISH_DIST_BACKUP && !NAVSEG_S2_REARM
 #error "NAVSEG_FINISH_DIST_BACKUP depends on NAVSEG_S2_REARM (g_s2_active is only set by S2_REARM). Fix: enable NAVSEG_S2_REARM, or disable NAVSEG_FINISH_DIST_BACKUP."
 #endif
@@ -446,25 +439,25 @@ enum { NAVSEG_START = 0, NAVSEG_U, NAVSEG_SERP1, NAVSEG_AFTER_ARCH1,
        NAVSEG_RADAR, NAVSEG_SERP2, NAVSEG_FINISH };
 static uint8_t  g_navseg = NAVSEG_START;
 static uint8_t  g_s2_active = 0;       /* R5: S胶囊②域标志;g_s_mode_done 语义自此="S①已完成" */
-static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(强制锁里程锚) */
+static int32_t  g_u_cnt_base = 0;      /* legacy: u 锁存帧平均编码器计数,默认不裁决 */
+static uint16_t g_u_post_ticks = 0;     /* F52: u 锁存后时间窗,替代 U3 里程下界 */
 
 /* ===== SEG-TEST 分段测试选择器(06-07 队友提案+用户拍板) =====
  * 0=全图(比赛构型——本特性全部 #if 包裹,=0 时不参编,比赛固件字节级不变)。
- * 1..6=单段测试:K1 在标准清单后"播种"前序段锁存/里程锚(车放该段入口发车),
+ * 1..6=单段测试:K1 在标准清单后"播种"前序段锁存/兼容锚(车放该段入口发车),
  * 段出口信号命中即自停。段表(边界=现役锁存,无信号段手动 K2):
  *  1 START→U出口        种子:无                        出口:u=1 自停
  *  2 U出口→S+拱门+90°右  种子:u=1(+F32a sm播种)          出口:F41 拱门0x30武装+净转向
- *                        ≥75°持续0.5s+见线 自停(sm_done 自停已撤;兜底里程 400cnt 强停)
+ *                        ≥75°持续0.5s+见线 自停(sm_done 自停已撤;F52 默认无里程 backstop)
  *  3 S①释放→方块阵出口   种子:u=1,sm_done=1,sm锚=当前    出口:F42 IMU门自停(|Δyaw|≥75°
  *                        持续0.5s+见线;F41里程门已废,用户:编码器不可靠,状态转化用IMU)
  *                        (+SEG3_SM_RECIPE: 播 sm=1 常驻,S 配方全套,P9/T3 出口门不参编)
  *  4 方块阵出口→圆区出口  种子:同3(方块/圆之间无固件边界,靠摆放位置区分) 出口:手动 K2;
- *                        勿驶入雷达段(sm锚=发车点,Δ<RD_ZONE_MIN_CNT 则 RD 不武装,
- *                        箱前深丢线将走 C-8 丢线自停——无害但勿误判)
- *  5 圆区出口→雷达段完成  种子:同3+sm锚回拨 RD_ZONE_MIN_CNT(里程门预满足,箱前深丢线
- *                        300ms 即武装)                 出口:RD_DONE 自停(RD_FAIL 本就自停)
- *  6 雷达出口→FINISH     种子:同3+rd=DONE+S②re-arm 等效(sm=1,s2=1,sm锚=当前,lt=4;
- *                        终点里程兜底 110cnt 与全图同锚) 出口:FINISH 链自停(既有)
+ *                        勿驶入雷达段(箱前深丢线将武装 RD/RD_FAIL——无害但勿误判)
+ *  5 圆区出口→雷达段完成  种子:同3;F52 RD 由箱前深丢线 300ms 武装,相位走时间预算
+ *                                                         出口:RD_DONE 自停(RD_FAIL 本就自停)
+ *  6 雷达出口→FINISH     种子:同3+rd=DONE+S②re-arm 等效(sm=1,s2=1,lt=4);
+ *                        出口:FINISH 链自停(0x30/倒计时;F52 默认无里程兜底)
  * 分段 PID 说明:各段速度/死区/专属行为已全部键控于锁存(T 28/25(u后)/14(sm)、死区
  * sm>deep>R3 四域、A1/A2 等 sm 专属)——播种锁存=自动获得该段行为;不另设分段增益表,
  * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
@@ -482,8 +475,8 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
                                  * 从起跑线摆位);0=原语义(摆上段出口,播种前段锁存单测本段)。
                                  * F27(备用场地): 回 0——车摆 S 入口直线(Y2 后),播种 u=1,
                                  * sm 由 U3 deep 签名/jc 自然锁,S①→拱门→矩形区全链实跑。
-                                 * F32(06-07 23:3X 三组实证): jc 正门全程 0 次、U3 旁门必迟到
-                                 * (首弧 Δ≈55~65cnt 贴 SM_DEEP_MIN_CNT=60 下界)→ 播种升级:
+                                 * F32(06-07 23:3X 三组实证): jc 正门全程 0 次、U3 旁门曾被旧里程
+                                 * 下界卡迟到→ 播种升级:
                                  * 本构型下 SegTest_SeedOnStart 同时播 sm=1(lt=5),见该函数。 */
 #endif
 /* ===== F41(06-08 用户两连拍板) =====
@@ -491,7 +484,7 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  *    SEG2 出口重定义=拱门 0x30 事件武装 + 此后净航向变化 ≥75° 持续 0.5s 且当刻见线 → 自停。
  *    sm_done 自停(F40)撤——车须继续过拱门。方向不写死(红线b):用 |Δ|,拱门后唯一弯=右90°等效。
  *    ⚠场地要求:拱门必须摆在全部 S 段之后、90°右转之前,两者之间不得再有弯(否则弧内可能假凑)。
- *    兜底:拱门帧丢失 → 里程 Δ≥SEG2_STOP_BACKSTOP_CNT 强停,履约"必须停止"。
+ *    F52: 默认不再用里程兜底;若临时启用 SEG2_STOP_BACKSTOP_ENABLE,才按旧 Δ 计数强停。
  * ② "3区域过了,到达正方形的出口就停止" + "s弯的pid参数给正方形区域参考"
  *    + "速度和现在的s弯差不多,不要用低速,底盘低会卡住特别是90度":
  *    SEG3 = S 配方常驻(播 sm=1 不释放:T=14+S域死区1025/1065 → 实跑 20~45cps,与现役
@@ -595,7 +588,10 @@ static uint16_t g_seg2_stop_run  = 0;   /* F41: ≥75° 持续窗计数 */
 #define SEG2_GUARD_MAX_LOST_TICKS 125u  /* 同 SEG1 守卫:盲旋凑角不算 */
 #endif
 #ifndef SEG2_STOP_BACKSTOP_CNT
-#define SEG2_STOP_BACKSTOP_CNT   400    /* ≈9.6m(自 S 入口锚),按场地实距回填 */
+#define SEG2_STOP_BACKSTOP_CNT   400    /* legacy: SEG2_STOP_BACKSTOP_ENABLE=0 时不参编 */
+#endif
+#ifndef SEG2_STOP_BACKSTOP_ENABLE
+#define SEG2_STOP_BACKSTOP_ENABLE 0     /* F52: 编码器不可靠,SEG2 测试不再用里程 backstop */
 #endif
 #endif
 #if (TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE) || (TEST_SEGMENT == 3 && SEG3_SM_RECIPE)
@@ -636,7 +632,7 @@ static uint8_t g_seed_rolling = 0;  /* F32b: 双轮均≥6cps 一次后置 1,发
 #endif
 static uint8_t g_seg1_done_latch = 0;    /* 守卫后的段1完成锁存(停车态自清,免动 K1/K3) */
 #endif
-static uint16_t g_u3_deep_run = 0;     /* U3: u后(里程门内)deep 连续 tick 计数 */
+static uint16_t g_u3_deep_run = 0;     /* U3: u后(时间窗内)deep 连续 tick 计数 */
 static uint16_t g_launch_grace = 0;    /* F6a: 发车踢腿封顶窗(K1 置 250tick=500ms) */
 /* F8(06-07 团队轮): sm 锁存/释放源遥测——三锁存源(jc/U3/T2)与三释放源(0x30/T3/后备)
  * 在 sm= 上不可分,OLED 字串会被后续转移覆盖,事后无法回答"这轮谁锁的/谁放的"
@@ -862,30 +858,26 @@ static void SegTest_SeedOnStart(void)
 #if TEST_SEGMENT >= 2
     int32_t avg = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
     g_u_turn_passed = 1;            /* U 段视为已完成(PID 经 extern 自动切 POST_U 速度档) */
-    g_u_cnt_base = avg;             /* T2 强制锁里程锚=发车点(≈U出口,与全图语义一致) */
+    g_u_cnt_base = avg;             /* legacy/兼容锚=发车点(≈U出口),默认不裁决 */
+    g_u_post_ticks = 0;             /* F52: 段2+播种后时间窗从 K1 起算 */
     g_navseg = NAVSEG_U;
 #endif
 #if TEST_SEGMENT == 2 && !SEGTEST_SEED_DISABLE
     /* F32a(06-07 23:32-37 三组实证+议会复核): 备用场地发车点≈S入口,jc 正门(入口右侧
-     * 黑斑)三组 0 次,U3 旁门结构性迟到(首弧 Δ≈55~65cnt 贴 SM_DEEP_MIN_CNT=60 下界,
+     * 黑斑)三组 0 次,U3 旁门结构性迟到(旧里程下界卡首弧,
      * 三组锁存帧均值 61/63/63)→ 首弧永远以 T=22~25+主HOLD 裸跑直行冲出(G2/G3)。
      * 播种 sm=1 = 诚实覆盖"车已位于 S 入口"语义,S 配方(14cps/A1/A2)从首弧即上场。
-     * 预核: P9 后备门 floor 120cnt>入口直线~60cnt 不早放(yaw 静默 500ms 在 S 内不可凑);
-     * T3 强释 240cnt≈S①出口外余量足; jc/U3/T2 三锁存支路被 !g_s_mode 安全短路。 */
+     * F52: P9/T3 里程门默认关闭,本段释放靠拱门+90°测试出口; jc/U3/T2 三锁存支路
+     * 被 !g_s_mode 安全短路。 */
     g_s_mode = 1;
-    g_sm_cnt_base = avg + 60;       /* F34: 锚=发车点+60cnt≈真 S 入口(实测首弧 Δ55~65)。
-                                     * G2 00:38:57 实证:锚=发车点时 P9 后备门(floor 120)在
-                                     * S① 弧间短直凑齐三重与门提前放行(avg 124,rs=3),sm 中途
-                                     * 释放→T 跳 25 甩丢线——议会"S 内不可能凑齐"被数据驳回。
-                                     * +60 把 P9(120)/T3(240) 恢复到以 S 入口为基的设计几何;
-                                     * 主释放锚=拱门 0x30(本轮 ar=1 实收,链路场上活体✓)。 */
+    g_sm_cnt_base = avg;            /* F52: 默认无里程释放/强制门,保留计数只作兼容锚。 */
     g_sm_stable_run = 0;
     g_sm_latch_src = 5;             /* lt=5: SEG2 播种(区分自然锁存源 1~4) */
     g_navseg = NAVSEG_SERP1;        /* 议会: 对齐 1453 边沿语义,sg 遥测起点即 SERP1 */
 #endif
 #if TEST_SEGMENT >= 3
     g_s_mode_done = 1;              /* S① 视为已走完(防 jc>基线 回锁) */
-    g_sm_cnt_base = avg;            /* RD 里程门/终点兜底锚=发车点 */
+    g_sm_cnt_base = avg;            /* legacy/兼容锚=发车点,F52 默认不裁决 */
     g_navseg = NAVSEG_AFTER_ARCH1;
 #endif
 #if TEST_SEGMENT == 3 && SEG3_SM_RECIPE
@@ -897,7 +889,7 @@ static void SegTest_SeedOnStart(void)
      * 留空壳保留 SEG3_SM_RECIPE 宏引用(门控 P9/T3 空操作 + F32b 发车死区例外 + 遥测守卫)。 */
 #endif
 #if TEST_SEGMENT == 5
-    g_sm_cnt_base = avg - RD_ZONE_MIN_CNT;  /* 圆区出口发车:RD 里程门预满足 */
+    g_sm_cnt_base = avg;             /* F52: RD 不再用里程武装,保留锚仅供遥测/兼容 */
 #endif
 #if TEST_SEGMENT == 6
     g_rd_state = RD_DONE;           /* 雷达段视为已完成(终态,单箱不再触发) */
@@ -1364,7 +1356,8 @@ int main(void)
                     g_u_turn_passed = 1;
                     /* S1: 记录 u 锁存时刻的 jc 基线，供"U 后新增路口"判据 */
                     g_jc_at_u = result_BlackPoint.junction_pass_count;
-                    /* T2(06-07 评审): 同帧记里程锚,供强制锁 sm 的上界判据 */
+                    g_u_post_ticks = 0;   /* F52: U 后时间窗从锁存帧起算 */
+                    /* T2(历史): 同帧记兼容锚,仅保留遥测/兼容;默认不再裁决 */
                     g_u_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);
                 }
             }
@@ -1372,11 +1365,19 @@ int main(void)
 #if NAVSEG_U3_DEEP_LATCH
             /* U3(06-07 03:30 实测): Y2 骑岔漏检(jc 全程=1)致 sm 迟到 T2(Δ201)才锁,
              * S① 前两弧以 25cps+主 HOLD 裸跑。S 弧必触 deep——用结构签名提前接管:
-             * u 后 Δ≥60cnt(排除 U 尾 deep,实测 Δ<40;S 入口实测 Δ87~134)且 deep 持续
+             * F52: u 后等待时间窗(替代里程下界)且 deep 持续
              * 50ms → 锁 sm。优先级: jc 自然判据 > U3 结构签名 > T2 里程上界(签名>里程)。 */
+            if (is_racing && g_u_turn_passed && !g_s_mode && !g_s_mode_done)
+            {
+                if (g_u_post_ticks < 0xFFFFu) g_u_post_ticks++;
+            }
+            else
+            {
+                g_u_post_ticks = 0;
+            }
             if (is_racing && g_u_turn_passed && !g_s_mode && !g_s_mode_done &&
                 PID_GetDeepTurnMode() &&
-                ((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_u_cnt_base) >= SM_DEEP_MIN_CNT)
+                g_u_post_ticks >= NAVSEG_U3_TIME_GATE_TICKS)
             {
                 if (g_u3_deep_run < 0xFFFFu) g_u3_deep_run++;
             }
@@ -1395,7 +1396,7 @@ int main(void)
                  result_BlackPoint.junction_pass_count > g_jc_at_u))
             {
                 g_s_mode = 1;
-                g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);  /* P9: 里程基准 */
+                g_sm_cnt_base = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2);  /* legacy/兼容锚 */
                 g_sm_stable_run = 0;
                 g_sm_latch_src = 1;    /* F8: jc 自然锁 */
             }
@@ -1486,8 +1487,8 @@ int main(void)
             if (g_s_mode && is_racing)
             {
                 {
-                    int32_t sm_dcnt = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base;
 #if NAVSEG_T3_FORCE_RELEASE
+                    int32_t sm_dcnt = (int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base;
                     /* T3 强制门(06-07 评审): 后备稳线窗有双故障模式——方块阵密路口帧反复
                      * 重置窗(死锁:sm 永钉 14cps 且 T4 RD-arm 断粮) / 273cm 长直提前凑齐
                      * (早放,本身无害,S② 保护由 re-arm 另管)。里程上界强制释放双模通吃,
@@ -1518,11 +1519,15 @@ int main(void)
                             {
                                 g_sm_stable_run = 0;   /* 窗内转向(S 弯内必触)→ 重开窗 */
                             }
+#if NAVSEG_T3_FORCE_RELEASE
                             else if (g_sm_stable_run >= 250u && sm_dcnt >= SM_EXIT_MIN_CNT)
+#else
+                            else if (g_sm_stable_run >= 250u)
+#endif
                             {
                                 g_s_mode = 0;
                                 g_s_mode_done = 1;
-                                g_sm_rel_src = 3;  /* F8: P9 后备门(稳线+yaw静默+里程) */
+                                g_sm_rel_src = 3;  /* F52: P9 后备门(稳线+yaw静默,无里程) */
                             }
                         }
                     }
@@ -1539,7 +1544,6 @@ int main(void)
                 {
                 case RD_OFF:
                     if (g_s_mode_done &&
-                        (rd_avg - g_sm_cnt_base) >= RD_ZONE_MIN_CNT &&
                         PID_GetLineLostTicks() >= RD_LOST_CONFIRM_TICKS)
                     {
                         g_rd_state = RD_BRAKE; g_rd_tick = 0; g_rd_settle = 0;
@@ -1633,7 +1637,7 @@ int main(void)
                 }
                 case RD_DIAG:
                     g_rd_tick++;
-                    if ((rd_avg - g_rd_cnt_mark) >= RD_DIAG_CNT)
+                    if (g_rd_tick >= RD_DIAG_TICKS)
                     {
                         PID_SetNavOverride(NAV_OVERRIDE_HEADING, g_rd_yaw_base, RD_BLIND_CPS);
                         g_rd_state = RD_BACK; g_rd_tick = 0; g_rd_settle = 0;
@@ -1653,8 +1657,8 @@ int main(void)
 #if NAVSEG_S2_REARM
                         /* R5(06-07 评审,丢段级): S胶囊②(2×r15)裸奔修复——出箱重捕边沿
                          * re-arm sm,S① 全套配方(14cps/A1拖刹/A2锁向/1.7滞回/H1封顶)复用。
-                         * g_s2_active 区分两域(0x30 释放支路对 S② 关闭);里程基准从重捕点
-                         * 起算(P6 锚点清基准),终点兜底 FINISH_FROM_S2_CNT 同锚。 */
+                         * g_s2_active 区分两域(0x30 释放支路对 S② 关闭);g_sm_cnt_base 只保留
+                         * legacy/兼容锚,F52 默认不再用终点里程兜底。 */
                         g_s_mode = 1;
                         g_s2_active = 1;
                         g_sm_cnt_base = rd_avg;
@@ -1664,13 +1668,13 @@ int main(void)
 #endif
                         OLED_ShowString(1, 1, "RD DONE         ");
                     }
-                    else if (g_rd_state == RD_THRU && (rd_avg - g_rd_cnt_mark) >= RD_THRU_CNT)
+                    else if (g_rd_state == RD_THRU && g_rd_tick >= RD_THRU_TICKS)
                     {
                         g_rd_cnt_mark = rd_avg;
                         g_rd_state = RD_REJOIN; g_rd_tick = 0;
                         OLED_ShowString(1, 1, "RD REJOIN       ");
                     }
-                    else if ((g_rd_state == RD_REJOIN && (rd_avg - g_rd_cnt_mark) >= RD_REJOIN_CNT) ||
+                    else if ((g_rd_state == RD_REJOIN && g_rd_tick >= RD_REJOIN_TICKS) ||
                              g_rd_tick >= RD_PHASE_BUDGET)
                     {
                         g_rd_state = RD_FAIL;
@@ -1711,7 +1715,7 @@ int main(void)
              * is_racing 门保证只触发一次;段4 无固件出口信号(手动 K2),段6 走既有
              * FINISH 链自停,均不在此列。F27: SEGTEST_EXIT_DISABLE=1 时本块整体不参编
              * (跑过本段出口继续后链,手动 K2 收车)。
-             * F41: 段2 出口重定义=拱门武装+90°右转(sm_done 自停撤);段3 新增里程门出口。 */
+             * F41/F52: 段2 出口=拱门武装+90°右转(sm_done 自停撤);段3 出口=IMU 门。 */
             if (is_racing)
             {
 #if TEST_SEGMENT == 1
@@ -1720,7 +1724,7 @@ int main(void)
                  * →盲旋也凑满 150°。守卫=越 150° 当刻近期见过线(lost<SEG1_GUARD_MAX_LOST_TICKS)
                  * 才认段1完成;盲旋越线时 lost≈200+ 永不武装→跑到 375 丢线自停=真实失败信号。
                  * 真 U 弯过后 |Δyaw| 保持~180,重捕线后下一 tick 即武装,不漏停。方向不写死(红线b);
-                 * 比赛侧 u 锁存(上方 dyaw_latch 块)与 sm/里程锚消费链零改动。 */
+                 * 比赛侧 u 锁存(上方 dyaw_latch 块)与 sm 兼容锚消费链零改动。 */
                 {
                     float seg1_dyaw = (add_angle - g_yaw_zero) * 57.2957795f;
                     if (seg1_dyaw < 0.0f) seg1_dyaw = -seg1_dyaw;
@@ -1734,7 +1738,7 @@ int main(void)
 #elif TEST_SEGMENT == 2
                 /* F41(用户拍板): 拱门 0x30 武装后,净航向变化 ≥75° 持续 0.5s 且当刻见线
                  * → 90°右转完成 → 停。持续窗滤弧内瞬时越阈;lost 守卫滤盲旋凑角(同 SEG1)。
-                 * 兜底:拱门帧丢失时里程 Δ≥SEG2_STOP_BACKSTOP_CNT(锚=S入口) 强停。 */
+                 * F52: 默认无里程 backstop;SEG2_STOP_BACKSTOP_ENABLE=1 时才启用旧强停。 */
                 if (g_seg2_arch_seen)
                 {
                     float seg2_dyaw = (add_angle - g_seg2_arch_yaw0) * 57.2957795f;
@@ -1750,10 +1754,12 @@ int main(void)
                     }
                     else { g_seg2_stop_run = 0u; }
                 }
+#if SEG2_STOP_BACKSTOP_ENABLE
                 if (((int32_t)((g_link_cnt_l + g_link_cnt_r) / 2) - g_sm_cnt_base) >= SEG2_STOP_BACKSTOP_CNT)
                 {
                     StopRun(); RGB_SetColor(RGB_COLOR_B); OLED_ShowString(1, 1, "SEG2 BACKSTOP   ");
                 }
+#endif
 #elif TEST_SEGMENT == 3
                 /* F42(用户否决 F41 里程门:"编码器有问题,不能依赖,用imu的角度变化做状态
                  * 转化"): 出口=IMU 门。方块区内全程直穿(岔口冻结直行,yw 始终≈0),发车后
@@ -1909,7 +1915,8 @@ int main(void)
 #endif
 
 #if NAVSEG_FINISH_DIST_BACKUP
-            /* R2/C-4(06-07 评审,挂科级): 0x30 未部署时 P1 终点门全悬空→跑完不停冲出场地。
+            /* R2/C-4(06-07 评审,挂科级): 可选 legacy backup;F52 默认关闭。
+             * 0x30 未部署时 P1 终点门全悬空→跑完不停冲出场地。
              * 里程兜底:已过箱(g_s2_active)且自出箱重捕 Δ≥FINISH_FROM_S2_CNT → arm finish。
              * 阈值宁小勿大(02:15 Harvey 仲裁统一:110 为防冲出红区——红区仅 ~100cm 深,
              * 2s 滚动≈120cm,过大=出界;提前停留在场内损失更小);0x30 部署后拱门2.2 先到
@@ -2270,9 +2277,10 @@ int main(void)
                 g_last_arch_id = 255u;
                 g_finish_ticks = 0;         /* P1: 终点状态复位 */
                 g_finish_armed = 0;
-                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
+                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u兼容锚同清 */
                 g_s2_active = 0;
                 g_u_cnt_base = 0;
+                g_u_post_ticks = 0;
                 g_u3_deep_run = 0;          /* U3: deep 持续计数同清 */
                 g_launch_grace = 250u;      /* F6a: 发车 500ms 踢腿封顶窗 */
                 g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
@@ -2347,9 +2355,10 @@ int main(void)
                 g_last_arch_id = 255u;
                 g_finish_ticks = 0;
                 g_finish_armed = 0;
-                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u里程锚同清 */
+                g_navseg = NAVSEG_START;    /* 06-07 评审: 段游标/S②域/u兼容锚同清 */
                 g_s2_active = 0;
                 g_u_cnt_base = 0;
+                g_u_post_ticks = 0;
                 g_u3_deep_run = 0;          /* F8(RunArch F2): 与 K1 对称补清 */
                 g_sm_latch_src = 0;         /* F8: 锁存/释放源遥测同清 */
                 g_sm_rel_src = 0;
