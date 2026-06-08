@@ -435,9 +435,8 @@ static uint16_t g_reacq_run = 0;
 /* A2b(06-06): 最近一次"线在边缘"的方向记忆(+1=右缘/-1=左缘/0=无)——sm 丢线找回用。
  * 19:21 实测:S 拐换边瞬间丢线时修正恰好过零,A2 锁 last_valid≈14 形同直行白丢。 */
 static int8_t g_last_edge_side = 0;
-/* A2c(06-06): 再捕获宽限计数——sm 丢线锁向后刚找回线的 ~100ms 内限幅修正+禁深弯,
- * 让车"滚上线"。19:30 实测乒乓极限环:catch→边缘大误差立即反向全幅 pivot→冲过线再丢,
- * 四拐过了三个半全靠运气性收敛。 */
+/* A2c/F53: 再捕获宽限计数——sm 锁向或非 sm 盲转刚找回线的 ~100ms 内限幅修正+禁深弯,
+ * 让车"滚上线"。19:30/F52 实测乒乓极限环:catch→边缘大误差立即反向全幅 pivot→冲过线再丢。 */
 static uint16_t g_reacq_grace = 0;
 /* A2b-limit(06-06 用户拍板): 锁向旋转预算——进入锁向时的 yaw 基准(rad)与翻转计数。
  * 20:07 实测锁向连转 200°+ 未捞线(扫穿线后边缘记忆指向身后,pivot 绕圈追不上)。 */
@@ -729,6 +728,7 @@ void PID_Control_Update(void)
             g_position_pid.last_error = current_position - g_position_pid.param.target_position;
             g_position_pid.d_filtered = 0.0f;
             g_blind_reacq_pending = 0u;
+            g_reacq_grace = 50u;
         }
         // 2. 位置环计算（输出偏差值）
         position_correction = PositionPID_Calculate(&g_position_pid, current_position);
@@ -736,9 +736,9 @@ void PID_Control_Update(void)
         // 保存有效修正值（供丢线寻线使用）
         g_last_valid_correction = position_correction;
 
-        /* A2c: 宽限期内修正限幅 ±150——刚从锁向找回线,边缘大误差不许立即反向全幅,
+        /* A2c/F53: 宽限期内修正限幅 ±150——刚从锁向/盲转找回线,边缘大误差不许立即反向全幅,
          * 先以缓和差速滚上线;last_valid 保存未限幅值(再丢线时锁向仍走边缘记忆)。 */
-        if (g_s_mode && g_reacq_grace > 0u) {
+        if (g_reacq_grace > 0u) {
             g_reacq_grace--;
             if (position_correction > 150.0f) position_correction = 150.0f;
             else if (position_correction < -150.0f) position_correction = -150.0f;
@@ -912,8 +912,8 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		float deep_exit  = g_s_mode ? 1.2f : 1.5f;
 		if (g_nav_override != NAV_OVERRIDE_NONE || g_seg3_bias != 0) {
 			g_deep_turn_mode = 0;   /* P2 覆盖/F48 分叉偏置:禁深弯 pivot,中等差速两轮都驱动不甩离线 */
-		} else if (g_s_mode && g_reacq_grace > 0u) {
-			g_deep_turn_mode = 0;   /* A2c 宽限:禁深弯 pivot,缓差速滚上线 */
+		} else if (g_reacq_grace > 0u) {
+			g_deep_turn_mode = 0;   /* A2c/F53 宽限:禁深弯 pivot,缓差速滚上线 */
 		} else if (!result_BlackPoint.is_junction) {
 			if (g_raw_abs_err >= deep_enter) {
 				g_deep_turn_mode = 1;   /* 进入深弯:内侧轮停转 */
