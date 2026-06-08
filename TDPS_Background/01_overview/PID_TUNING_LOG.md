@@ -8548,3 +8548,99 @@ F49 08:16 实测:bd=-1(左偏置武装)但车右转冲出(pid=276,20 左轮驱�
 
 ### 版本/硬件
 本提交=TEST_SEGMENT=1(U弯),基于 f57417f。bv~107~109,fn=1。分支 LHX/2in1-single。
+
+---
+
+## 2026-06-08 08:38-08:39 | F50: U弯单测回退 F35 全域+10%死区到 F24/F25 通过档 - 可烧待测
+
+### 用户原话/现场
+> "现在我们正在测试u弯，你可以用多个agent来分析现在代码的参数问题，为什么会发生意料之外的事情，以及读取调参数日志，这个是最近一次的串口数据记录：必要可以回退历史的参数"
+> "你可以调用skill辅助你，先想清楚再改"
+
+现场目标: U弯单测。当前代码为 `TEST_SEGMENT=1`，方块区 F49 暂挂；地图仍有褶皱、底盘低，历史上有托底/轮胎松/齿轮转但轮胎不转等机械困难。本轮串口里没有“高 sent 但双轮完全不动”的硬件实锤，主要表现为入 U 前后巡线全幅摆动/甩出视场。
+
+### 串口对应代码版本
+- 串口对应版本: `acee937` (`switch to U-turn test (TEST_SEGMENT 3->1) per user; square-zone SEG3 (F49) parked`)
+- 串口时现役关键参数: `TEST_SEGMENT=1`, `Kp=40 Ki=0 Kd=550`, `BENCH_FIXED_TARGET_CPS=28`, `START=957/1089`, `HOLD=935/1034`, `U_DEEP=847/880`, `DEEP_COAST_CONFIRM_TICKS=150`, `DEEP_BLIND_COAST_LOST_TICKS=50`
+- 本条改动版本: F50，本日志所在提交；父版本为 `acee937`
+- 原始串口归档: `TDPS_Background/01_overview/serial_raw_20260608_0838_0839_uturn_F49_acee937_pingpong.txt`
+- 解析 CSV 归档: `TDPS_Background/01_overview/serial_parsed_20260608_0838_0839_uturn_F49_acee937_pingpong.csv`
+
+### 串口完整原文(附件原样；最后一行原附件止于 ar=255)
+```text
+第1次数据（2026-06-08 08:38:28，持续 00:06.7）
+现象：直线巡线起步不稳
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=77 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=49,90 sent=1106,1279 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=1 er=1 S=4095,4095,0,0,4095,4095,4095
+L=6 R=6 T=28 out=70 pid=243,20 sent=1300,1209 pos=45 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=7 er=8 S=4095,4095,4095,4095,0,1365,4095
+L=36 R=36 T=28 out=70 pid=20,154 sent=955,1188 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=21 er=20 S=4095,0,0,4095,4095,4095,4095
+L=43 R=40 T=28 out=75 pid=287,20 sent=1134,900 pos=10 lost=0 deep=1 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=32 er=32 S=4095,0,2730,4095,4095,4095,4095
+L=36 R=36 T=28 out=81 pid=20,294 sent=867,1174 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=43 er=42 S=0,4095,4095,4095,4095,4095,4095
+L=33 R=36 T=28 out=76 pid=116,36 sent=1051,1070 pos=35 lost=0 deep=0 junc=0 jc=0 yw=17 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=51 er=53 S=4095,4095,4095,0,0,4095,4095
+L=26 R=33 T=28 out=81 pid=293,20 sent=1140,900 pos=60 lost=0 deep=1 junc=0 jc=0 yw=-6 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=62 er=63 S=4095,4095,4095,4095,4095,4095,0
+L=43 R=30 T=28 out=70 pid=20,282 sent=867,1162 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=75 er=73 S=0,0,4095,4095,4095,4095,4095
+L=36 R=36 T=22 out=70 pid=0,277 sent=0,1157 pos=5 lost=69 deep=1 junc=0 jc=0 yw=14 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=84 er=84 S=4095,4095,4095,4095,4095,4095,4095
+L=20 R=40 T=28 out=70 pid=145,20 sent=992,900 pos=45 lost=0 deep=0 junc=0 jc=1 yw=44 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=87 er=93 S=4095,4095,4095,4095,0,0,4095
+L=16 R=23 T=28 out=98 pid=418,20 sent=1265,900 pos=60 lost=5 deep=1 junc=0 jc=1 yw=27 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=96 er=101 S=4095,4095,4095,4095,4095,4095,4095
+L=36 R=29 T=22 out=70 pid=390,0 sent=1237,0 pos=60 lost=74 deep=1 junc=0 jc=1 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=109 er=108 S=4095,4095,4095,4095,4095,4095,4095
+L=47 R=10 T=28 out=72 pid=0,285 sent=0,1165 pos=0 lost=139 deep=1 junc=0 jc=1 yw=-130 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=123 er=108 S=0,4095,4095,4095,4095,4095,4095
+L=33 R=6 T=22 out=100 pid=420,20 sent=1267,900 pos=60 lost=35 deep=1 junc=0 jc=1 yw=-135 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=127 er=113 S=4095,4095,4095,4095,4095,4095,4095
+L=26 R=19 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=138 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=20 R=3 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+
+第2次数据（2026-06-08 08:39:17，持续 00:04.4）
+现象：巡线不稳
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=87,52 sent=1144,1241 pos=35 lost=0 deep=0 junc=0 jc=0 yw=10 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=107 el=1 er=1 S=4095,4095,4095,0,0,4095,4095
+L=9 R=13 T=28 out=70 pid=282,20 sent=1229,900 pos=60 lost=0 deep=1 junc=0 jc=0 yw=-7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=10 er=9 S=4095,4095,4095,4095,4095,4095,0
+L=40 R=30 T=28 out=70 pid=20,390 sent=867,1270 pos=0 lost=8 deep=1 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=22 er=19 S=4095,4095,4095,4095,4095,4095,4095
+L=40 R=36 T=22 out=76 pid=0,396 sent=0,1276 pos=0 lost=78 deep=1 junc=0 jc=0 yw=34 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=31 er=32 S=4095,4095,4095,4095,4095,4095,4095
+L=13 R=43 T=22 out=80 pid=400,0 sent=1247,0 pos=60 lost=51 deep=1 junc=0 jc=0 yw=46 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=35 er=43 S=4095,4095,4095,4095,4095,4095,4095
+L=33 R=23 T=22 out=76 pid=396,0 sent=1243,0 pos=60 lost=121 deep=1 junc=0 jc=0 yw=-64 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=48 er=44 S=4095,4095,4095,4095,4095,4095,2730
+L=43 R=0 T=22 out=84 pid=296,0 sent=1143,0 pos=60 lost=191 deep=1 junc=0 jc=0 yw=-167 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=62 er=44 S=4095,4095,4095,4095,4095,4095,4095
+L=40 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=16 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,1365,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255
+```
+
+### 解析摘要
+- 解析行: `rows=38`, 运动帧 `active=21`, `deep=1` 运动帧 15, 单轮 `sent=0` 运动帧 7。
+- 运动段 `pos` 序列: `25,45,15,10,0,35,60,5,5,45,60,60,0,60,35,60,0,0,60,60,60`，是 0/60 边缘满幅换边。
+- `lost` 最高 191，未触发 PID 375/main 500 丢线停车；最后 `u=1 sg=1 T=0 fn=0`，是 SEG1 U弯完成停，不是 K1/ESP/丢线误停。
+- `fn=1`, `es=3`, `bv=107~109`, `sentL/sentR` 最高 `1300/1279`，轮速多帧 `36~43cps`，相对 `T=28/22` 已偏快；本轮不支持“占空比偏低”作为主因。
+- 现象定性: F35 全域 +10% 死区在 U 单测中放大自驱速度，直线/入弯又出现 F9/F35 风险项里的 `out` 地板、实际速度高、pos 满幅乒乓、全白盲转。
+
+### 多 agent/日志合议结论
+- 代码路径审查: 当前确为 `TEST_SEGMENT=1`；SEG1 出口靠 IMU `|Δyaw|>=150°` 且 lost 守卫；速度闭环仍依赖编码器。PID 核心未偏离历史红线档。
+- 历史日志审查: F24 直线乒乓收口、F25 U弯两连过均在 `START=870/990`, `HOLD=850/940`, `U_DEEP=770/800`, `Kp40/Kd550/Ki0` 附近；F35 全域+10%日志已预警直线蛇摆/U弯半径变化。
+- 串口审查: 入 U 时 `deep=1` 已触发，但外轮 sent/速度偏高、内轮 coast/盲转左右互换；后续若回退死区后仍在 U 入口全白，再考虑 `DEEP_COAST_CONFIRM_TICKS 150->100` 或 `DEEP_BLIND_COAST_LOST_TICKS 50->25`，但本轮先不叠改。
+
+### 代码改动 F50
+- `User/main.c`
+  - `MOTOR_START_DEADZONE_L/R: 957/1089 -> 870/990`
+  - `MOTOR_HOLD_DEADZONE_L/R: 935/1034 -> 850/940`
+  - `U_DEEP_HOLD_DEADZONE_L/R: 847/880 -> 770/800`
+- 未改: `TEST_SEGMENT=1`, `Kp=40 Ki=0 Kd=550`, `DEEP_COAST_CONFIRM_TICKS=150`, `DEEP_BLIND_COAST_LOST_TICKS=50`, S-mode/F49 方块区逻辑。
+
+### F50 测试协议(烧录后)
+1. 确认 OLED/串口仍显示 `RUN SEG-TEST 1`，K1 后风机 `fn=1`、`es=3`。
+2. 车头沿起点直线摆正，跑 U 单测，完整保存串口。
+3. 重点观察:
+   - 起步直线 `pos` 不应再 0/60 连续满幅换边；`L/R` 不应长期明显高于 `T=28/22`。
+   - U 入口 `lost` 应低于本轮 191，最好不出现连续全白 `S=4095,...`。
+   - 若车能正常到 `u=1 sg=1` 自停，看 `yw` 是否接近 150~200°，不是盲转到 -220°以后才停。
+   - 若回退后出现真正托底/动力不足: 证据应是 `sent` 不低但 `L/R` 低或 `el/er` 冻结；那再单独按硬件/占空比链处理，不回头动 PID 红线。
+4. 下一步分支:
+   - 直线稳定但 U 入口仍全白/半径大: 优先 F51 试 `DEEP_COAST_CONFIRM_TICKS 150->100`，必要时盲 coast `50->25`。
+   - 直线仍满幅乒乓: 不提 T，不动 Kd；继续查是否仍有 F35/S_MODE/死区选择器污染或传感器安装问题。
+   - 明显托底卡住: 记录卡点帧、`sent/L/R/el/er/bv/fn`，先判机械/轮胎再决定是否只给主 HOLD 小步补偿。

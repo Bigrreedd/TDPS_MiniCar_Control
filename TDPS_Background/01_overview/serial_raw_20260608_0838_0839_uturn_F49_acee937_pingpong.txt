@@ -1,0 +1,44 @@
+第1次数据（2026-06-08 08:38:28，持续 00:06.7）
+现象：直线巡线起步不稳
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=77 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=49,90 sent=1106,1279 pos=25 lost=0 deep=0 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=1 er=1 S=4095,4095,0,0,4095,4095,4095
+L=6 R=6 T=28 out=70 pid=243,20 sent=1300,1209 pos=45 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=7 er=8 S=4095,4095,4095,4095,0,1365,4095
+L=36 R=36 T=28 out=70 pid=20,154 sent=955,1188 pos=15 lost=0 deep=0 junc=0 jc=0 yw=-7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=21 er=20 S=4095,0,0,4095,4095,4095,4095
+L=43 R=40 T=28 out=75 pid=287,20 sent=1134,900 pos=10 lost=0 deep=1 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=32 er=32 S=4095,0,2730,4095,4095,4095,4095
+L=36 R=36 T=28 out=81 pid=20,294 sent=867,1174 pos=0 lost=0 deep=1 junc=0 jc=0 yw=-2 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=43 er=42 S=0,4095,4095,4095,4095,4095,4095
+L=33 R=36 T=28 out=76 pid=116,36 sent=1051,1070 pos=35 lost=0 deep=0 junc=0 jc=0 yw=17 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=51 er=53 S=4095,4095,4095,0,0,4095,4095
+L=26 R=33 T=28 out=81 pid=293,20 sent=1140,900 pos=60 lost=0 deep=1 junc=0 jc=0 yw=-6 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=62 er=63 S=4095,4095,4095,4095,4095,4095,0
+L=43 R=30 T=28 out=70 pid=20,282 sent=867,1162 pos=5 lost=0 deep=1 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=75 er=73 S=0,0,4095,4095,4095,4095,4095
+L=36 R=36 T=22 out=70 pid=0,277 sent=0,1157 pos=5 lost=69 deep=1 junc=0 jc=0 yw=14 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=84 er=84 S=4095,4095,4095,4095,4095,4095,4095
+L=20 R=40 T=28 out=70 pid=145,20 sent=992,900 pos=45 lost=0 deep=0 junc=0 jc=1 yw=44 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=87 er=93 S=4095,4095,4095,4095,0,0,4095
+L=16 R=23 T=28 out=98 pid=418,20 sent=1265,900 pos=60 lost=5 deep=1 junc=0 jc=1 yw=27 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=96 er=101 S=4095,4095,4095,4095,4095,4095,4095
+L=36 R=29 T=22 out=70 pid=390,0 sent=1237,0 pos=60 lost=74 deep=1 junc=0 jc=1 yw=-41 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=109 er=108 S=4095,4095,4095,4095,4095,4095,4095
+L=47 R=10 T=28 out=72 pid=0,285 sent=0,1165 pos=0 lost=139 deep=1 junc=0 jc=1 yw=-130 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=123 er=108 S=0,4095,4095,4095,4095,4095,4095
+L=33 R=6 T=22 out=100 pid=420,20 sent=1267,900 pos=60 lost=35 deep=1 junc=0 jc=1 yw=-135 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=127 er=113 S=4095,4095,4095,4095,4095,4095,4095
+L=26 R=19 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=138 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=20 R=3 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=0 lost=0 deep=0 junc=0 jc=1 yw=-192 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=139 er=117 S=4095,4095,4095,4095,4095,4095,4095
+
+
+第2次数据（2026-06-08 08:39:17，持续 00:04.4）
+现象：巡线不稳
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=30 lost=0 deep=0 junc=0 jc=0 yw=0 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=2 fn=0 bv=109 el=0 er=0 S=4095,4095,0,0,0,4095,4095
+L=0 R=0 T=28 out=0 pid=87,52 sent=1144,1241 pos=35 lost=0 deep=0 junc=0 jc=0 yw=10 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=107 el=1 er=1 S=4095,4095,4095,0,0,4095,4095
+L=9 R=13 T=28 out=70 pid=282,20 sent=1229,900 pos=60 lost=0 deep=1 junc=0 jc=0 yw=-7 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=10 er=9 S=4095,4095,4095,4095,4095,4095,0
+L=40 R=30 T=28 out=70 pid=20,390 sent=867,1270 pos=0 lost=8 deep=1 junc=0 jc=0 yw=-18 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=22 er=19 S=4095,4095,4095,4095,4095,4095,4095
+L=40 R=36 T=22 out=76 pid=0,396 sent=0,1276 pos=0 lost=78 deep=1 junc=0 jc=0 yw=34 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=31 er=32 S=4095,4095,4095,4095,4095,4095,4095
+L=13 R=43 T=22 out=80 pid=400,0 sent=1247,0 pos=60 lost=51 deep=1 junc=0 jc=0 yw=46 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=35 er=43 S=4095,4095,4095,4095,4095,4095,4095
+L=33 R=23 T=22 out=76 pid=396,0 sent=1243,0 pos=60 lost=121 deep=1 junc=0 jc=0 yw=-64 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=109 el=48 er=44 S=4095,4095,4095,4095,4095,4095,2730
+L=43 R=0 T=22 out=84 pid=296,0 sent=1143,0 pos=60 lost=191 deep=1 junc=0 jc=0 yw=-167 u=0 sm=0 rd=0 sg=0 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=1 bv=108 el=62 er=44 S=4095,4095,4095,4095,4095,4095,4095
+L=40 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=16 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,1365,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255 rdir=1 s2=0 lt=0 rs=0 es=3 fn=0 bv=109 el=71 er=44 S=0,0,4095,4095,4095,4095,4095
+L=0 R=0 T=0 out=0 pid=0,0 sent=0,0 pos=5 lost=0 deep=0 junc=0 jc=0 yw=-222 u=1 sm=0 rd=0 sg=1 ar=255
