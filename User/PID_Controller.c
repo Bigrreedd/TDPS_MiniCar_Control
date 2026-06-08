@@ -496,10 +496,10 @@ static uint8_t g_blind_reacq_pending = 0; /* F26a: 深陷盲走episode标记—�
 #define BLIND_EDGE_COMMIT_TICKS 60u /* F54: U 后半段 lost69 已是全白弯内,提前承诺边缘找线,避免两段 pivot 中间直走 */
 #endif
 #ifndef U_BLIND_TURN_HOLD_TICKS
-#define U_BLIND_TURN_HOLD_TICKS 80u /* F55: 120(240ms)→80(160ms),F54 差速过猛 */
+#define U_BLIND_TURN_HOLD_TICKS 160u /* F56: 80(160ms)→160(320ms),覆盖 U 后半段防反边重锁 */
 #endif
 #ifndef U_BLIND_TURN_HOLD_CORR
-#define U_BLIND_TURN_HOLD_CORR 180.0f /* F55: 220→180,保连续转但降低 U 后半段差速 */
+#define U_BLIND_TURN_HOLD_CORR 160.0f /* F56: 180→160,配合保持期退出 deep,避免近原地 180° */
 #endif
 static uint16_t g_blind_turn_hold = 0;
 static float g_blind_turn_corr = 0.0f;
@@ -631,15 +631,17 @@ void PID_Control_Update(void)
 		                               * 重捕行为保持字节级原样,A2c 宽限自管;本机制只
 		                               * 服务非 sm 的 U/普通弯盲走 episode。 */
 		if (!g_u_turn_passed) {
-		    float blind_err = current_position - g_position_pid.param.target_position;
-		    if (blind_err > 0.05f) {
-			g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
-		    } else if (blind_err < -0.05f) {
-			g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
-		    } else if (g_last_valid_correction > 0.0f) {
-			g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
-		    } else if (g_last_valid_correction < 0.0f) {
-			g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
+		    if (g_blind_turn_hold == 0u || g_blind_turn_corr == 0.0f) {
+			float blind_err = current_position - g_position_pid.param.target_position;
+			if (blind_err > 0.05f) {
+			    g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
+			} else if (blind_err < -0.05f) {
+			    g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
+			} else if (g_last_valid_correction > 0.0f) {
+			    g_blind_turn_corr = U_BLIND_TURN_HOLD_CORR;
+			} else if (g_last_valid_correction < 0.0f) {
+			    g_blind_turn_corr = -U_BLIND_TURN_HOLD_CORR;
+			}
 		    }
 		    if (g_blind_turn_corr != 0.0f) {
 			g_blind_turn_hold = U_BLIND_TURN_HOLD_TICKS;
@@ -956,7 +958,9 @@ skip_position_pid:  // 丢线寻线跳转标签（必须在条件编译块外）
 		} else if (g_s_mode && g_reacq_grace > 0u) {
 			g_deep_turn_mode = 0;   /* A2c: S 锁向重捕宽限禁深弯 pivot,缓差速滚上线 */
 		} else if (g_blind_turn_hold > 0u && !g_s_mode && !g_u_turn_passed) {
-			g_deep_turn_mode = 1;   /* F54: U 盲转保持期不退回直线/浅弯 */
+			g_deep_turn_mode = (!result_BlackPoint.found &&
+			                    g_line_lost_ticks > DEEP_BLIND_COAST_LOST_TICKS)
+			                   ? 1u : 0u;   /* F56: 只在真全白盲转时 coast;重捕帧走中等弧线 */
 		} else if (!result_BlackPoint.is_junction) {
 			if (g_raw_abs_err >= deep_enter) {
 				g_deep_turn_mode = 1;   /* 进入深弯:内侧轮停转 */
