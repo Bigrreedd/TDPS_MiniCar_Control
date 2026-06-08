@@ -8530,3 +8530,21 @@ F48=5908101(本跑)。bv~108~110,fn=1,褶皱垫面。无代码改动(诊断中)�
 
 ### 版本/硬件
 F49=本提交(待push),基于 5908101(F48)。bv~108~110,fn=1,褶皱垫面。分支 LHX/2in1-single。
+
+---
+
+## 2026-06-08 08:1X | 切 U 弯测试(TEST_SEGMENT 3→1);方块区 F49 偏置 bug 暂挂
+
+### 用户原话
+> "我们现在先测试u湾，你先把代码切换到测试u湾的，我们去测试数据，好了立刻通知我"
+
+### 改动
+- main.c:473 `#define TEST_SEGMENT 3 → 1`(SEG1=U弯单测)。SEGTEST_EXIT_DISABLE=0(出口门生效)、SEGTEST_SEED_DISABLE=0 不变。
+- SEG1=既有工作代码:发车起点直线→长直上行→大U弯;出口=|Δyaw|≥150°守卫锁存自停(F24a "SEG1 DONE u=1");TEST_SEGMENT==1 时 SeedOnStart >=2 块不参编=无播种,纯从发车跑。
+- 方块区 SEG3(F44-F49)全 #if TEST_SEGMENT==3 编译排除,不干扰 U 弯;PID 侧 g_seg3_bias 等恒0(==1 永不置)行为级不变。
+
+### F49 方块区遗留 bug(暂挂,回测切回 TEST_SEGMENT=3)
+F49 08:16 实测:bd=-1(左偏置武装)但车右转冲出(pid=276,20 左轮驱动=右转,yw -13→-163)。即**左偏置产出右转/偏置未生效**——疑 PID g_seg3_bias 与 main g_seg3_bias_dir 失同步,或偏置分支被绕过(车实为普通巡线 deep 跟右线 pos=55→右转)。F48 偏置曾生效(左转过转),F49 只改 main.c→偏置不生效,待查 main.c 武装→PID 读取链。回测方块区时续查。
+
+### 版本/硬件
+本提交=TEST_SEGMENT=1(U弯),基于 f57417f。bv~107~109,fn=1。分支 LHX/2in1-single。

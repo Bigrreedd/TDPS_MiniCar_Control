@@ -470,11 +470,11 @@ static int32_t  g_u_cnt_base = 0;      /* T2: u 锁存帧平均编码器计数(�
  * 待单段数据证明需要再加(防红线组合爆炸)。比赛红线:TEST_SEGMENT 必须=0,≠0 时
  * OLED 开机/发车常显 SEG-TEST n 防误烧。 */
 #ifndef TEST_SEGMENT
-#define TEST_SEGMENT 3   /* F41(06-08 用户拍板"下面我们先测量矩形区域"): 切方块区单测。
-                          * S 弯参数全冻结(F39 态即定版,本版零改动);S 配方借给方块区
-                          * (SEG3_SM_RECIPE,用户:"s弯的pid参数可以给正方形区域参考")。
-                          * 3/4 两区分开测;3 区出口=IMU 门自停(F42,里程门已废)。
-                          * 段2 出口同轮重定义:拱门0x30武装+90°右转自停(回测 S 区时切 2)。
+#define TEST_SEGMENT 1   /* 06-08 用户拍板"现在先测试 u 湾": 切 U 弯单测(SEG1)。
+                          * 发车=起点直线;长直上行→大 U 弯;出口=|Δyaw|≥150° 守卫锁存自停
+                          * (F24a,"SEG1 DONE u=1");无播种(SeedOnStart >=2 块不参编)。
+                          * 方块区(SEG3,F44-F49)代码全 #if TEST_SEGMENT==3 编译排除,不干扰。
+                          * F49 方块区偏置 bug(bd=-1 却右转,bias 未生效)暂挂,回测方块区切回 3。
                           * 比赛/全图回 0。 */
 #endif
 #ifndef SEGTEST_SEED_DISABLE
